@@ -1,186 +1,231 @@
 import { createTheme, ThemeOptions, alpha, Theme } from '@mui/material/styles';
 
 // =============================================================================
-// Color Palette: Arcane - Inspired by League of Legends
+// Color Palette: GitHub - Clean Developer Aesthetic
 // =============================================================================
-// Inspired by the Arcane series - the contrast between Piltover's pristine
-// technology and Zaun's gritty undercity, with magical hextech energy
-// Deep blues, glowing cyans, and vibrant magentas
+// Inspired by GitHub's design system - professional, accessible, and familiar
+// to developers worldwide. Clean whites, soft grays, and the iconic blue accent.
 
 const palette = {
-  // Primary: Hextech Cyan - the glow of arcane magic and hextech
-  arcane: {
-    main: '#7DD4EA', // Bright hextech cyan
-    light: '#A8E4F4',
-    dark: '#4ABCD8',
-    glow: '#B8F0FF',
-    contrastText: '#0A1628',
-  },
-  // Secondary: Shimmer Pink - Jinx's chaotic energy, hextech instability
-  shimmer: {
-    main: '#D466A8', // Vibrant magenta-pink
-    light: '#E88BC4',
-    dark: '#B04088',
-    glow: '#F4A0D4',
+  // Primary: GitHub Blue - links, buttons, interactive elements
+  blue: {
+    main: '#0969DA',      // GitHub blue
+    light: '#218BFF',
+    dark: '#0550AE',
+    muted: '#54AEFF',
+    subtle: '#DDF4FF',
     contrastText: '#FFFFFF',
   },
-  // Accent: Piltover Steel - clean technology and progress
-  undercity: {
-    main: '#6B8094', // Steel blue-gray
-    light: '#8AA0B4',
-    dark: '#4A6074',
-    glow: '#A0C0D4',
+  // Secondary: GitHub Green - success, merge, positive actions
+  green: {
+    main: '#1A7F37',
+    light: '#2DA44E',
+    dark: '#116329',
+    muted: '#4AC26B',
+    subtle: '#DAFBE1',
     contrastText: '#FFFFFF',
   },
-  // Danger: Zaun Chemtech - toxic warnings and danger
-  ember: {
-    main: '#E05070', // Chemtech red-pink
-    light: '#F07090',
-    dark: '#C03050',
-    glow: '#FF90A8',
+  // Accent: GitHub Purple - special highlights, visited links
+  purple: {
+    main: '#8250DF',
+    light: '#A475F9',
+    dark: '#6639BA',
+    muted: '#C297FF',
+    subtle: '#FBEFFF',
     contrastText: '#FFFFFF',
   },
-  // Success: Verdant growth - nature persisting in the undercity
-  verdant: {
-    main: '#4A9A7A', // Teal-green
-    light: '#6ABAA0',
-    dark: '#2A7A5A',
-    glow: '#8ADAC0',
+  // Danger: GitHub Red - errors, destructive actions
+  red: {
+    main: '#CF222E',
+    light: '#FA4549',
+    dark: '#A40E26',
+    muted: '#FF8182',
+    subtle: '#FFEBE9',
     contrastText: '#FFFFFF',
   },
-  // Neutrals: Undercity depths - deep blues and shadows
-  void: {
-    deepest: '#060D18', // Deepest undercity
-    deep: '#0A1628', // Deep shadow blue
-    mid: '#122438', // Standard dark background
-    elevated: '#1A3048', // Cards/panels
-    muted: '#243A54', // Muted surfaces
-    light: '#2E4A68', // Lighter surface
+  // Warning: GitHub Orange/Yellow - caution, pending
+  orange: {
+    main: '#BF8700',
+    light: '#D4A72C',
+    dark: '#9A6700',
+    muted: '#D4A72C',
+    subtle: '#FFF8C5',
+    contrastText: '#1F2328',
   },
-  ink: {
-    primary: '#E8F0F8', // Cool white with blue tint
-    secondary: '#A0B8C8', // Muted blue-gray
-    muted: '#708898', // Faded blue text
-    disabled: '#485868', // Very faded
+  // Coral: GitHub accent for highlights
+  coral: {
+    main: '#F78166',
+    light: '#FFA28B',
+    dark: '#DA6D56',
+    contrastText: '#FFFFFF',
+  },
+};
+
+// GitHub Dark Mode Colors
+const darkColors = {
+  canvas: {
+    default: '#0D1117',     // Main background
+    overlay: '#161B22',     // Overlays, dropdowns
+    inset: '#010409',       // Inset backgrounds
+    subtle: '#161B22',      // Subtle backgrounds
+  },
+  fg: {
+    default: '#E6EDF3',     // Primary text
+    muted: '#8D96A0',       // Secondary text
+    subtle: '#6E7681',      // Tertiary text
+    onEmphasis: '#FFFFFF',  // Text on colored backgrounds
+  },
+  border: {
+    default: '#30363D',
+    muted: '#21262D',
+    subtle: 'rgba(240,246,252,0.1)',
+  },
+  neutral: {
+    emphasisPlus: '#6E7681',
+    emphasis: '#6E7681',
+    muted: 'rgba(110,118,129,0.4)',
+    subtle: 'rgba(110,118,129,0.1)',
+  },
+};
+
+// GitHub Light Mode Colors
+const lightColors = {
+  canvas: {
+    default: '#FFFFFF',     // Main background
+    overlay: '#FFFFFF',     // Overlays, dropdowns
+    inset: '#F6F8FA',       // Inset backgrounds
+    subtle: '#F6F8FA',      // Subtle backgrounds
+  },
+  fg: {
+    default: '#1F2328',     // Primary text
+    muted: '#636C76',       // Secondary text
+    subtle: '#6E7681',      // Tertiary text
+    onEmphasis: '#FFFFFF',  // Text on colored backgrounds
+  },
+  border: {
+    default: '#D0D7DE',
+    muted: '#D8DEE4',
+    subtle: 'rgba(27,31,36,0.15)',
+  },
+  neutral: {
+    emphasisPlus: '#24292F',
+    emphasis: '#6E7681',
+    muted: 'rgba(175,184,193,0.2)',
+    subtle: 'rgba(234,238,242,0.5)',
   },
 };
 
 // =============================================================================
-// Dark Theme - Primary Theme (Neo-Noir Undercity)
+// Dark Theme - GitHub Dark
 // =============================================================================
 
 const darkThemeOptions: ThemeOptions = {
   palette: {
     mode: 'dark',
     primary: {
-      main: palette.arcane.main,
-      light: palette.arcane.light,
-      dark: palette.arcane.dark,
-      contrastText: palette.arcane.contrastText,
+      main: palette.blue.main,
+      light: palette.blue.light,
+      dark: palette.blue.dark,
+      contrastText: palette.blue.contrastText,
     },
     secondary: {
-      main: palette.shimmer.main,
-      light: palette.shimmer.light,
-      dark: palette.shimmer.dark,
-      contrastText: palette.shimmer.contrastText,
+      main: palette.purple.main,
+      light: palette.purple.light,
+      dark: palette.purple.dark,
+      contrastText: palette.purple.contrastText,
     },
     error: {
-      main: palette.ember.main,
-      light: palette.ember.light,
-      dark: palette.ember.dark,
+      main: palette.red.main,
+      light: palette.red.light,
+      dark: palette.red.dark,
     },
     success: {
-      main: palette.verdant.main,
-      light: palette.verdant.light,
-      dark: palette.verdant.dark,
+      main: palette.green.main,
+      light: palette.green.light,
+      dark: palette.green.dark,
     },
     info: {
-      main: palette.undercity.main,
-      light: palette.undercity.light,
-      dark: palette.undercity.dark,
+      main: palette.blue.main,
+      light: palette.blue.light,
+      dark: palette.blue.dark,
     },
     warning: {
-      main: '#D9943C',
-      light: '#E9A44C',
-      dark: '#B9741C',
+      main: palette.orange.main,
+      light: palette.orange.light,
+      dark: palette.orange.dark,
     },
     background: {
-      default: palette.void.mid,
-      paper: palette.void.elevated,
+      default: darkColors.canvas.default,
+      paper: darkColors.canvas.overlay,
     },
     text: {
-      primary: palette.ink.primary,
-      secondary: palette.ink.secondary,
-      disabled: palette.ink.disabled,
+      primary: darkColors.fg.default,
+      secondary: darkColors.fg.muted,
+      disabled: darkColors.fg.subtle,
     },
-    divider: alpha(palette.arcane.main, 0.15),
+    divider: darkColors.border.default,
     action: {
-      hover: alpha(palette.arcane.main, 0.08),
-      selected: alpha(palette.arcane.main, 0.16),
-      focus: alpha(palette.arcane.main, 0.12),
+      hover: alpha(palette.blue.main, 0.1),
+      selected: alpha(palette.blue.main, 0.15),
+      focus: alpha(palette.blue.main, 0.12),
     },
   },
   typography: {
-    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-    // Display font for headings - elegant, slightly editorial
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif',
     h1: {
-      fontFamily: '"Crimson Pro", Georgia, serif',
       fontWeight: 600,
-      fontSize: '3rem',
-      lineHeight: 1.15,
+      fontSize: '2.5rem',
+      lineHeight: 1.25,
       letterSpacing: '-0.02em',
     },
     h2: {
-      fontFamily: '"Crimson Pro", Georgia, serif',
       fontWeight: 600,
-      fontSize: '2.25rem',
-      lineHeight: 1.2,
+      fontSize: '2rem',
+      lineHeight: 1.25,
       letterSpacing: '-0.01em',
     },
     h3: {
-      fontFamily: '"Crimson Pro", Georgia, serif',
       fontWeight: 600,
-      fontSize: '1.75rem',
-      lineHeight: 1.3,
+      fontSize: '1.5rem',
+      lineHeight: 1.25,
     },
     h4: {
       fontWeight: 600,
-      fontSize: '1.375rem',
-      lineHeight: 1.35,
+      fontSize: '1.25rem',
+      lineHeight: 1.25,
     },
     h5: {
       fontWeight: 600,
-      fontSize: '1.125rem',
+      fontSize: '1rem',
       lineHeight: 1.4,
     },
     h6: {
       fontWeight: 600,
-      fontSize: '1rem',
+      fontSize: '0.875rem',
       lineHeight: 1.5,
     },
     body1: {
       fontSize: '1rem',
-      lineHeight: 1.75,
+      lineHeight: 1.5,
     },
     body2: {
       fontSize: '0.875rem',
-      lineHeight: 1.7,
+      lineHeight: 1.5,
     },
     button: {
-      fontWeight: 600,
+      fontWeight: 500,
       textTransform: 'none',
-      letterSpacing: '0.02em',
+      fontSize: '0.875rem',
     },
     caption: {
       fontSize: '0.75rem',
       lineHeight: 1.5,
-      letterSpacing: '0.03em',
     },
     overline: {
-      fontSize: '0.7rem',
+      fontSize: '0.75rem',
       fontWeight: 600,
       textTransform: 'uppercase',
-      letterSpacing: '0.1em',
+      letterSpacing: '0.05em',
     },
   },
   shape: {
@@ -188,43 +233,37 @@ const darkThemeOptions: ThemeOptions = {
   },
   shadows: [
     'none',
-    `0 1px 2px ${alpha('#000', 0.3)}`,
-    `0 2px 4px ${alpha('#000', 0.3)}`,
-    `0 4px 8px ${alpha('#000', 0.3)}`,
-    `0 6px 12px ${alpha('#000', 0.35)}`,
-    `0 8px 16px ${alpha('#000', 0.35)}`,
-    `0 10px 20px ${alpha('#000', 0.35)}`,
-    `0 12px 24px ${alpha('#000', 0.4)}`,
-    `0 14px 28px ${alpha('#000', 0.4)}`,
+    `0 1px 0 ${darkColors.border.default}`,
+    `0 1px 0 ${darkColors.border.default}, 0 1px 3px ${alpha('#000', 0.12)}`,
+    `0 8px 24px ${alpha('#000', 0.2)}`,
+    `0 8px 24px ${alpha('#000', 0.25)}`,
+    `0 12px 28px ${alpha('#000', 0.3)}`,
+    `0 12px 28px ${alpha('#000', 0.35)}`,
     `0 16px 32px ${alpha('#000', 0.4)}`,
-    `0 18px 36px ${alpha('#000', 0.45)}`,
-    `0 20px 40px ${alpha('#000', 0.45)}`,
-    `0 22px 44px ${alpha('#000', 0.45)}`,
-    `0 24px 48px ${alpha('#000', 0.5)}`,
-    `0 26px 52px ${alpha('#000', 0.5)}`,
-    `0 28px 56px ${alpha('#000', 0.5)}`,
-    `0 30px 60px ${alpha('#000', 0.55)}`,
-    `0 32px 64px ${alpha('#000', 0.55)}`,
-    `0 34px 68px ${alpha('#000', 0.55)}`,
-    `0 36px 72px ${alpha('#000', 0.6)}`,
-    `0 38px 76px ${alpha('#000', 0.6)}`,
-    `0 40px 80px ${alpha('#000', 0.6)}`,
-    `0 42px 84px ${alpha('#000', 0.65)}`,
-    `0 44px 88px ${alpha('#000', 0.65)}`,
-    `0 46px 92px ${alpha('#000', 0.65)}`,
+    `0 16px 32px ${alpha('#000', 0.45)}`,
+    `0 20px 36px ${alpha('#000', 0.5)}`,
+    `0 20px 36px ${alpha('#000', 0.55)}`,
+    `0 24px 40px ${alpha('#000', 0.6)}`,
+    `0 24px 40px ${alpha('#000', 0.65)}`,
+    `0 28px 44px ${alpha('#000', 0.7)}`,
+    `0 28px 44px ${alpha('#000', 0.75)}`,
+    `0 32px 48px ${alpha('#000', 0.8)}`,
+    `0 32px 48px ${alpha('#000', 0.85)}`,
+    `0 36px 52px ${alpha('#000', 0.9)}`,
+    `0 36px 52px ${alpha('#000', 0.95)}`,
+    `0 40px 56px ${alpha('#000', 1)}`,
+    `0 40px 56px ${alpha('#000', 1)}`,
+    `0 44px 60px ${alpha('#000', 1)}`,
+    `0 44px 60px ${alpha('#000', 1)}`,
+    `0 48px 64px ${alpha('#000', 1)}`,
+    `0 48px 64px ${alpha('#000', 1)}`,
   ] as Theme['shadows'],
   components: {
     MuiCssBaseline: {
       styleOverrides: `
-        :root {
-          --glow-arcane: ${palette.arcane.glow};
-          --glow-shimmer: ${palette.shimmer.glow};
-          --glow-undercity: ${palette.undercity.glow};
-        }
-        
         ::selection {
-          background: ${alpha(palette.arcane.main, 0.4)};
-          color: ${palette.ink.primary};
+          background: ${alpha(palette.blue.main, 0.4)};
+          color: ${darkColors.fg.default};
         }
         
         html {
@@ -233,7 +272,7 @@ const darkThemeOptions: ThemeOptions = {
         
         body {
           scrollbar-width: thin;
-          scrollbar-color: ${palette.void.light} ${palette.void.deep};
+          scrollbar-color: ${darkColors.border.default} ${darkColors.canvas.default};
         }
         
         ::-webkit-scrollbar {
@@ -242,17 +281,31 @@ const darkThemeOptions: ThemeOptions = {
         }
         
         ::-webkit-scrollbar-track {
-          background: ${palette.void.deep};
+          background: ${darkColors.canvas.default};
         }
         
         ::-webkit-scrollbar-thumb {
-          background: ${palette.void.light};
+          background: ${darkColors.border.default};
           border-radius: 5px;
-          border: 2px solid ${palette.void.deep};
+          border: 2px solid ${darkColors.canvas.default};
         }
         
         ::-webkit-scrollbar-thumb:hover {
-          background: ${palette.void.muted};
+          background: ${darkColors.fg.subtle};
+        }
+        
+        /* GitHub-style code blocks */
+        code {
+          font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+          font-size: 85%;
+          background: ${alpha(darkColors.neutral.emphasis, 0.4)};
+          border-radius: 6px;
+          padding: 0.2em 0.4em;
+        }
+        
+        pre code {
+          background: transparent;
+          padding: 0;
         }
       `,
     },
@@ -260,188 +313,67 @@ const darkThemeOptions: ThemeOptions = {
       styleOverrides: {
         root: {
           borderRadius: 6,
-          padding: '10px 20px',
-          fontWeight: 600,
-          transition: 'all 0.2s ease-out',
+          padding: '5px 16px',
+          fontWeight: 500,
+          fontSize: '14px',
+          lineHeight: '20px',
+          transition: 'all 0.12s ease-out',
           '&:focus-visible': {
-            outline: `2px solid ${palette.arcane.main}`,
+            outline: `2px solid ${palette.blue.main}`,
             outlineOffset: 2,
           },
         },
         contained: {
-          boxShadow: `0 2px 8px ${alpha(palette.arcane.main, 0.3)}`,
+          boxShadow: `0 1px 0 ${alpha('#000', 0.1)}`,
           '&:hover': {
-            boxShadow: `0 4px 16px ${alpha(palette.arcane.glow, 0.4)}, 0 0 0 1px ${alpha(palette.arcane.main, 0.2)} inset`,
-            transform: 'translateY(-1px)',
-          },
-          '&:active': {
-            transform: 'translateY(0)',
+            boxShadow: `0 1px 0 ${alpha('#000', 0.1)}`,
           },
         },
         containedPrimary: {
-          background: `linear-gradient(135deg, ${palette.arcane.main} 0%, ${palette.arcane.dark} 100%)`,
-          color: '#0A1628 !important',
-          '& .MuiButton-startIcon, & .MuiButton-endIcon': {
-            color: '#0A1628',
-          },
+          backgroundColor: palette.green.light,
+          color: '#FFFFFF',
+          border: `1px solid ${alpha('#000', 0.1)}`,
           '&:hover': {
-            background: `linear-gradient(135deg, ${palette.arcane.light} 0%, ${palette.arcane.main} 100%)`,
+            backgroundColor: palette.green.main,
           },
         },
         containedSecondary: {
-          background: `linear-gradient(135deg, ${palette.shimmer.main} 0%, ${palette.shimmer.dark} 100%)`,
-          color: '#FFFFFF !important',
-          '& .MuiButton-startIcon, & .MuiButton-endIcon': {
-            color: '#FFFFFF',
-          },
+          backgroundColor: darkColors.canvas.subtle,
+          color: darkColors.fg.default,
+          border: `1px solid ${darkColors.border.default}`,
           '&:hover': {
-            background: `linear-gradient(135deg, ${palette.shimmer.light} 0%, ${palette.shimmer.main} 100%)`,
+            backgroundColor: darkColors.border.muted,
+            borderColor: darkColors.fg.subtle,
           },
         },
         containedError: {
-          background: `linear-gradient(135deg, ${palette.ember.main} 0%, ${palette.ember.dark} 100%)`,
-          color: '#FFFFFF !important',
-          '& .MuiButton-startIcon, & .MuiButton-endIcon': {
-            color: '#FFFFFF',
-          },
+          backgroundColor: palette.red.main,
           '&:hover': {
-            background: `linear-gradient(135deg, ${palette.ember.light} 0%, ${palette.ember.main} 100%)`,
-          },
-        },
-        containedSuccess: {
-          background: `linear-gradient(135deg, ${palette.verdant.main} 0%, ${palette.verdant.dark} 100%)`,
-          color: '#FFFFFF !important',
-          '& .MuiButton-startIcon, & .MuiButton-endIcon': {
-            color: '#FFFFFF',
-          },
-          '&:hover': {
-            background: `linear-gradient(135deg, ${palette.verdant.light} 0%, ${palette.verdant.main} 100%)`,
-          },
-        },
-        containedInfo: {
-          background: `linear-gradient(135deg, ${palette.undercity.main} 0%, ${palette.undercity.dark} 100%)`,
-          color: '#FFFFFF !important',
-          '& .MuiButton-startIcon, & .MuiButton-endIcon': {
-            color: '#FFFFFF',
-          },
-          '&:hover': {
-            background: `linear-gradient(135deg, ${palette.undercity.light} 0%, ${palette.undercity.main} 100%)`,
-          },
-        },
-        containedWarning: {
-          background: 'linear-gradient(135deg, #D9943C 0%, #B9741C 100%)',
-          color: '#0A1628 !important',
-          '& .MuiButton-startIcon, & .MuiButton-endIcon': {
-            color: '#0A1628',
-          },
-          '&:hover': {
-            background: 'linear-gradient(135deg, #E9A44C 0%, #D9943C 100%)',
+            backgroundColor: palette.red.dark,
           },
         },
         outlined: {
-          borderWidth: 1.5,
-          borderColor: alpha(palette.arcane.main, 0.5),
+          borderColor: darkColors.border.default,
+          color: darkColors.fg.default,
+          backgroundColor: darkColors.canvas.subtle,
           '&:hover': {
-            borderWidth: 1.5,
-            borderColor: palette.arcane.main,
-            backgroundColor: alpha(palette.arcane.main, 0.08),
-            boxShadow: `0 0 12px ${alpha(palette.arcane.glow, 0.2)}`,
+            backgroundColor: darkColors.border.muted,
+            borderColor: darkColors.fg.subtle,
           },
         },
         outlinedPrimary: {
-          borderColor: alpha(palette.arcane.main, 0.5),
+          borderColor: darkColors.border.default,
+          color: darkColors.fg.default,
           '&:hover': {
-            borderColor: palette.arcane.main,
+            backgroundColor: darkColors.border.muted,
+            borderColor: darkColors.fg.subtle,
           },
         },
         text: {
+          color: palette.blue.main,
           '&:hover': {
-            backgroundColor: alpha(palette.arcane.main, 0.08),
+            backgroundColor: alpha(palette.blue.main, 0.1),
           },
-        },
-        sizeSmall: {
-          padding: '6px 14px',
-          fontSize: '0.8125rem',
-        },
-        sizeLarge: {
-          padding: '14px 28px',
-          fontSize: '1rem',
-        },
-        startIcon: {
-          marginRight: 10,
-          '& > *:first-of-type': {
-            fontSize: '1.125em',
-          },
-        },
-        endIcon: {
-          marginLeft: 10,
-          '& > *:first-of-type': {
-            fontSize: '1.125em',
-          },
-        },
-      },
-    },
-    MuiIconButton: {
-      styleOverrides: {
-        root: {
-          transition: 'all 0.2s ease-out',
-          '&:hover': {
-            backgroundColor: alpha(palette.arcane.main, 0.12),
-            transform: 'scale(1.05)',
-          },
-        },
-      },
-    },
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          backgroundImage: 'none',
-          backgroundColor: palette.void.elevated,
-          borderRadius: 8,
-          border: `1px solid ${alpha(palette.arcane.main, 0.08)}`,
-          transition: 'all 0.3s ease-out',
-          overflow: 'hidden',
-          '&:hover': {
-            borderColor: alpha(palette.arcane.main, 0.2),
-            boxShadow: `0 8px 32px ${alpha('#000', 0.4)}, 0 0 0 1px ${alpha(palette.arcane.main, 0.1)} inset`,
-          },
-        },
-      },
-    },
-    MuiCardContent: {
-      styleOverrides: {
-        root: {
-          padding: 20,
-          '&:last-child': {
-            paddingBottom: 20,
-          },
-        },
-      },
-    },
-    MuiPaper: {
-      defaultProps: {
-        elevation: 1,
-      },
-      styleOverrides: {
-        root: {
-          backgroundImage: 'none',
-          backgroundColor: palette.void.elevated,
-          borderRadius: 12,
-          border: `1px solid ${alpha(palette.arcane.main, 0.08)}`,
-        },
-        elevation0: {
-          boxShadow: 'none',
-          border: `1px solid ${alpha(palette.arcane.main, 0.1)}`,
-        },
-        elevation1: {
-          boxShadow: `0 2px 8px ${alpha('#000', 0.15)}, 0 1px 3px ${alpha('#000', 0.1)}`,
-        },
-        elevation2: {
-          boxShadow: `0 4px 16px ${alpha('#000', 0.2)}, 0 2px 6px ${alpha('#000', 0.12)}`,
-        },
-        outlined: {
-          borderColor: alpha(palette.arcane.main, 0.15),
-          borderWidth: 1,
         },
       },
     },
@@ -449,88 +381,81 @@ const darkThemeOptions: ThemeOptions = {
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          backgroundColor: alpha(palette.void.deep, 0.85),
-          backdropFilter: 'blur(12px) saturate(180%)',
-          borderBottom: `1px solid ${alpha(palette.arcane.main, 0.1)}`,
-          boxShadow: `0 4px 30px ${alpha('#000', 0.3)}`,
+          backgroundColor: darkColors.canvas.overlay,
+          borderBottom: `1px solid ${darkColors.border.default}`,
+          boxShadow: 'none',
         },
       },
     },
-    MuiDrawer: {
-      styleOverrides: {
-        paper: {
-          backgroundImage: 'none',
-          backgroundColor: palette.void.elevated,
-          borderRight: `1px solid ${alpha(palette.arcane.main, 0.1)}`,
-        },
-      },
-    },
-    MuiDivider: {
+    MuiCard: {
       styleOverrides: {
         root: {
-          borderColor: alpha(palette.arcane.main, 0.1),
+          backgroundImage: 'none',
+          backgroundColor: darkColors.canvas.overlay,
+          borderRadius: 6,
+          border: `1px solid ${darkColors.border.default}`,
+          boxShadow: 'none',
+          '&:hover': {
+            borderColor: darkColors.border.default,
+          },
+        },
+      },
+    },
+    MuiPaper: {
+      defaultProps: {
+        elevation: 0,
+      },
+      styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+          backgroundColor: darkColors.canvas.overlay,
+          borderRadius: 6,
+          border: `1px solid ${darkColors.border.default}`,
         },
       },
     },
     MuiChip: {
       styleOverrides: {
         root: {
-          borderRadius: 4,
+          borderRadius: '2em',
           fontWeight: 500,
-          fontSize: '0.75rem',
-          height: 26,
-          transition: 'all 0.2s ease-out',
+          fontSize: '12px',
+          height: 24,
         },
         filled: {
-          backgroundColor: alpha(palette.arcane.main, 0.15),
-          color: palette.arcane.light,
+          backgroundColor: alpha(palette.blue.main, 0.15),
+          color: palette.blue.light,
           '&:hover': {
-            backgroundColor: alpha(palette.arcane.main, 0.25),
+            backgroundColor: alpha(palette.blue.main, 0.25),
           },
         },
         outlined: {
-          borderColor: alpha(palette.arcane.main, 0.3),
+          borderColor: darkColors.border.default,
           '&:hover': {
-            borderColor: palette.arcane.main,
-            backgroundColor: alpha(palette.arcane.main, 0.08),
+            backgroundColor: darkColors.neutral.subtle,
           },
         },
-        clickable: {
-          '&:hover': {
-            boxShadow: `0 0 8px ${alpha(palette.arcane.glow, 0.3)}`,
-          },
+        colorSuccess: {
+          backgroundColor: alpha(palette.green.main, 0.15),
+          color: palette.green.muted,
         },
-        sizeSmall: {
-          height: 22,
-          fontSize: '0.7rem',
+        colorError: {
+          backgroundColor: alpha(palette.red.main, 0.15),
+          color: palette.red.muted,
+        },
+        colorWarning: {
+          backgroundColor: alpha(palette.orange.main, 0.15),
+          color: palette.orange.light,
         },
       },
     },
     MuiLink: {
       styleOverrides: {
         root: {
-          color: palette.arcane.main,
+          color: palette.blue.main,
           textDecoration: 'none',
-          position: 'relative',
-          transition: 'color 0.2s ease-out',
           '&:hover': {
-            color: palette.arcane.light,
-          },
-          '&::after': {
-            content: '""',
-            position: 'absolute',
-            bottom: -1,
-            left: 0,
-            width: '100%',
-            height: 1,
-            backgroundColor: 'currentColor',
-            transform: 'scaleX(0)',
-            transformOrigin: 'right',
-            transition: 'transform 0.3s ease-out',
-          },
-          '&:hover::after': {
-            transform: 'scaleX(1)',
-            transformOrigin: 'left',
+            textDecoration: 'underline',
           },
         },
       },
@@ -539,42 +464,34 @@ const darkThemeOptions: ThemeOptions = {
       styleOverrides: {
         root: {
           '& .MuiOutlinedInput-root': {
-            backgroundColor: alpha(palette.void.deep, 0.5),
-            transition: 'all 0.2s ease-out',
+            backgroundColor: darkColors.canvas.default,
             '& fieldset': {
-              borderColor: alpha(palette.arcane.main, 0.2),
-              transition: 'all 0.2s ease-out',
+              borderColor: darkColors.border.default,
             },
             '&:hover fieldset': {
-              borderColor: alpha(palette.arcane.main, 0.4),
+              borderColor: darkColors.fg.subtle,
             },
             '&.Mui-focused fieldset': {
-              borderColor: palette.arcane.main,
-              borderWidth: 1.5,
-              boxShadow: `0 0 0 3px ${alpha(palette.arcane.main, 0.1)}`,
+              borderColor: palette.blue.main,
+              borderWidth: 2,
+              boxShadow: `0 0 0 3px ${alpha(palette.blue.main, 0.3)}`,
             },
           },
           '& .MuiInputLabel-root': {
-            color: palette.ink.secondary,
+            color: darkColors.fg.muted,
             '&.Mui-focused': {
-              color: palette.arcane.main,
-            },
-            '&.MuiInputLabel-shrink': {
-              backgroundColor: palette.void.mid,
-              padding: '0 6px',
-              marginLeft: '-4px',
+              color: palette.blue.main,
             },
           },
         },
       },
     },
-    MuiInputAdornment: {
+    MuiDrawer: {
       styleOverrides: {
-        root: {
-          '& .MuiSvgIcon-root': {
-            color: palette.ink.muted,
-            fontSize: '1.25rem',
-          },
+        paper: {
+          backgroundImage: 'none',
+          backgroundColor: darkColors.canvas.overlay,
+          borderRight: `1px solid ${darkColors.border.default}`,
         },
       },
     },
@@ -582,33 +499,38 @@ const darkThemeOptions: ThemeOptions = {
       styleOverrides: {
         root: {
           borderRadius: 6,
+          border: '1px solid',
         },
         standardError: {
-          backgroundColor: alpha(palette.ember.main, 0.15),
-          color: palette.ember.light,
+          backgroundColor: alpha(palette.red.main, 0.1),
+          borderColor: alpha(palette.red.main, 0.3),
+          color: palette.red.muted,
           '& .MuiAlert-icon': {
-            color: palette.ember.main,
+            color: palette.red.main,
           },
         },
         standardSuccess: {
-          backgroundColor: alpha(palette.verdant.main, 0.15),
-          color: palette.verdant.light,
+          backgroundColor: alpha(palette.green.main, 0.1),
+          borderColor: alpha(palette.green.main, 0.3),
+          color: palette.green.muted,
           '& .MuiAlert-icon': {
-            color: palette.verdant.main,
+            color: palette.green.main,
           },
         },
         standardInfo: {
-          backgroundColor: alpha(palette.undercity.main, 0.15),
-          color: palette.undercity.light,
+          backgroundColor: alpha(palette.blue.main, 0.1),
+          borderColor: alpha(palette.blue.main, 0.3),
+          color: palette.blue.muted,
           '& .MuiAlert-icon': {
-            color: palette.undercity.main,
+            color: palette.blue.main,
           },
         },
         standardWarning: {
-          backgroundColor: alpha(palette.arcane.dark, 0.15),
-          color: palette.arcane.light,
+          backgroundColor: alpha(palette.orange.main, 0.1),
+          borderColor: alpha(palette.orange.main, 0.3),
+          color: palette.orange.light,
           '& .MuiAlert-icon': {
-            color: palette.arcane.main,
+            color: palette.orange.main,
           },
         },
       },
@@ -616,29 +538,21 @@ const darkThemeOptions: ThemeOptions = {
     MuiTooltip: {
       styleOverrides: {
         tooltip: {
-          backgroundColor: palette.void.muted,
-          color: palette.ink.primary,
-          fontSize: '0.75rem',
-          padding: '8px 12px',
-          borderRadius: 4,
-          boxShadow: `0 4px 16px ${alpha('#000', 0.4)}`,
+          backgroundColor: darkColors.fg.default,
+          color: darkColors.canvas.default,
+          fontSize: '12px',
+          padding: '6px 10px',
+          borderRadius: 6,
         },
         arrow: {
-          color: palette.void.muted,
-        },
-      },
-    },
-    MuiSkeleton: {
-      styleOverrides: {
-        root: {
-          backgroundColor: alpha(palette.void.light, 0.5),
+          color: darkColors.fg.default,
         },
       },
     },
     MuiAvatar: {
       styleOverrides: {
         root: {
-          border: `2px solid ${alpha(palette.arcane.main, 0.3)}`,
+          border: `2px solid ${darkColors.border.default}`,
         },
       },
     },
@@ -646,13 +560,12 @@ const darkThemeOptions: ThemeOptions = {
       styleOverrides: {
         root: {
           '& .MuiPaginationItem-root': {
-            borderRadius: 4,
+            borderRadius: 6,
+            border: `1px solid ${darkColors.border.default}`,
             '&.Mui-selected': {
-              backgroundColor: alpha(palette.arcane.main, 0.2),
-              color: palette.arcane.light,
-              '&:hover': {
-                backgroundColor: alpha(palette.arcane.main, 0.3),
-              },
+              backgroundColor: palette.blue.main,
+              color: '#FFFFFF',
+              borderColor: palette.blue.main,
             },
           },
         },
@@ -661,10 +574,8 @@ const darkThemeOptions: ThemeOptions = {
     MuiTabs: {
       styleOverrides: {
         indicator: {
-          height: 3,
-          borderRadius: '3px 3px 0 0',
-          backgroundColor: palette.arcane.main,
-          boxShadow: `0 0 8px ${alpha(palette.arcane.glow, 0.5)}`,
+          height: 2,
+          backgroundColor: palette.coral.main,
         },
       },
     },
@@ -672,10 +583,15 @@ const darkThemeOptions: ThemeOptions = {
       styleOverrides: {
         root: {
           textTransform: 'none',
-          fontWeight: 500,
+          fontWeight: 400,
           minHeight: 48,
+          color: darkColors.fg.muted,
           '&.Mui-selected': {
-            color: palette.arcane.main,
+            color: darkColors.fg.default,
+            fontWeight: 600,
+          },
+          '&:hover': {
+            color: darkColors.fg.default,
           },
         },
       },
@@ -684,23 +600,14 @@ const darkThemeOptions: ThemeOptions = {
       styleOverrides: {
         root: {
           borderRadius: 6,
-          margin: '2px 8px',
           '&.Mui-selected': {
-            backgroundColor: alpha(palette.arcane.main, 0.12),
+            backgroundColor: alpha(palette.blue.main, 0.15),
             '&:hover': {
-              backgroundColor: alpha(palette.arcane.main, 0.18),
+              backgroundColor: alpha(palette.blue.main, 0.2),
             },
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              left: 0,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              width: 3,
-              height: '60%',
-              backgroundColor: palette.arcane.main,
-              borderRadius: '0 2px 2px 0',
-            },
+          },
+          '&:hover': {
+            backgroundColor: darkColors.neutral.subtle,
           },
         },
       },
@@ -709,18 +616,9 @@ const darkThemeOptions: ThemeOptions = {
       styleOverrides: {
         paper: {
           backgroundImage: 'none',
-          backgroundColor: palette.void.elevated,
-          border: `1px solid ${alpha(palette.arcane.main, 0.15)}`,
-          boxShadow: `0 24px 80px ${alpha('#000', 0.6)}`,
-        },
-      },
-    },
-    MuiDialogTitle: {
-      styleOverrides: {
-        root: {
-          fontFamily: '"Crimson Pro", Georgia, serif',
-          fontWeight: 600,
-          fontSize: '1.5rem',
+          backgroundColor: darkColors.canvas.overlay,
+          border: `1px solid ${darkColors.border.default}`,
+          boxShadow: `0 8px 24px ${alpha('#000', 0.5)}`,
         },
       },
     },
@@ -728,22 +626,57 @@ const darkThemeOptions: ThemeOptions = {
       styleOverrides: {
         paper: {
           backgroundImage: 'none',
-          backgroundColor: palette.void.elevated,
-          border: `1px solid ${alpha(palette.arcane.main, 0.1)}`,
-          boxShadow: `0 8px 32px ${alpha('#000', 0.5)}`,
+          backgroundColor: darkColors.canvas.overlay,
+          border: `1px solid ${darkColors.border.default}`,
+          boxShadow: `0 8px 24px ${alpha('#000', 0.25)}`,
         },
       },
     },
     MuiMenuItem: {
       styleOverrides: {
         root: {
-          borderRadius: 4,
+          borderRadius: 6,
           margin: '2px 6px',
+          fontSize: '14px',
           '&:hover': {
-            backgroundColor: alpha(palette.arcane.main, 0.1),
+            backgroundColor: darkColors.neutral.subtle,
           },
           '&.Mui-selected': {
-            backgroundColor: alpha(palette.arcane.main, 0.15),
+            backgroundColor: alpha(palette.blue.main, 0.15),
+          },
+        },
+      },
+    },
+    MuiDivider: {
+      styleOverrides: {
+        root: {
+          borderColor: darkColors.border.default,
+        },
+      },
+    },
+    MuiSkeleton: {
+      styleOverrides: {
+        root: {
+          backgroundColor: darkColors.neutral.muted,
+        },
+      },
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        root: {
+          borderBottom: `1px solid ${darkColors.border.default}`,
+        },
+        head: {
+          fontWeight: 600,
+          backgroundColor: darkColors.canvas.subtle,
+        },
+      },
+    },
+    MuiTableRow: {
+      styleOverrides: {
+        root: {
+          '&:hover': {
+            backgroundColor: darkColors.neutral.subtle,
           },
         },
       },
@@ -752,85 +685,59 @@ const darkThemeOptions: ThemeOptions = {
 };
 
 // =============================================================================
-// Light Theme - Secondary Theme (Piltover - City of Progress)
+// Light Theme - GitHub Light
 // =============================================================================
-
-const lightPalette = {
-  background: {
-    default: '#F0F4F8', // Cool light gray with blue tint
-    paper: '#FFFFFF',
-    elevated: '#F8FAFC',
-  },
-  text: {
-    primary: '#0A1628',
-    secondary: '#3A4A5A',
-    muted: '#6A7A8A',
-    disabled: '#9AAABA',
-  },
-  // Adjusted colors for light mode contrast
-  arcane: {
-    main: '#1A7090', // Darker teal-cyan for better white text contrast
-    light: '#2A8AAA',
-    dark: '#0A5070',
-    glow: '#4AAACA',
-  },
-  shimmer: {
-    main: '#8A3070', // Darker magenta for better contrast
-    light: '#A04080',
-    dark: '#6A2050',
-  },
-};
 
 const lightThemeOptions: ThemeOptions = {
   ...darkThemeOptions,
   palette: {
     mode: 'light',
     primary: {
-      main: lightPalette.arcane.main,
-      light: lightPalette.arcane.light,
-      dark: lightPalette.arcane.dark,
+      main: palette.blue.main,
+      light: palette.blue.light,
+      dark: palette.blue.dark,
       contrastText: '#FFFFFF',
     },
     secondary: {
-      main: lightPalette.shimmer.main,
-      light: lightPalette.shimmer.light,
-      dark: lightPalette.shimmer.dark,
+      main: palette.purple.main,
+      light: palette.purple.light,
+      dark: palette.purple.dark,
       contrastText: '#FFFFFF',
     },
     error: {
-      main: '#C93545',
-      light: '#E95565',
-      dark: '#A91525',
+      main: palette.red.main,
+      light: palette.red.light,
+      dark: palette.red.dark,
     },
     success: {
-      main: '#2A7A44',
-      light: '#4A9A64',
-      dark: '#1A5A24',
+      main: palette.green.light,
+      light: palette.green.muted,
+      dark: palette.green.dark,
     },
     info: {
-      main: '#1A6A7A',
-      light: '#3A8A9A',
-      dark: '#0A4A5A',
+      main: palette.blue.main,
+      light: palette.blue.light,
+      dark: palette.blue.dark,
     },
     warning: {
-      main: '#B97420',
-      light: '#D99440',
-      dark: '#995400',
+      main: palette.orange.main,
+      light: palette.orange.light,
+      dark: palette.orange.dark,
     },
     background: {
-      default: lightPalette.background.default,
-      paper: lightPalette.background.paper,
+      default: lightColors.canvas.default,
+      paper: lightColors.canvas.default,
     },
     text: {
-      primary: lightPalette.text.primary,
-      secondary: lightPalette.text.secondary,
-      disabled: lightPalette.text.disabled,
+      primary: lightColors.fg.default,
+      secondary: lightColors.fg.muted,
+      disabled: lightColors.fg.subtle,
     },
-    divider: alpha(lightPalette.arcane.main, 0.12),
+    divider: lightColors.border.default,
     action: {
-      hover: alpha(lightPalette.arcane.main, 0.06),
-      selected: alpha(lightPalette.arcane.main, 0.12),
-      focus: alpha(lightPalette.arcane.main, 0.08),
+      hover: alpha(palette.blue.main, 0.06),
+      selected: alpha(palette.blue.main, 0.1),
+      focus: alpha(palette.blue.main, 0.08),
     },
   },
   components: {
@@ -838,8 +745,8 @@ const lightThemeOptions: ThemeOptions = {
     MuiCssBaseline: {
       styleOverrides: `
         ::selection {
-          background: ${alpha(lightPalette.arcane.main, 0.3)};
-          color: ${lightPalette.text.primary};
+          background: ${alpha(palette.blue.main, 0.3)};
+          color: ${lightColors.fg.default};
         }
         
         html {
@@ -848,7 +755,7 @@ const lightThemeOptions: ThemeOptions = {
         
         body {
           scrollbar-width: thin;
-          scrollbar-color: #D0D0D8 #F0F0F5;
+          scrollbar-color: ${lightColors.border.default} ${lightColors.canvas.inset};
         }
         
         ::-webkit-scrollbar {
@@ -857,17 +764,31 @@ const lightThemeOptions: ThemeOptions = {
         }
         
         ::-webkit-scrollbar-track {
-          background: #F0F0F5;
+          background: ${lightColors.canvas.inset};
         }
         
         ::-webkit-scrollbar-thumb {
-          background: #D0D0D8;
+          background: ${lightColors.border.default};
           border-radius: 5px;
-          border: 2px solid #F0F0F5;
+          border: 2px solid ${lightColors.canvas.inset};
         }
         
         ::-webkit-scrollbar-thumb:hover {
-          background: #B0B0B8;
+          background: ${lightColors.fg.subtle};
+        }
+        
+        /* GitHub-style code blocks */
+        code {
+          font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+          font-size: 85%;
+          background: ${lightColors.canvas.inset};
+          border-radius: 6px;
+          padding: 0.2em 0.4em;
+        }
+        
+        pre code {
+          background: transparent;
+          padding: 0;
         }
       `,
     },
@@ -875,11 +796,10 @@ const lightThemeOptions: ThemeOptions = {
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          backgroundColor: alpha('#FFFFFF', 0.85),
-          backdropFilter: 'blur(12px) saturate(180%)',
-          borderBottom: `1px solid ${alpha(lightPalette.arcane.main, 0.1)}`,
-          boxShadow: `0 1px 3px ${alpha('#000', 0.05)}`,
-          color: lightPalette.text.primary,
+          backgroundColor: lightColors.canvas.default,
+          borderBottom: `1px solid ${lightColors.border.default}`,
+          boxShadow: 'none',
+          color: lightColors.fg.default,
         },
       },
     },
@@ -887,152 +807,90 @@ const lightThemeOptions: ThemeOptions = {
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          backgroundColor: lightPalette.background.paper,
-          borderRadius: 8,
-          border: `1px solid ${alpha(lightPalette.arcane.main, 0.08)}`,
-          boxShadow: `0 1px 3px ${alpha('#000', 0.05)}, 0 1px 2px ${alpha('#000', 0.03)}`,
-          transition: 'all 0.3s ease-out',
+          backgroundColor: lightColors.canvas.default,
+          borderRadius: 6,
+          border: `1px solid ${lightColors.border.default}`,
+          boxShadow: `0 1px 0 ${alpha('#000', 0.04)}`,
           '&:hover': {
-            borderColor: alpha(lightPalette.arcane.main, 0.15),
-            boxShadow: `0 8px 24px ${alpha('#000', 0.08)}, 0 0 0 1px ${alpha(lightPalette.arcane.main, 0.05)} inset`,
+            boxShadow: `0 1px 3px ${alpha('#000', 0.08)}`,
           },
         },
       },
     },
     MuiPaper: {
-      defaultProps: {
-        elevation: 1,
-      },
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          backgroundColor: lightPalette.background.paper,
-          borderRadius: 12,
-          border: `1px solid ${alpha(lightPalette.arcane.main, 0.08)}`,
-        },
-        elevation0: {
-          boxShadow: 'none',
-          border: `1px solid ${alpha(lightPalette.arcane.main, 0.1)}`,
-        },
-        elevation1: {
-          boxShadow: `0 2px 8px ${alpha('#000', 0.06)}, 0 1px 3px ${alpha('#000', 0.04)}`,
-        },
-        elevation2: {
-          boxShadow: `0 4px 16px ${alpha('#000', 0.08)}, 0 2px 6px ${alpha('#000', 0.05)}`,
-        },
-        outlined: {
-          borderColor: alpha(lightPalette.arcane.main, 0.15),
-          borderWidth: 1,
+          backgroundColor: lightColors.canvas.default,
+          borderRadius: 6,
+          border: `1px solid ${lightColors.border.default}`,
         },
       },
     },
     MuiButton: {
       styleOverrides: {
-        root: {
-          borderRadius: 6,
-          padding: '10px 20px',
-          fontWeight: 600,
-          transition: 'all 0.2s ease-out',
-        },
-        contained: {
-          boxShadow: `0 2px 4px ${alpha(lightPalette.arcane.main, 0.2)}`,
-          '&:hover': {
-            boxShadow: `0 4px 12px ${alpha(lightPalette.arcane.main, 0.25)}`,
-            transform: 'translateY(-1px)',
-          },
-        },
         containedPrimary: {
-          background: `linear-gradient(135deg, ${lightPalette.arcane.main} 0%, ${lightPalette.arcane.dark} 100%)`,
-          color: '#E8F4F8 !important',
-          '& .MuiButton-startIcon, & .MuiButton-endIcon': {
-            color: '#E8F4F8',
-          },
+          backgroundColor: palette.green.light,
+          color: '#FFFFFF',
+          border: `1px solid ${alpha('#000', 0.1)}`,
           '&:hover': {
-            background: `linear-gradient(135deg, ${lightPalette.arcane.light} 0%, ${lightPalette.arcane.main} 100%)`,
+            backgroundColor: palette.green.main,
           },
         },
         containedSecondary: {
-          background: `linear-gradient(135deg, ${lightPalette.shimmer.main} 0%, ${lightPalette.shimmer.dark} 100%)`,
-          color: '#F8E8F4 !important',
-          '& .MuiButton-startIcon, & .MuiButton-endIcon': {
-            color: '#F8E8F4',
-          },
+          backgroundColor: lightColors.canvas.inset,
+          color: lightColors.fg.default,
+          border: `1px solid ${lightColors.border.default}`,
           '&:hover': {
-            background: `linear-gradient(135deg, ${lightPalette.shimmer.light} 0%, ${lightPalette.shimmer.main} 100%)`,
-          },
-        },
-        containedError: {
-          background: 'linear-gradient(135deg, #C93545 0%, #A91525 100%)',
-          color: '#FFF0F2 !important',
-          '& .MuiButton-startIcon, & .MuiButton-endIcon': {
-            color: '#FFF0F2',
-          },
-          '&:hover': {
-            background: 'linear-gradient(135deg, #E95565 0%, #C93545 100%)',
-          },
-        },
-        containedSuccess: {
-          background: 'linear-gradient(135deg, #2A7A44 0%, #1A5A24 100%)',
-          color: '#E8F8EE !important',
-          '& .MuiButton-startIcon, & .MuiButton-endIcon': {
-            color: '#E8F8EE',
-          },
-          '&:hover': {
-            background: 'linear-gradient(135deg, #4A9A64 0%, #2A7A44 100%)',
-          },
-        },
-        containedInfo: {
-          background: 'linear-gradient(135deg, #1A6A7A 0%, #0A4A5A 100%)',
-          color: '#E8F4F8 !important',
-          '& .MuiButton-startIcon, & .MuiButton-endIcon': {
-            color: '#E8F4F8',
-          },
-          '&:hover': {
-            background: 'linear-gradient(135deg, #3A8A9A 0%, #1A6A7A 100%)',
-          },
-        },
-        containedWarning: {
-          background: 'linear-gradient(135deg, #B97420 0%, #995400 100%)',
-          color: '#FFF8E8 !important',
-          '& .MuiButton-startIcon, & .MuiButton-endIcon': {
-            color: '#FFF8E8',
-          },
-          '&:hover': {
-            background: 'linear-gradient(135deg, #D99440 0%, #B97420 100%)',
+            backgroundColor: lightColors.border.muted,
+            borderColor: lightColors.fg.subtle,
           },
         },
         outlined: {
-          borderWidth: 1.5,
-          borderColor: alpha(lightPalette.arcane.main, 0.4),
+          borderColor: lightColors.border.default,
+          color: lightColors.fg.default,
+          backgroundColor: lightColors.canvas.default,
           '&:hover': {
-            borderWidth: 1.5,
-            borderColor: lightPalette.arcane.main,
-            backgroundColor: alpha(lightPalette.arcane.main, 0.05),
+            backgroundColor: lightColors.canvas.inset,
+            borderColor: lightColors.fg.subtle,
+          },
+        },
+        outlinedPrimary: {
+          borderColor: lightColors.border.default,
+          color: lightColors.fg.default,
+          '&:hover': {
+            backgroundColor: lightColors.canvas.inset,
+            borderColor: lightColors.fg.subtle,
           },
         },
       },
     },
     MuiChip: {
       styleOverrides: {
-        root: {
-          borderRadius: 4,
-          fontWeight: 500,
-          fontSize: '0.75rem',
-          height: 26,
-        },
         filled: {
-          backgroundColor: alpha(lightPalette.arcane.main, 0.1),
-          color: lightPalette.arcane.dark,
+          backgroundColor: palette.blue.subtle,
+          color: palette.blue.dark,
           '&:hover': {
-            backgroundColor: alpha(lightPalette.arcane.main, 0.18),
+            backgroundColor: alpha(palette.blue.main, 0.2),
           },
         },
         outlined: {
-          borderColor: alpha(lightPalette.arcane.main, 0.3),
+          borderColor: lightColors.border.default,
           '&:hover': {
-            borderColor: lightPalette.arcane.main,
-            backgroundColor: alpha(lightPalette.arcane.main, 0.05),
+            backgroundColor: lightColors.canvas.inset,
           },
+        },
+        colorSuccess: {
+          backgroundColor: palette.green.subtle,
+          color: palette.green.dark,
+        },
+        colorError: {
+          backgroundColor: palette.red.subtle,
+          color: palette.red.dark,
+        },
+        colorWarning: {
+          backgroundColor: palette.orange.subtle,
+          color: palette.orange.dark,
         },
       },
     },
@@ -1040,28 +898,23 @@ const lightThemeOptions: ThemeOptions = {
       styleOverrides: {
         root: {
           '& .MuiOutlinedInput-root': {
-            backgroundColor: lightPalette.background.paper,
+            backgroundColor: lightColors.canvas.default,
             '& fieldset': {
-              borderColor: alpha(lightPalette.arcane.main, 0.2),
+              borderColor: lightColors.border.default,
             },
             '&:hover fieldset': {
-              borderColor: alpha(lightPalette.arcane.main, 0.4),
+              borderColor: lightColors.fg.subtle,
             },
             '&.Mui-focused fieldset': {
-              borderColor: lightPalette.arcane.main,
-              borderWidth: 1.5,
-              boxShadow: `0 0 0 3px ${alpha(lightPalette.arcane.main, 0.08)}`,
+              borderColor: palette.blue.main,
+              borderWidth: 2,
+              boxShadow: `0 0 0 3px ${alpha(palette.blue.main, 0.15)}`,
             },
           },
           '& .MuiInputLabel-root': {
-            color: lightPalette.text.secondary,
+            color: lightColors.fg.muted,
             '&.Mui-focused': {
-              color: lightPalette.arcane.main,
-            },
-            '&.MuiInputLabel-shrink': {
-              backgroundColor: lightPalette.background.paper,
-              padding: '0 6px',
-              marginLeft: '-4px',
+              color: palette.blue.main,
             },
           },
         },
@@ -1071,17 +924,105 @@ const lightThemeOptions: ThemeOptions = {
       styleOverrides: {
         paper: {
           backgroundImage: 'none',
-          backgroundColor: lightPalette.background.paper,
-          borderRight: `1px solid ${alpha(lightPalette.arcane.main, 0.1)}`,
+          backgroundColor: lightColors.canvas.default,
+          borderRight: `1px solid ${lightColors.border.default}`,
         },
       },
     },
-    MuiLink: {
+    MuiAlert: {
+      styleOverrides: {
+        standardError: {
+          backgroundColor: palette.red.subtle,
+          borderColor: alpha(palette.red.main, 0.3),
+          color: palette.red.dark,
+          '& .MuiAlert-icon': {
+            color: palette.red.main,
+          },
+        },
+        standardSuccess: {
+          backgroundColor: palette.green.subtle,
+          borderColor: alpha(palette.green.main, 0.3),
+          color: palette.green.dark,
+          '& .MuiAlert-icon': {
+            color: palette.green.main,
+          },
+        },
+        standardInfo: {
+          backgroundColor: palette.blue.subtle,
+          borderColor: alpha(palette.blue.main, 0.3),
+          color: palette.blue.dark,
+          '& .MuiAlert-icon': {
+            color: palette.blue.main,
+          },
+        },
+        standardWarning: {
+          backgroundColor: palette.orange.subtle,
+          borderColor: alpha(palette.orange.main, 0.3),
+          color: palette.orange.dark,
+          '& .MuiAlert-icon': {
+            color: palette.orange.main,
+          },
+        },
+      },
+    },
+    MuiTooltip: {
+      styleOverrides: {
+        tooltip: {
+          backgroundColor: lightColors.fg.default,
+          color: lightColors.canvas.default,
+        },
+        arrow: {
+          color: lightColors.fg.default,
+        },
+      },
+    },
+    MuiAvatar: {
       styleOverrides: {
         root: {
-          color: lightPalette.arcane.dark,
+          border: `2px solid ${lightColors.border.default}`,
+        },
+      },
+    },
+    MuiPagination: {
+      styleOverrides: {
+        root: {
+          '& .MuiPaginationItem-root': {
+            borderRadius: 6,
+            border: `1px solid ${lightColors.border.default}`,
+            '&.Mui-selected': {
+              backgroundColor: palette.blue.main,
+              color: '#FFFFFF',
+              borderColor: palette.blue.main,
+            },
+          },
+        },
+      },
+    },
+    MuiTab: {
+      styleOverrides: {
+        root: {
+          color: lightColors.fg.muted,
+          '&.Mui-selected': {
+            color: lightColors.fg.default,
+          },
           '&:hover': {
-            color: lightPalette.arcane.main,
+            color: lightColors.fg.default,
+          },
+        },
+      },
+    },
+    MuiListItemButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: 6,
+          '&.Mui-selected': {
+            backgroundColor: alpha(palette.blue.main, 0.1),
+            '&:hover': {
+              backgroundColor: alpha(palette.blue.main, 0.15),
+            },
+          },
+          '&:hover': {
+            backgroundColor: lightColors.neutral.subtle,
           },
         },
       },
@@ -1090,9 +1031,9 @@ const lightThemeOptions: ThemeOptions = {
       styleOverrides: {
         paper: {
           backgroundImage: 'none',
-          backgroundColor: lightPalette.background.paper,
-          border: `1px solid ${alpha(lightPalette.arcane.main, 0.1)}`,
-          boxShadow: `0 24px 80px ${alpha('#000', 0.15)}`,
+          backgroundColor: lightColors.canvas.default,
+          border: `1px solid ${lightColors.border.default}`,
+          boxShadow: `0 8px 24px ${alpha('#000', 0.15)}`,
         },
       },
     },
@@ -1100,64 +1041,54 @@ const lightThemeOptions: ThemeOptions = {
       styleOverrides: {
         paper: {
           backgroundImage: 'none',
-          backgroundColor: lightPalette.background.paper,
-          border: `1px solid ${alpha(lightPalette.arcane.main, 0.08)}`,
-          boxShadow: `0 8px 32px ${alpha('#000', 0.1)}`,
+          backgroundColor: lightColors.canvas.default,
+          border: `1px solid ${lightColors.border.default}`,
+          boxShadow: `0 8px 24px ${alpha('#000', 0.12)}`,
         },
       },
     },
-    MuiTooltip: {
-      styleOverrides: {
-        tooltip: {
-          backgroundColor: lightPalette.text.primary,
-          color: lightPalette.background.paper,
-        },
-        arrow: {
-          color: lightPalette.text.primary,
-        },
-      },
-    },
-    MuiAlert: {
-      styleOverrides: {
-        standardError: {
-          backgroundColor: alpha('#C93545', 0.1),
-          color: '#A91525',
-        },
-        standardSuccess: {
-          backgroundColor: alpha('#2A7A44', 0.1),
-          color: '#1A5A24',
-        },
-        standardInfo: {
-          backgroundColor: alpha('#1A6A7A', 0.1),
-          color: '#0A4A5A',
-        },
-        standardWarning: {
-          backgroundColor: alpha('#B97420', 0.1),
-          color: '#995400',
-        },
-      },
-    },
-    MuiListItemButton: {
+    MuiMenuItem: {
       styleOverrides: {
         root: {
-          borderRadius: 6,
-          margin: '2px 8px',
+          '&:hover': {
+            backgroundColor: lightColors.canvas.inset,
+          },
           '&.Mui-selected': {
-            backgroundColor: alpha(lightPalette.arcane.main, 0.08),
-            '&:hover': {
-              backgroundColor: alpha(lightPalette.arcane.main, 0.12),
-            },
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              left: 0,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              width: 3,
-              height: '60%',
-              backgroundColor: lightPalette.arcane.main,
-              borderRadius: '0 2px 2px 0',
-            },
+            backgroundColor: alpha(palette.blue.main, 0.1),
+          },
+        },
+      },
+    },
+    MuiDivider: {
+      styleOverrides: {
+        root: {
+          borderColor: lightColors.border.default,
+        },
+      },
+    },
+    MuiSkeleton: {
+      styleOverrides: {
+        root: {
+          backgroundColor: lightColors.neutral.muted,
+        },
+      },
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        root: {
+          borderBottom: `1px solid ${lightColors.border.default}`,
+        },
+        head: {
+          fontWeight: 600,
+          backgroundColor: lightColors.canvas.inset,
+        },
+      },
+    },
+    MuiTableRow: {
+      styleOverrides: {
+        root: {
+          '&:hover': {
+            backgroundColor: lightColors.canvas.inset,
           },
         },
       },
@@ -1177,4 +1108,4 @@ export function getTheme(mode: 'light' | 'dark') {
 }
 
 // Export palette for use in components
-export { palette };
+export { palette, darkColors, lightColors };

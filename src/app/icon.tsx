@@ -14,7 +14,7 @@ export default function Icon() {
       <div
         style={{
           fontSize: 24,
-          background: 'linear-gradient(135deg, #1a1a2e 0%, #0d0d14 100%)',
+          background: 'linear-gradient(135deg, #0D1117 0%, #161B22 100%)',
           width: '100%',
           height: '100%',
           display: 'flex',
@@ -25,7 +25,7 @@ export default function Icon() {
       >
         <span
           style={{
-            background: 'linear-gradient(135deg, #22C55E 0%, #10B981 50%, #06B6D4 100%)',
+            background: 'linear-gradient(135deg, #58A6FF 0%, #0969DA 50%, #8250DF 100%)',
             backgroundClip: 'text',
             color: 'transparent',
             fontWeight: 'bold',

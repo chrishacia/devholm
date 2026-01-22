@@ -18,8 +18,8 @@ export default function Image() {
           width: '100%',
           display: 'flex',
           flexDirection: 'column',
-          backgroundColor: '#0a0c14',
-          fontFamily: '"Segoe UI", "Roboto", "Helvetica Neue", sans-serif',
+          backgroundColor: '#0D1117',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif',
         }}
       >
         {/* Background gradient overlay */}
@@ -31,11 +31,11 @@ export default function Image() {
             right: 0,
             bottom: 0,
             background:
-              'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(16, 185, 129, 0.1) 50%, rgba(6, 182, 212, 0.15) 100%)',
+              'linear-gradient(135deg, rgba(9, 105, 218, 0.15) 0%, rgba(130, 80, 223, 0.1) 50%, rgba(88, 166, 255, 0.15) 100%)',
           }}
         />
 
-        {/* Accent border at top */}
+        {/* Accent border at top - GitHub style */}
         <div
           style={{
             position: 'absolute',
@@ -43,7 +43,7 @@ export default function Image() {
             left: 0,
             right: 0,
             height: '6px',
-            background: 'linear-gradient(90deg, #22C55E 0%, #10B981 50%, #06B6D4 100%)',
+            background: 'linear-gradient(90deg, #58A6FF 0%, #0969DA 50%, #8250DF 100%)',
           }}
         />
 
@@ -71,19 +71,19 @@ export default function Image() {
                 width: '80px',
                 height: '80px',
                 borderRadius: '16px',
-                background: 'linear-gradient(135deg, #1a1a2e 0%, #0d0d14 100%)',
+                background: 'linear-gradient(135deg, #161B22 0%, #0D1117 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginRight: '24px',
-                border: '2px solid rgba(34, 197, 94, 0.3)',
+                border: '2px solid rgba(48, 54, 61, 0.8)',
               }}
             >
               <span
                 style={{
                   fontSize: '36px',
                   fontWeight: 'bold',
-                  background: 'linear-gradient(135deg, #22C55E 0%, #06B6D4 100%)',
+                  background: 'linear-gradient(135deg, #58A6FF 0%, #8250DF 100%)',
                   backgroundClip: 'text',
                   color: 'transparent',
                 }}
@@ -101,7 +101,7 @@ export default function Image() {
                 style={{
                   fontSize: '48px',
                   fontWeight: 'bold',
-                  color: '#ffffff',
+                  color: '#E6EDF3',
                   letterSpacing: '-0.02em',
                 }}
               >
@@ -110,7 +110,7 @@ export default function Image() {
               <span
                 style={{
                   fontSize: '24px',
-                  color: '#10B981',
+                  color: '#58A6FF',
                   fontWeight: 500,
                 }}
               >
@@ -123,7 +123,7 @@ export default function Image() {
           <div
             style={{
               fontSize: '28px',
-              color: 'rgba(255, 255, 255, 0.7)',
+              color: 'rgba(230, 237, 243, 0.7)',
               textAlign: 'center',
               maxWidth: '800px',
               lineHeight: 1.4,
@@ -133,7 +133,7 @@ export default function Image() {
             A modern, feature-rich personal website template built with Next.js, TypeScript, and Material UI
           </div>
 
-          {/* Tech stack pills */}
+          {/* Tech stack pills - GitHub style */}
           <div
             style={{
               display: 'flex',
@@ -142,17 +142,17 @@ export default function Image() {
               justifyContent: 'center',
             }}
           >
-            {['Next.js 15', 'React 19', 'TypeScript', 'PostgreSQL', 'Material UI'].map((tech) => (
+            {['Next.js 16', 'React 19', 'TypeScript', 'PostgreSQL', 'Material UI'].map((tech) => (
               <div
                 key={tech}
                 style={{
                   padding: '8px 20px',
-                  backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                  backgroundColor: 'rgba(9, 105, 218, 0.15)',
                   borderRadius: '20px',
                   fontSize: '18px',
-                  color: '#10B981',
+                  color: '#58A6FF',
                   fontWeight: 500,
-                  border: '1px solid rgba(34, 197, 94, 0.3)',
+                  border: '1px solid rgba(48, 54, 61, 0.8)',
                 }}
               >
                 {tech}
@@ -175,11 +175,11 @@ export default function Image() {
           <span
             style={{
               fontSize: '20px',
-              color: 'rgba(255, 255, 255, 0.5)',
+              color: 'rgba(230, 237, 243, 0.5)',
               letterSpacing: '0.05em',
             }}
           >
-            devholm.com
+            github.com/chrishacia/devholm
           </span>
         </div>
       </div>
