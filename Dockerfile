@@ -70,6 +70,11 @@ COPY --from=builder /app/src/db/migrations ./migrations
 COPY --from=builder /app/scripts/migrate.js ./migrate.js
 COPY --from=builder /app/scripts/seed-admin.js ./seed-admin.js
 
+# Copy telemetry script
+RUN mkdir -p ./scripts
+COPY --from=builder /app/scripts/telemetry-ping.sh ./scripts/telemetry-ping.sh
+RUN chmod +x ./scripts/telemetry-ping.sh
+
 # Copy all migration dependencies from pnpm deploy output (flat node_modules)
 COPY --from=builder /app/deploy/node_modules ./node_modules
 

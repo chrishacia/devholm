@@ -1,7 +1,7 @@
 # =============================================================================
 # GitHub Actions CI/CD Pipeline
 # =============================================================================
-# 
+#
 # Required GitHub Secrets:
 # -------------------------
 # PROJECT_NAME         - Unique project identifier (e.g., mysite)
@@ -333,12 +333,12 @@ jobs:
               extra_hosts:
                 - "host.docker.internal:host-gateway"
               depends_on: []
-            
+
             # Disable Docker PostgreSQL (using native PostgreSQL on host)
             postgres:
               profiles:
                 - disabled
-            
+
             # Disable built-in nginx (using external nginx on server)
             nginx:
               profiles:
@@ -352,37 +352,37 @@ jobs:
       - name: Deploy to server
         run: |
           echo "🚀 Starting deployment to ${{ secrets.DEPLOY_HOST }}"
-          
+
           # Copy docker-compose files to server
           scp -o StrictHostKeyChecking=no docker-compose.yml ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/
           scp -o StrictHostKeyChecking=no docker-compose.override.yml ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/
-          
+
           # Deploy on server
           ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'ENDSSH'
             cd ${{ secrets.DEPLOY_PATH }}
-            
+
             # Secure the override file (contains secrets)
             chmod 600 docker-compose.override.yml
-            
+
             echo "📥 Pulling latest Docker image..."
             docker compose pull app
-            
+
             echo "🔄 Starting services..."
             # Docker Compose automatically reads both docker-compose.yml AND docker-compose.override.yml
             docker compose up -d --remove-orphans
-            
+
             echo "⏳ Waiting for health check..."
             sleep 10
-            
+
             echo "🔍 Checking service status..."
             docker compose ps
-            
+
             # Migrations now run automatically via docker-entrypoint.sh
             # No need for manual migration step
-            
+
             echo "🧹 Cleaning up old images..."
             docker image prune -f
-            
+
             echo "✅ Deployment complete!"
           ENDSSH
 
