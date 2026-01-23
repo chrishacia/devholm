@@ -40,6 +40,23 @@ See [GITHUB_SECRETS.md](./GITHUB_SECRETS.md) for detailed instructions on settin
 
 ---
 
+## Port Configuration
+
+The application port is configured via the `APP_PORT` GitHub Secret. This port is used to:
+1. Map the Docker container's port 3000 to the host port
+2. Configure the nginx reverse proxy to forward traffic
+
+**Default:** `3000`
+
+**Multiple Sites:** If you're running multiple DevHolm instances (or other apps) on the same server, use different ports:
+- Site 1: `APP_PORT=3000`
+- Site 2: `APP_PORT=3001`
+- Site 3: `APP_PORT=3002`
+
+Your nginx configuration must match the port you specify. See the [Nginx Configuration](#nginx-configuration) section below.
+
+---
+
 ## Server Setup
 
 ### 1. Install Docker
@@ -176,6 +193,7 @@ server {
     add_header Strict-Transport-Security "max-age=63072000" always;
 
     # Proxy settings
+    # NOTE: The port (3000) must match your APP_PORT GitHub Secret
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
@@ -193,7 +211,7 @@ server {
         proxy_read_timeout 60s;
     }
 
-    # Static files
+    # Static files (port must match APP_PORT)
     location /_next/static {
         proxy_pass http://127.0.0.1:3000;
         proxy_cache_valid 60m;

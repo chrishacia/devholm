@@ -254,6 +254,7 @@ Set these **GitHub Secrets**:
 | `DEPLOY_USER` | SSH username |
 | `DEPLOY_KEY` | SSH private key |
 | `DEPLOY_PATH` | Deployment directory |
+| `APP_PORT` | Host port (default: 3000, use different port for multiple sites) |
 | `POSTGRES_PASSWORD` | Database password |
 | `AUTH_SECRET` | Auth encryption key |
 | `ADMIN_EMAIL` | Initial admin email |

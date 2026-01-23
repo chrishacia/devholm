@@ -20,6 +20,7 @@ Quick reference for setting up GitHub Actions secrets for automated deployment.
 | `DEPLOY_USER` | SSH username | Usually `root` or a deploy user like `deploy` |
 | `DEPLOY_KEY` | SSH private key | See [Generate SSH Key](#generate-ssh-key) below |
 | `DEPLOY_PATH` | Deployment directory | `/var/www/yoursite.com` |
+| `APP_PORT` | Host port for the application | Default: `3000`. Use a different port if running multiple sites |
 
 ### Database
 
@@ -91,6 +92,7 @@ b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
 ...full key content...
 -----END OPENSSH PRIVATE KEY-----
 DEPLOY_PATH=/var/www/yoursite.com
+APP_PORT=3000
 
 POSTGRES_USER=youruser
 POSTGRES_PASSWORD=xK9mN3pQ7rT2vW5yB8cF4hJ6
