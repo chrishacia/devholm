@@ -8,7 +8,7 @@
  */
 
 import { Box, Typography, Container, Grid2, Avatar, Chip, Paper, alpha } from '@mui/material';
-import { Code, Lightbulb, Rocket, Groups, Coffee, Psychology } from '@mui/icons-material';
+import { Code, Lightbulb, Rocket, Groups, Coffee, Psychology, Person } from '@mui/icons-material';
 import { AuthAwareMainLayout } from '@/components';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
 
@@ -47,7 +47,7 @@ export default function AboutPage() {
           <Grid2 container spacing={{ xs: 4, md: 5 }} alignItems="center">
             <Grid2 size={{ xs: 12, md: 4 }}>
               <Avatar
-                src={settings?.author?.avatarUrl || '/images/avatar-placeholder.png'}
+                src={settings?.author?.avatarUrl || undefined}
                 alt={authorName}
                 sx={{
                   width: { xs: 180, md: 220 },
@@ -57,8 +57,12 @@ export default function AboutPage() {
                   borderColor: 'primary.main',
                   boxShadow: (theme) =>
                     `0 0 30px ${alpha(theme.palette.primary.main, 0.25)}`,
+                  bgcolor: 'grey.500',
+                  fontSize: { xs: '4rem', md: '5rem' },
                 }}
-              />
+              >
+                <Person sx={{ fontSize: { xs: 100, md: 120 } }} />
+              </Avatar>
             </Grid2>
             <Grid2 size={{ xs: 12, md: 8 }}>
               <Typography variant="h2" component="h1" gutterBottom sx={{ fontWeight: 700 }}>
