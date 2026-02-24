@@ -47,6 +47,7 @@ import {
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { SafeImage } from '@/components/common';
+import { formatFileSize } from '@/lib/utils';
 
 interface MediaAsset {
   id: string;
@@ -74,14 +75,7 @@ interface MediaStats {
   totalSize: number;
 }
 
-// Format file size
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+// formatFileSize imported from @/lib/utils
 
 // Get icon for file type
 function getFileIcon(mimeType: string) {
@@ -200,12 +194,7 @@ function MediaCard({
 
       {/* File info */}
       <CardContent sx={{ py: 1.5 }}>
-        <Typography
-          variant="body2"
-          fontWeight={500}
-          noWrap
-          title={asset.originalFilename}
-        >
+        <Typography variant="body2" fontWeight={500} noWrap title={asset.originalFilename}>
           {asset.originalFilename}
         </Typography>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
@@ -238,11 +227,7 @@ function UploadProgress({ progress, filename }: { progress: number; filename: st
         <Typography variant="body2" noWrap>
           {filename}
         </Typography>
-        <LinearProgress
-          variant="determinate"
-          value={progress}
-          sx={{ mt: 1 }}
-        />
+        <LinearProgress variant="determinate" value={progress} sx={{ mt: 1 }} />
       </Box>
       {progress === 100 && <CheckCircle color="success" />}
     </Paper>
@@ -330,9 +315,7 @@ function MediaDetailDialog({
               ) : (
                 <Box sx={{ textAlign: 'center', color: 'text.secondary' }}>
                   {getFileIcon(asset.mimeType)}
-                  <Typography sx={{ mt: 1 }}>
-                    {asset.mimeType}
-                  </Typography>
+                  <Typography sx={{ mt: 1 }}>{asset.mimeType}</Typography>
                 </Box>
               )}
             </Box>
@@ -360,7 +343,9 @@ function MediaDetailDialog({
                   <Typography variant="subtitle2" color="text.secondary">
                     Dimensions
                   </Typography>
-                  <Typography>{asset.width} × {asset.height} px</Typography>
+                  <Typography>
+                    {asset.width} × {asset.height} px
+                  </Typography>
                 </Box>
               )}
 
@@ -368,9 +353,7 @@ function MediaDetailDialog({
                 <Typography variant="subtitle2" color="text.secondary">
                   Uploaded
                 </Typography>
-                <Typography>
-                  {format(new Date(asset.createdAt), 'MMM d, yyyy h:mm a')}
-                </Typography>
+                <Typography>{format(new Date(asset.createdAt), 'MMM d, yyyy h:mm a')}</Typography>
               </Box>
 
               <Box>
@@ -452,8 +435,14 @@ export default function MediaLibraryPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{ filename: string; progress: number }[]>([]);
-  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+  const [uploadProgress, setUploadProgress] = useState<{ filename: string; progress: number }[]>(
+    []
+  );
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error';
+  }>({
     open: false,
     message: '',
     severity: 'success',
@@ -468,11 +457,11 @@ export default function MediaLibraryPage() {
         page: String(page),
         limit: '20',
       });
-      
+
       if (tabTypes[tabValue] !== 'all') {
         params.set('type', tabTypes[tabValue]);
       }
-      
+
       if (search) {
         params.set('search', search);
       }
@@ -490,7 +479,7 @@ export default function MediaLibraryPage() {
     } finally {
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, tabValue, search]);
 
   useEffect(() => {
@@ -514,11 +503,7 @@ export default function MediaLibraryPage() {
 
       try {
         // Simulate progress
-        setUploadProgress((prev) =>
-          prev.map((p, idx) =>
-            idx === i ? { ...p, progress: 50 } : p
-          )
-        );
+        setUploadProgress((prev) => prev.map((p, idx) => (idx === i ? { ...p, progress: 50 } : p)));
 
         const res = await fetch('/api/admin/media', {
           method: 'POST',
@@ -527,9 +512,7 @@ export default function MediaLibraryPage() {
 
         if (res.ok) {
           setUploadProgress((prev) =>
-            prev.map((p, idx) =>
-              idx === i ? { ...p, progress: 100 } : p
-            )
+            prev.map((p, idx) => (idx === i ? { ...p, progress: 100 } : p))
           );
         } else {
           const error = await res.json();
@@ -658,12 +641,30 @@ export default function MediaLibraryPage() {
   return (
     <Box sx={{ maxWidth: '100%', overflow: 'hidden' }}>
       {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: { xs: 2, sm: 4 }, flexWrap: 'wrap', gap: 2 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          mb: { xs: 2, sm: 4 },
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
         <Box>
-          <Typography variant="h4" fontWeight={700} gutterBottom sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem', md: '2.125rem' } }}>
+          <Typography
+            variant="h4"
+            fontWeight={700}
+            gutterBottom
+            sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem', md: '2.125rem' } }}
+          >
             Media Library
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
+          >
             Manage your uploaded files and images
           </Typography>
         </Box>
@@ -690,71 +691,176 @@ export default function MediaLibraryPage() {
         <Grid container spacing={{ xs: 1, sm: 2 }} sx={{ mb: { xs: 2, sm: 3 } }}>
           <Grid size={{ xs: 6, sm: 4, md: 2 }}>
             <Card sx={{ height: '100%' }}>
-              <CardContent sx={{ textAlign: 'center', p: { xs: 1, sm: 2 }, '&:last-child': { pb: { xs: 1, sm: 2 } } }}>
-                <Typography variant="h4" fontWeight={700} sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem' } }}>
+              <CardContent
+                sx={{
+                  textAlign: 'center',
+                  p: { xs: 1, sm: 2 },
+                  '&:last-child': { pb: { xs: 1, sm: 2 } },
+                }}
+              >
+                <Typography
+                  variant="h4"
+                  fontWeight={700}
+                  sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem' } }}
+                >
                   {stats.total}
                 </Typography>
-                <Typography color="text.secondary" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>Total Files</Typography>
+                <Typography
+                  color="text.secondary"
+                  sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                >
+                  Total Files
+                </Typography>
               </CardContent>
             </Card>
           </Grid>
           <Grid size={{ xs: 6, sm: 4, md: 2 }}>
             <Card sx={{ height: '100%' }}>
-              <CardContent sx={{ textAlign: 'center', p: { xs: 1, sm: 2 }, '&:last-child': { pb: { xs: 1, sm: 2 } } }}>
-                <Typography variant="h4" fontWeight={700} sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem' } }}>
+              <CardContent
+                sx={{
+                  textAlign: 'center',
+                  p: { xs: 1, sm: 2 },
+                  '&:last-child': { pb: { xs: 1, sm: 2 } },
+                }}
+              >
+                <Typography
+                  variant="h4"
+                  fontWeight={700}
+                  sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem' } }}
+                >
                   {stats.images}
                 </Typography>
-                <Typography color="text.secondary" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>Images</Typography>
+                <Typography
+                  color="text.secondary"
+                  sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                >
+                  Images
+                </Typography>
               </CardContent>
             </Card>
           </Grid>
           <Grid size={{ xs: 6, sm: 4, md: 2 }}>
             <Card sx={{ height: '100%' }}>
-              <CardContent sx={{ textAlign: 'center', p: { xs: 1, sm: 2 }, '&:last-child': { pb: { xs: 1, sm: 2 } } }}>
-                <Typography variant="h4" fontWeight={700} sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem' } }}>
+              <CardContent
+                sx={{
+                  textAlign: 'center',
+                  p: { xs: 1, sm: 2 },
+                  '&:last-child': { pb: { xs: 1, sm: 2 } },
+                }}
+              >
+                <Typography
+                  variant="h4"
+                  fontWeight={700}
+                  sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem' } }}
+                >
                   {stats.videos}
                 </Typography>
-                <Typography color="text.secondary" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>Videos</Typography>
+                <Typography
+                  color="text.secondary"
+                  sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                >
+                  Videos
+                </Typography>
               </CardContent>
             </Card>
           </Grid>
           <Grid size={{ xs: 6, sm: 4, md: 2 }}>
             <Card sx={{ height: '100%' }}>
-              <CardContent sx={{ textAlign: 'center', p: { xs: 1, sm: 2 }, '&:last-child': { pb: { xs: 1, sm: 2 } } }}>
-                <Typography variant="h4" fontWeight={700} sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem' } }}>
+              <CardContent
+                sx={{
+                  textAlign: 'center',
+                  p: { xs: 1, sm: 2 },
+                  '&:last-child': { pb: { xs: 1, sm: 2 } },
+                }}
+              >
+                <Typography
+                  variant="h4"
+                  fontWeight={700}
+                  sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem' } }}
+                >
                   {stats.audio}
                 </Typography>
-                <Typography color="text.secondary" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>Audio</Typography>
+                <Typography
+                  color="text.secondary"
+                  sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                >
+                  Audio
+                </Typography>
               </CardContent>
             </Card>
           </Grid>
           <Grid size={{ xs: 6, sm: 4, md: 2 }}>
             <Card sx={{ height: '100%' }}>
-              <CardContent sx={{ textAlign: 'center', p: { xs: 1, sm: 2 }, '&:last-child': { pb: { xs: 1, sm: 2 } } }}>
-                <Typography variant="h4" fontWeight={700} sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem' } }}>
+              <CardContent
+                sx={{
+                  textAlign: 'center',
+                  p: { xs: 1, sm: 2 },
+                  '&:last-child': { pb: { xs: 1, sm: 2 } },
+                }}
+              >
+                <Typography
+                  variant="h4"
+                  fontWeight={700}
+                  sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem' } }}
+                >
                   {stats.documents}
                 </Typography>
-                <Typography color="text.secondary" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>Documents</Typography>
+                <Typography
+                  color="text.secondary"
+                  sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                >
+                  Documents
+                </Typography>
               </CardContent>
             </Card>
           </Grid>
           <Grid size={{ xs: 6, sm: 4, md: 2 }}>
             <Card sx={{ height: '100%' }}>
-              <CardContent sx={{ textAlign: 'center', p: { xs: 1, sm: 2 }, '&:last-child': { pb: { xs: 1, sm: 2 } } }}>
-                <Typography variant="h4" fontWeight={700} sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem' } }}>
+              <CardContent
+                sx={{
+                  textAlign: 'center',
+                  p: { xs: 1, sm: 2 },
+                  '&:last-child': { pb: { xs: 1, sm: 2 } },
+                }}
+              >
+                <Typography
+                  variant="h4"
+                  fontWeight={700}
+                  sx={{ fontSize: { xs: '1.25rem', sm: '1.75rem' } }}
+                >
                   {stats.other}
                 </Typography>
-                <Typography color="text.secondary" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>Other</Typography>
+                <Typography
+                  color="text.secondary"
+                  sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                >
+                  Other
+                </Typography>
               </CardContent>
             </Card>
           </Grid>
           <Grid size={{ xs: 6, sm: 4, md: 2 }}>
             <Card sx={{ height: '100%' }}>
-              <CardContent sx={{ textAlign: 'center', p: { xs: 1, sm: 2 }, '&:last-child': { pb: { xs: 1, sm: 2 } } }}>
-                <Typography variant="h4" fontWeight={700} sx={{ fontSize: { xs: '1rem', sm: '1.75rem' } }}>
+              <CardContent
+                sx={{
+                  textAlign: 'center',
+                  p: { xs: 1, sm: 2 },
+                  '&:last-child': { pb: { xs: 1, sm: 2 } },
+                }}
+              >
+                <Typography
+                  variant="h4"
+                  fontWeight={700}
+                  sx={{ fontSize: { xs: '1rem', sm: '1.75rem' } }}
+                >
                   {formatFileSize(stats.totalSize)}
                 </Typography>
-                <Typography color="text.secondary" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>Total Size</Typography>
+                <Typography
+                  color="text.secondary"
+                  sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                >
+                  Total Size
+                </Typography>
               </CardContent>
             </Card>
           </Grid>
@@ -870,7 +976,14 @@ export default function MediaLibraryPage() {
       ) : media.length === 0 ? (
         <Card>
           <CardContent sx={{ textAlign: 'center', py: 8 }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
               <FolderOpen sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
               <Typography variant="h6" gutterBottom>
                 No files found
@@ -918,19 +1031,13 @@ export default function MediaLibraryPage() {
           {/* Pagination */}
           {totalPages > 1 && (
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4, gap: 1 }}>
-              <Button
-                disabled={page === 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
+              <Button disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
                 Previous
               </Button>
               <Typography sx={{ display: 'flex', alignItems: 'center', px: 2 }}>
                 Page {page} of {totalPages}
               </Typography>
-              <Button
-                disabled={page === totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
+              <Button disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>
                 Next
               </Button>
             </Box>
@@ -939,11 +1046,7 @@ export default function MediaLibraryPage() {
       )}
 
       {/* Context Menu */}
-      <Menu
-        anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
-        onClose={() => setMenuAnchor(null)}
-      >
+      <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
         <MenuItem
           onClick={() => {
             setDetailOpen(true);
@@ -997,7 +1100,8 @@ export default function MediaLibraryPage() {
         <DialogTitle>Delete Files</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to delete {selectedIds.size} file(s)? This action cannot be undone.
+            Are you sure you want to delete {selectedIds.size} file(s)? This action cannot be
+            undone.
           </Typography>
         </DialogContent>
         <DialogActions>

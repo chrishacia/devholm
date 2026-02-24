@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { getDb } from '@/db';
+import { checkRateLimit } from '@/lib/rate-limiter';
+import { rateLimit as rateLimitConfig } from '@/config/env';
 
 /**
  * POST /api/auth/verify
@@ -8,13 +10,37 @@ import { getDb } from '@/db';
  */
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit login attempts
+    const ip =
+      request.headers.get('x-forwarded-for')?.split(',')[0] ||
+      request.headers.get('x-real-ip') ||
+      'unknown';
+
+    const rateLimitResult = await checkRateLimit({
+      action: 'auth:login',
+      identifier: ip,
+      maxRequests: rateLimitConfig.loginMaxAttempts,
+      windowMs: rateLimitConfig.windowMs,
+    });
+
+    if (!rateLimitResult.allowed) {
+      return NextResponse.json(
+        { error: 'Too many login attempts. Please try again later.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(rateLimitResult.retryAfterSeconds),
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': rateLimitResult.resetAt.toISOString(),
+          },
+        }
+      );
+    }
+
     const { email, password } = await request.json();
 
     if (!email || !password) {
-      return NextResponse.json(
-        { error: 'Email and password required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
     }
 
     const db = getDb();
@@ -24,19 +50,13 @@ export async function POST(request: NextRequest) {
       .first();
 
     if (!user) {
-      return NextResponse.json(
-        { error: 'Invalid credentials' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
     const isValidPassword = await bcrypt.compare(password, user.password_hash);
 
     if (!isValidPassword) {
-      return NextResponse.json(
-        { error: 'Invalid credentials' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
     // Return user without password hash
@@ -48,9 +68,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Verify error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

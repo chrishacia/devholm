@@ -24,6 +24,7 @@
 #
 # Optional Secrets:
 # -----------------
+# APP_PORT             - Host port (default: 3000, use different for multiple sites)
 # CSRF_SECRET          - CSRF protection secret
 # DOCKERHUB_USERNAME   - For pushing to Docker Hub instead of GHCR
 # DOCKERHUB_TOKEN      - Docker Hub access token
@@ -377,7 +378,7 @@ jobs:
 
             echo "🔍 Checking service status..."
             docker compose ps
-            
+
             # Verify container is actually running
             CONTAINER_STATUS=$(docker compose ps --format json | grep -o '"State":"[^"]*"' | head -1 | cut -d'"' -f4)
             if [ "$CONTAINER_STATUS" != "running" ]; then

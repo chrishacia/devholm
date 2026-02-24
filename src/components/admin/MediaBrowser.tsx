@@ -20,14 +20,9 @@ import {
   IconButton,
   LinearProgress,
 } from '@mui/material';
-import {
-  CloudUpload,
-  Search,
-  Image as ImageIcon,
-  CheckCircle,
-  Close,
-} from '@mui/icons-material';
+import { CloudUpload, Search, Image as ImageIcon, CheckCircle, Close } from '@mui/icons-material';
 import { SafeImage } from '@/components/common';
+import { formatFileSize } from '@/lib/utils';
 
 interface MediaAsset {
   id: string;
@@ -50,14 +45,7 @@ interface MediaBrowserProps {
   acceptedTypes?: 'images' | 'documents' | 'all';
 }
 
-// Format file size
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+// formatFileSize imported from @/lib/utils
 
 export default function MediaBrowser({
   open,
@@ -83,11 +71,11 @@ export default function MediaBrowser({
         page: String(page),
         limit: '12',
       });
-      
+
       if (acceptedTypes !== 'all') {
         params.set('type', acceptedTypes);
       }
-      
+
       if (search) {
         params.set('search', search);
       }
@@ -124,7 +112,7 @@ export default function MediaBrowser({
 
   const handleUpload = async (files: FileList) => {
     if (files.length === 0) return;
-    
+
     setUploading(true);
     setUploadProgress(0);
 
@@ -143,11 +131,11 @@ export default function MediaBrowser({
       if (res.ok) {
         const uploaded = await res.json();
         setUploadProgress(100);
-        
+
         // Auto-select the uploaded file
         setSelectedAsset(uploaded);
         setTabValue(0);
-        
+
         // Refresh the list
         await fetchMedia();
       } else {
@@ -183,7 +171,11 @@ export default function MediaBrowser({
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
             <Tab label="Browse Library" />
-            <Tab label="Upload New" icon={<CloudUpload sx={{ fontSize: 18 }} />} iconPosition="start" />
+            <Tab
+              label="Upload New"
+              icon={<CloudUpload sx={{ fontSize: 18 }} />}
+              iconPosition="start"
+            />
           </Tabs>
         </Box>
 
@@ -246,8 +238,8 @@ export default function MediaBrowser({
                             borderColor: isSelected
                               ? 'primary.main'
                               : isCurrentlyUsed
-                              ? 'success.main'
-                              : 'transparent',
+                                ? 'success.main'
+                                : 'transparent',
                             transition: 'all 0.2s',
                             '&:hover': {
                               borderColor: isSelected ? 'primary.main' : 'primary.light',
@@ -403,18 +395,17 @@ export default function MediaBrowser({
               <Typography variant="caption" color="text.secondary">
                 {formatFileSize(selectedAsset.fileSize)}
                 {selectedAsset.width && selectedAsset.height && (
-                  <> • {selectedAsset.width}×{selectedAsset.height}</>
+                  <>
+                    {' '}
+                    • {selectedAsset.width}×{selectedAsset.height}
+                  </>
                 )}
               </Typography>
             </Box>
           </Box>
         )}
         <Button onClick={onClose}>Cancel</Button>
-        <Button
-          variant="contained"
-          onClick={handleSelect}
-          disabled={!selectedAsset}
-        >
+        <Button variant="contained" onClick={handleSelect} disabled={!selectedAsset}>
           Select
         </Button>
       </DialogActions>

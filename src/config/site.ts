@@ -1,5 +1,5 @@
 import { SiteConfig } from '@/types';
-import { app, author, social, upload, rateLimit } from './env';
+import { app, author, social } from './env';
 
 // Note: These are build-time defaults. Runtime values come from the database
 // via useSiteSettings hook. Keep personal info in .env (gitignored), not here.
@@ -40,13 +40,6 @@ export const footerNavigation = {
   ],
 };
 
-export const adminNavigation = [
-  { label: 'Dashboard', href: '/admin' },
-  { label: 'Posts', href: '/admin/posts' },
-  { label: 'Inbox', href: '/admin/inbox' },
-  { label: 'Media', href: '/admin/media' },
-];
-
 // SEO defaults - customize these for your site
 export const defaultSeoConfig = {
   titleTemplate: '%s | My Site',
@@ -63,18 +56,4 @@ export const defaultSeoConfig = {
     site: '',
     cardType: 'summary_large_image',
   },
-};
-
-// File upload configuration
-export const uploadConfig = {
-  maxSizeMb: upload.maxSizeMb,
-  allowedTypes: upload.allowedTypes,
-  uploadPath: upload.path,
-};
-
-// Rate limiting configuration
-export const rateLimitConfig = {
-  windowMs: rateLimit.windowMs,
-  maxRequests: rateLimit.maxRequests,
-  loginMaxAttempts: rateLimit.loginMaxAttempts,
 };

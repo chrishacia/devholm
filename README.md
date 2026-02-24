@@ -19,6 +19,7 @@ A modern, feature-rich **personal website template** built with **Next.js 16**, 
 ## ✨ Features
 
 ### 🖥️ Modern Tech Stack
+
 - **Next.js 16** with App Router and Server Components
 - **React 19** with the latest features
 - **TypeScript** for type safety
@@ -26,6 +27,7 @@ A modern, feature-rich **personal website template** built with **Next.js 16**, 
 - **PostgreSQL** with Knex.js for robust data management
 
 ### 📝 Content Management
+
 - **Blog System** — Markdown support, tags, series, reading time, RSS feed
 - **Projects Portfolio** — Showcase your work with images and links
 - **Resume/CV** — Display your professional experience
@@ -33,6 +35,7 @@ A modern, feature-rich **personal website template** built with **Next.js 16**, 
 - **Uses Page** — Document your tools and setup
 
 ### 🔐 Admin Dashboard
+
 - **Post Management** — Create, edit, and schedule blog posts
 - **Media Library** — Upload and manage images with automatic optimization
 - **Contact Inbox** — View and manage form submissions
@@ -40,12 +43,14 @@ A modern, feature-rich **personal website template** built with **Next.js 16**, 
 - **Site Settings** — Configure your site from the admin panel
 
 ### 🎨 Design & UX
+
 - **Light/Dark Mode** — System preference detection + manual toggle
 - **Fully Responsive** — Looks great on all devices
 - **Accessible** — WCAG compliant components
 - **SEO Optimized** — Dynamic OG images, sitemap, structured data
 
 ### 🚀 Developer Experience
+
 - **Docker Ready** — Production-ready Dockerfile and compose setup
 - **CI/CD Pipeline** — GitHub Actions for testing, building, and deployment
 - **E2E Testing** — Playwright test suite included
@@ -69,51 +74,74 @@ cd my-site
 pnpm install
 ```
 
-### 2. Configure Environment
+### 2. Setup PostgreSQL Database
+
+**Option A: Using Docker (recommended for development)**
+
+```bash
+# Start PostgreSQL in Docker
+docker run --name devholm-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mysite_dev -p 5432:5432 -d postgres:16
+
+# Verify it's running
+docker ps
+```
+
+**Option B: Local PostgreSQL**
+
+```bash
+# macOS (Homebrew)
+brew install postgresql@16
+brew services start postgresql@16
+
+# Create database
+createdb mysite_dev
+```
+
+**Option C: Using existing PostgreSQL**
+
+Just update the database credentials in your `.env` file (see next step).
+
+### 3. Configure Environment
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your configuration:
+Edit `.env` with your configuration. The most important settings are:
 
 ```env
-# Site Info
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-NEXT_PUBLIC_SITE_NAME="Your Site Name"
-NEXT_PUBLIC_AUTHOR_NAME="Your Name"
-NEXT_PUBLIC_AUTHOR_EMAIL=you@example.com
-
-# Database
+# Database (required)
 DATABASE_HOST=localhost
 DATABASE_PORT=5432
 DATABASE_NAME=mysite_dev
 DATABASE_USER=postgres
-DATABASE_PASSWORD=yourpassword
+DATABASE_PASSWORD=postgres
 
-# Authentication
-AUTH_SECRET=generate-a-secure-secret
-AUTH_URL=http://localhost:3000
+# Or use a connection URL instead:
+# DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mysite_dev
 
-# Admin (for initial setup)
-ADMIN_EMAIL=admin@yourdomain.com
+# Admin credentials (used when seeding)
+ADMIN_EMAIL=admin@localhost.com
 ADMIN_PASSWORD=your-secure-password
+
+# Authentication secret (any string for dev, generate for production)
+AUTH_SECRET=dev_secret_change_in_production
+AUTH_URL=http://localhost:3000
 ```
 
-### 3. Setup Database
+> 📝 **Note:** See `.env.example` for all available configuration options including social links, file upload settings, and rate limiting.
+
+### 4. Setup Database Schema & Admin User
 
 ```bash
-# Run migrations
+# Create database tables
 pnpm db:migrate
 
-# Seed initial admin user
+# Create your admin user (uses ADMIN_EMAIL and ADMIN_PASSWORD from .env)
 pnpm seed:admin
-
-# (Optional) Seed example data
-pnpm db:seed
 ```
 
-### 4. Start Development Server
+### 5. Start Development Server
 
 ```bash
 pnpm dev
@@ -121,7 +149,29 @@ pnpm dev
 
 Visit [http://localhost:3000](http://localhost:3000) 🎉
 
-Admin panel: [http://localhost:3000/admin](http://localhost:3000/admin)
+**Admin panel:** [http://localhost:3000/admin](http://localhost:3000/admin)
+
+Login with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` from your `.env` file.
+
+---
+
+### Troubleshooting
+
+**Database connection errors:**
+
+- Verify PostgreSQL is running: `pg_isready` or `docker ps`
+- Check credentials in `.env` match your PostgreSQL setup
+- Ensure the database exists: `psql -l` to list databases
+
+**Migration errors:**
+
+- Check for pending migrations: `pnpm db:migrate`
+- Reset and start fresh: `pnpm db:migrate:rollback` then `pnpm db:migrate`
+
+**Admin user not working:**
+
+- Re-run the seed: `pnpm seed:admin`
+- Check the email/password in your `.env` file
 
 ---
 
@@ -160,21 +210,63 @@ Admin panel: [http://localhost:3000/admin](http://localhost:3000/admin)
 
 ## 🔧 Available Scripts
 
-| Command | Description |
-|---------|-------------|
-| `pnpm dev` | Start development server |
-| `pnpm build` | Build for production |
-| `pnpm start` | Start production server |
-| `pnpm lint` | Run ESLint |
-| `pnpm lint:fix` | Fix ESLint errors |
-| `pnpm typecheck` | Run TypeScript checks |
-| `pnpm test` | Run unit tests (Vitest) |
-| `pnpm test:watch` | Run tests in watch mode |
-| `pnpm test:e2e` | Run E2E tests (Playwright) |
-| `pnpm db:migrate` | Run database migrations |
-| `pnpm db:migrate:rollback` | Rollback last migration |
-| `pnpm db:seed` | Run all seed files |
-| `pnpm seed:admin` | Create initial admin user |
+| Command                    | Description                |
+| -------------------------- | -------------------------- |
+| `pnpm dev`                 | Start development server   |
+| `pnpm build`               | Build for production       |
+| `pnpm start`               | Start production server    |
+| `pnpm lint`                | Run ESLint                 |
+| `pnpm lint:fix`            | Fix ESLint errors          |
+| `pnpm typecheck`           | Run TypeScript checks      |
+| `pnpm test`                | Run unit tests (Vitest)    |
+| `pnpm test:watch`          | Run tests in watch mode    |
+| `pnpm test:e2e`            | Run E2E tests (Playwright) |
+| `pnpm db:migrate`          | Run database migrations    |
+| `pnpm db:migrate:rollback` | Rollback last migration    |
+| `pnpm db:seed`             | Run all seed files         |
+| `pnpm seed:admin`          | Create initial admin user  |
+
+---
+
+## ⚙️ Configuration Architecture
+
+This project uses a **centralized environment configuration** system:
+
+```
+.env.example          # Template with all available variables (check into git)
+.env                  # Your local configuration (NOT in git)
+src/config/env.ts     # TypeScript config that reads from process.env
+src/config/site.ts    # Static site configuration
+```
+
+### How it works
+
+1. Copy `.env.example` to `.env` for local development
+2. The app reads environment variables via `src/config/env.ts`
+3. All configs have sensible defaults for development
+4. Production uses GitHub Secrets → Docker environment variables
+
+### Environment Variables Reference
+
+| Variable                       | Description                  | Default                 |
+| ------------------------------ | ---------------------------- | ----------------------- |
+| `NEXT_PUBLIC_APP_URL`          | Public site URL              | `http://localhost:3000` |
+| `NEXT_PUBLIC_SITE_NAME`        | Site name for UI/SEO         | `My Site`               |
+| `NEXT_PUBLIC_SITE_DESCRIPTION` | Site description for SEO     | `A personal website`    |
+| `NEXT_PUBLIC_AUTHOR_NAME`      | Author name                  | `Your Name`             |
+| `NEXT_PUBLIC_AUTHOR_EMAIL`     | Author email                 | `you@example.com`       |
+| `DATABASE_URL`                 | Full database connection URL | -                       |
+| `DATABASE_HOST`                | Database host                | `localhost`             |
+| `DATABASE_PORT`                | Database port                | `5432`                  |
+| `DATABASE_NAME`                | Database name                | `mysite`                |
+| `DATABASE_USER`                | Database user                | `postgres`              |
+| `DATABASE_PASSWORD`            | Database password            | -                       |
+| `AUTH_SECRET`                  | NextAuth secret              | `dev-secret...`         |
+| `AUTH_URL`                     | Auth callback URL            | `http://localhost:3000` |
+| `ADMIN_EMAIL`                  | Admin email for seeding      | `admin@localhost.com`   |
+| `ADMIN_PASSWORD`               | Admin password for seeding   | `changeme123`           |
+
+> 📋 See `.env.example` for the complete list including social links, upload settings, and rate limiting options.
 
 ---
 
@@ -212,6 +304,7 @@ See [THEMING.md](./THEMING.md) for detailed theming documentation.
 ### Content Pages
 
 Edit the page content in:
+
 - `src/app/about/AboutPageClient.tsx` — Your bio and story
 - `src/app/now/NowPageClient.tsx` — What you're working on
 - `src/app/uses/UsesPageClient.tsx` — Your tools and setup
@@ -219,6 +312,7 @@ Edit the page content in:
 ### Resume & Projects
 
 Seed your own data by editing:
+
 - `src/db/seeds/seed-resume-example.ts` — Your work experience
 - `src/db/seeds/seed-projects-example.ts` — Your projects
 
@@ -241,6 +335,7 @@ docker-compose up -d
 ### GitHub Actions CI/CD
 
 The included workflow automatically:
+
 1. Runs linting and type checks
 2. Runs unit and E2E tests
 3. Builds Docker image
@@ -248,25 +343,32 @@ The included workflow automatically:
 
 > 💡 **Note:** GitHub Actions are **free for public repositories**. If you fork/clone this repo and make it private, you'll be charged for Actions minutes. See [GitHub's pricing](https://docs.github.com/en/billing/managing-billing-for-github-actions/about-billing-for-github-actions) for details.
 
-Set these **GitHub Secrets**:
+Set these **GitHub Secrets** (13 required):
 
-| Secret | Description |
-|--------|-------------|
-| `DEPLOY_HOST` | Server hostname/IP |
-| `DEPLOY_USER` | SSH username |
-| `DEPLOY_KEY` | SSH private key |
-| `DEPLOY_PATH` | Deployment directory |
-| `APP_PORT` | Host port (default: 3000, use different port for multiple sites) |
-| `POSTGRES_PASSWORD` | Database password |
-| `AUTH_SECRET` | Auth encryption key |
-| `ADMIN_EMAIL` | Initial admin email |
-| `ADMIN_PASSWORD` | Initial admin password |
+| Secret              | Description                                   |
+| ------------------- | --------------------------------------------- |
+| `PROJECT_NAME`      | Unique identifier for Docker (e.g., `mysite`) |
+| `SITE_URL`          | Production URL (e.g., `https://yoursite.com`) |
+| `SITE_NAME`         | Display name for the site                     |
+| `DEPLOY_HOST`       | Server hostname/IP                            |
+| `DEPLOY_USER`       | SSH username                                  |
+| `DEPLOY_KEY`        | SSH private key                               |
+| `DEPLOY_PATH`       | Deployment directory                          |
+| `POSTGRES_USER`     | Database username                             |
+| `POSTGRES_PASSWORD` | Database password                             |
+| `POSTGRES_DB`       | Database name                                 |
+| `NEXTAUTH_SECRET`   | Auth encryption key                           |
+| `ADMIN_EMAIL`       | Initial admin email                           |
+| `ADMIN_PASSWORD`    | Initial admin password                        |
+
+**Optional:** `APP_PORT` (default: 3000), `CSRF_SECRET`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`
 
 📖 See [DEPLOYMENT.md](./DEPLOYMENT.md) and [GITHUB_SECRETS.md](./GITHUB_SECRETS.md) for detailed guides.
 
 ### Vercel / Netlify
 
 While optimized for self-hosting, you can also deploy to:
+
 - **Vercel** — Works out of the box (requires external PostgreSQL)
 - **Railway** — Full-stack deployment with managed PostgreSQL
 - **Render** — Free tier available

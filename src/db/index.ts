@@ -8,6 +8,16 @@ let db: Knex | null = null;
  */
 export function getDb(): Knex {
   if (!db) {
+    // Validate password is set (PostgreSQL SCRAM auth requires a non-empty password)
+    if (!database.url && !database.password) {
+      console.error(
+        '\n⚠️  DATABASE_PASSWORD is not set!\n' +
+          '   PostgreSQL requires a password for authentication.\n' +
+          '   Please set DATABASE_PASSWORD in your .env file.\n' +
+          '   Default for local dev: DATABASE_PASSWORD=postgres\n'
+      );
+    }
+
     const connectionConfig =
       database.url ||
       ({
@@ -15,7 +25,7 @@ export function getDb(): Knex {
         port: database.port,
         database: database.name,
         user: database.user,
-        password: database.password,
+        password: database.password || undefined, // undefined instead of empty string
         ...(env.isProduction && {
           ssl: { rejectUnauthorized: false },
         }),

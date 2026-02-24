@@ -3,20 +3,86 @@
 /**
  * Analytics Tracker Component
  * ===========================
- * 
+ *
  * Client-side component that tracks page views and referrers.
  * Privacy-focused: Uses anonymous session IDs, no PII collected.
- * 
+ *
  * Usage: Add <AnalyticsTracker /> to your layout.tsx
  * For 404 pages: <AnalyticsTracker statusCode={404} />
- * 
+ *
  * Note: Logged-in admin users are automatically excluded from tracking
  * to avoid skewing analytics with owner activity.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import { SessionProvider } from 'next-auth/react';
+import type { ReactNode } from 'react';
+
+// =============================================================================
+// Safe Session Wrapper (for use outside SessionProvider)
+// =============================================================================
+
+/**
+ * Wrapper component that provides a SessionProvider if one doesn't exist.
+ * This allows AnalyticsTracker to work in not-found.tsx and error pages.
+ */
+function SafeSessionWrapper({ children }: { children: ReactNode }) {
+  return <SessionProvider>{children}</SessionProvider>;
+}
+
+/**
+ * Inner component that safely uses session
+ */
+function AnalyticsTrackerInner({ statusCode }: { statusCode?: number }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const trackingInProgress = useRef(false);
+
+  // Safe to use useSession here - we're always inside a SessionProvider
+  const { status } = useSession();
+  const isAuthenticated = status === 'authenticated';
+
+  useEffect(() => {
+    // Skip tracking for authenticated admin users
+    if (isAuthenticated) {
+      return;
+    }
+
+    // Build full path for comparison
+    const fullPath = `${pathname}${searchParams?.toString() ? `?${searchParams.toString()}` : ''}`;
+    const now = Date.now();
+
+    // Skip if we've already tracked this exact path recently (debounce)
+    if (lastTrackedFullPath === fullPath && now - lastTrackTime < TRACK_DEBOUNCE_MS) {
+      return;
+    }
+
+    // Skip if already tracking (prevents concurrent calls)
+    if (trackingInProgress.current) {
+      return;
+    }
+
+    // Mark as tracking
+    trackingInProgress.current = true;
+    lastTrackedFullPath = fullPath;
+    lastTrackTime = now;
+
+    // Get page title
+    const pageTitle = typeof document !== 'undefined' ? document.title : undefined;
+
+    trackPageView({
+      pagePath: pathname || '/',
+      pageTitle,
+      statusCode,
+    }).finally(() => {
+      trackingInProgress.current = false;
+    });
+  }, [pathname, searchParams, statusCode, isAuthenticated]);
+
+  return null;
+}
 
 // =============================================================================
 // Session Management
@@ -24,20 +90,20 @@ import { useSession } from 'next-auth/react';
 
 function getOrCreateSessionId(): string {
   const SESSION_KEY = 'ch_analytics_session';
-  
+
   // Check if we already have a session
   if (typeof window !== 'undefined') {
     let sessionId = sessionStorage.getItem(SESSION_KEY);
-    
+
     if (!sessionId) {
       // Generate a random session ID (no fingerprinting, no tracking)
       sessionId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
       sessionStorage.setItem(SESSION_KEY, sessionId);
     }
-    
+
     return sessionId;
   }
-  
+
   return 'ssr-session';
 }
 
@@ -55,7 +121,7 @@ interface UTMParams {
 
 function extractUTMParams(searchParams: URLSearchParams | null): UTMParams {
   if (!searchParams) return {};
-  
+
   return {
     utmSource: searchParams.get('utm_source') || undefined,
     utmMedium: searchParams.get('utm_medium') || undefined,
@@ -71,19 +137,19 @@ function extractUTMParams(searchParams: URLSearchParams | null): UTMParams {
 
 function getCleanReferrer(): string | undefined {
   if (typeof document === 'undefined') return undefined;
-  
+
   const referrer = document.referrer;
   if (!referrer) return undefined;
-  
+
   try {
     const url = new URL(referrer);
     const currentHost = window.location.hostname;
-    
+
     // Don't track internal referrers
     if (url.hostname === currentHost) {
       return undefined;
     }
-    
+
     // Return the full referrer URL
     return referrer;
   } catch {
@@ -104,11 +170,10 @@ export async function trackPageView(options: {
   try {
     const sessionId = getOrCreateSessionId();
     const referrer = getCleanReferrer();
-    
+
     // Get UTM params from current URL
-    const searchParams = typeof window !== 'undefined' 
-      ? new URLSearchParams(window.location.search)
-      : null;
+    const searchParams =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
     const utmParams = extractUTMParams(searchParams);
 
     const payload = {
@@ -149,62 +214,14 @@ interface AnalyticsTrackerProps {
   statusCode?: number;
 }
 
+/**
+ * Analytics Tracker that works both inside and outside SessionProvider.
+ * Wraps itself in a SessionProvider when needed (e.g., in not-found.tsx).
+ */
 export default function AnalyticsTracker({ statusCode }: AnalyticsTrackerProps) {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const trackingInProgress = useRef(false);
-  
-  // Check if user is logged in - skip tracking for admins
-  // useSession can return undefined when used outside SessionProvider (e.g., in not-found.tsx)
-  const session = useSession();
-  const status = session?.status;
-  const isAuthenticated = status === 'authenticated';
-
-  useEffect(() => {
-    // Skip tracking for authenticated admin users
-    if (isAuthenticated) {
-      return;
-    }
-    
-    // Build full path for comparison
-    const fullPath = `${pathname}${searchParams?.toString() ? `?${searchParams.toString()}` : ''}`;
-    const now = Date.now();
-    
-    // Skip if we've already tracked this exact path recently (debounce)
-    if (lastTrackedFullPath === fullPath && (now - lastTrackTime) < TRACK_DEBOUNCE_MS) {
-      return;
-    }
-    
-    // Skip if already tracking (prevents concurrent calls)
-    if (trackingInProgress.current) {
-      return;
-    }
-
-    // Skip during development if desired
-    // if (process.env.NODE_ENV === 'development') return;
-
-    const doTrack = async () => {
-      trackingInProgress.current = true;
-      lastTrackedFullPath = fullPath;
-      lastTrackTime = Date.now();
-      
-      try {
-        await trackPageView({
-          pagePath: pathname,
-          pageTitle: typeof document !== 'undefined' ? document.title : undefined,
-          statusCode,
-        });
-      } finally {
-        trackingInProgress.current = false;
-      }
-    };
-
-    // Small delay to ensure page has fully loaded
-    const timeoutId = setTimeout(doTrack, 100);
-    
-    return () => clearTimeout(timeoutId);
-  }, [pathname, searchParams, statusCode, isAuthenticated]);
-
-  // This component renders nothing
-  return null;
+  return (
+    <SafeSessionWrapper>
+      <AnalyticsTrackerInner statusCode={statusCode} />
+    </SafeSessionWrapper>
+  );
 }

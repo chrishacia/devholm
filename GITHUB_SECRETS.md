@@ -12,31 +12,38 @@ Quick reference for setting up GitHub Actions secrets for automated deployment.
 
 ## Required Secrets
 
+### Project Identity
+
+| Name           | Description                                                 | Example                |
+| -------------- | ----------------------------------------------------------- | ---------------------- |
+| `PROJECT_NAME` | Unique project identifier for Docker container/volume names | `mysite`               |
+| `SITE_URL`     | Production URL (with https)                                 | `https://yoursite.com` |
+| `SITE_NAME`    | Display name for the site                                   | `My Site`              |
+
 ### Server Connection
 
-| Name | Description | How to Get |
-|------|-------------|------------|
-| `DEPLOY_HOST` | Your server hostname | `yoursite.com` or your server IP |
-| `DEPLOY_USER` | SSH username | Usually `root` or a deploy user like `deploy` |
-| `DEPLOY_KEY` | SSH private key | See [Generate SSH Key](#generate-ssh-key) below |
-| `DEPLOY_PATH` | Deployment directory | `/var/www/yoursite.com` |
-| `APP_PORT` | Host port for the application | Default: `3000`. Use a different port if running multiple sites |
+| Name          | Description          | How to Get                                      |
+| ------------- | -------------------- | ----------------------------------------------- |
+| `DEPLOY_HOST` | Your server hostname | `yoursite.com` or your server IP                |
+| `DEPLOY_USER` | SSH username         | Usually `root` or a deploy user like `deploy`   |
+| `DEPLOY_KEY`  | SSH private key      | See [Generate SSH Key](#generate-ssh-key) below |
+| `DEPLOY_PATH` | Deployment directory | `/var/www/yoursite.com`                         |
 
 ### Database
 
-| Name | Description | Recommended Value |
-|------|-------------|-------------------|
-| `POSTGRES_USER` | PostgreSQL username | Your database username |
+| Name                | Description         | Recommended Value                       |
+| ------------------- | ------------------- | --------------------------------------- |
+| `POSTGRES_USER`     | PostgreSQL username | Your database username                  |
 | `POSTGRES_PASSWORD` | PostgreSQL password | Generate with `openssl rand -base64 24` |
-| `POSTGRES_DB` | Database name | Your database name |
+| `POSTGRES_DB`       | Database name       | Your database name                      |
 
 ### Authentication
 
-| Name | Description | How to Get |
-|------|-------------|------------|
+| Name              | Description            | How to Get                              |
+| ----------------- | ---------------------- | --------------------------------------- |
 | `NEXTAUTH_SECRET` | Session encryption key | Generate with `openssl rand -base64 32` |
-| `ADMIN_EMAIL` | Initial admin email | Your admin email |
-| `ADMIN_PASSWORD` | Initial admin password | Create a strong password |
+| `ADMIN_EMAIL`     | Initial admin email    | Your admin email                        |
+| `ADMIN_PASSWORD`  | Initial admin password | Create a strong password                |
 
 ---
 
@@ -107,16 +114,14 @@ ADMIN_PASSWORD=MySecureP@ssw0rd!2024
 
 ## Optional Secrets
 
-These are optional but can enhance your deployment:
+These are optional and have sensible defaults:
 
-| Name | Description |
-|------|-------------|
-| `PROJECT_NAME` | Unique project identifier for Docker |
-| `SITE_URL` | Production URL (e.g., `https://yoursite.com`) |
-| `SITE_NAME` | Display name for the site |
-| `CSRF_SECRET` | CSRF protection secret |
-| `DOCKERHUB_USERNAME` | For Docker Hub instead of GHCR |
-| `DOCKERHUB_TOKEN` | Docker Hub access token |
+| Name                 | Description                    | Default        |
+| -------------------- | ------------------------------ | -------------- |
+| `APP_PORT`           | Host port for the application  | `3000`         |
+| `CSRF_SECRET`        | CSRF protection secret         | Auto-generated |
+| `DOCKERHUB_USERNAME` | For Docker Hub instead of GHCR | Uses GHCR      |
+| `DOCKERHUB_TOKEN`    | Docker Hub access token        | Uses GHCR      |
 
 ---
 
@@ -134,15 +139,18 @@ After adding all secrets, you can verify by:
 ## Troubleshooting
 
 ### "Permission denied" SSH error
+
 - Ensure the public key is in server's `~/.ssh/authorized_keys`
 - Check file permissions: `chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys`
 - Verify SSH is enabled: `sudo systemctl status sshd`
 
 ### "Host key verification failed"
+
 - The workflow adds the host key automatically
 - If issues persist, manually add: `ssh-keyscan your-server >> ~/.ssh/known_hosts`
 
 ### Database connection refused
+
 - Ensure PostgreSQL is running
 - Check if Docker network is properly configured
 - Verify the password matches

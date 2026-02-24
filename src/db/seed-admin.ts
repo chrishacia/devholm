@@ -11,20 +11,20 @@
  */
 
 import { getDb, closeDb } from './index';
-import { hashPassword } from './users';
+import bcrypt from 'bcryptjs';
 import { admin } from '@/config/env';
 
 async function seedAdmin() {
   const email = admin.email;
   const password = admin.password;
-  const name = admin.name;
+  const displayName = admin.name;
 
   console.log('Creating admin user...');
 
   const db = getDb();
 
   // Check if user already exists
-  const existingUser = await db('users').where('email', email).first();
+  const existingUser = await db('admin_users').where('email', email).first();
 
   if (existingUser) {
     console.log(`Admin user already exists: ${email}`);
@@ -33,13 +33,13 @@ async function seedAdmin() {
   }
 
   // Create admin user
-  const passwordHash = await hashPassword(password);
+  const passwordHash = await bcrypt.hash(password, 12);
 
-  await db('users').insert({
+  await db('admin_users').insert({
     email,
-    name,
+    display_name: displayName,
     password_hash: passwordHash,
-    role: 'admin',
+    totp_enabled: false,
   });
 
   console.log(`✓ Admin user created successfully!`);

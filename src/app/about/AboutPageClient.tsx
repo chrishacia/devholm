@@ -2,7 +2,7 @@
 
 /**
  * About Page Client Component
- * 
+ *
  * CUSTOMIZE: Replace the placeholder content below with your own bio,
  * skills, and interests to make this page your own!
  */
@@ -55,8 +55,7 @@ export default function AboutPage() {
                   mx: { xs: 'auto', md: 0 },
                   border: 3,
                   borderColor: 'primary.main',
-                  boxShadow: (theme) =>
-                    `0 0 30px ${alpha(theme.palette.primary.main, 0.25)}`,
+                  boxShadow: (theme) => `0 0 30px ${alpha(theme.palette.primary.main, 0.25)}`,
                   bgcolor: 'grey.500',
                   fontSize: { xs: '4rem', md: '5rem' },
                 }}
@@ -68,11 +67,7 @@ export default function AboutPage() {
               <Typography variant="h2" component="h1" gutterBottom sx={{ fontWeight: 700 }}>
                 About Me
               </Typography>
-              <Typography
-                variant="h5"
-                color="text.secondary"
-                sx={{ mb: 3, fontWeight: 400 }}
-              >
+              <Typography variant="h5" color="text.secondary" sx={{ mb: 3, fontWeight: 400 }}>
                 {/* CUSTOMIZE: Add your tagline here */}
                 Full Stack Developer • Open Source Enthusiast
               </Typography>
@@ -85,8 +80,8 @@ export default function AboutPage() {
               <Typography variant="body1" color="text.secondary">
                 {/* CUSTOMIZE: Add more about yourself here */}
                 When I&apos;m not coding, you can find me exploring new technologies, contributing
-                to open source projects, or enjoying a good cup of coffee while reading about
-                the latest trends in web development.
+                to open source projects, or enjoying a good cup of coffee while reading about the
+                latest trends in web development.
               </Typography>
             </Grid2>
           </Grid2>
@@ -108,21 +103,20 @@ export default function AboutPage() {
             My Journey
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mb: 2.5 }}>
-            {/* CUSTOMIZE: Tell your story here */}
-            I started my journey in software development with a curiosity about how things work
-            on the internet. That curiosity led me to learn HTML, CSS, and JavaScript, and
-            eventually to building full-stack applications with modern frameworks.
+            {/* CUSTOMIZE: Tell your story here */}I started my journey in software development with
+            a curiosity about how things work on the internet. That curiosity led me to learn HTML,
+            CSS, and JavaScript, and eventually to building full-stack applications with modern
+            frameworks.
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mb: 2.5 }}>
-            Over the years, I&apos;ve had the opportunity to work on diverse projects, from
-            small business websites to large-scale enterprise applications. Each project has
-            taught me something new and reinforced my love for creating software that makes
-            a difference.
+            Over the years, I&apos;ve had the opportunity to work on diverse projects, from small
+            business websites to large-scale enterprise applications. Each project has taught me
+            something new and reinforced my love for creating software that makes a difference.
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Today, I focus on building accessible, performant, and user-friendly web applications.
-            I believe in writing clean code, continuous learning, and sharing knowledge with
-            the developer community.
+            Today, I focus on building accessible, performant, and user-friendly web applications. I
+            believe in writing clean code, continuous learning, and sharing knowledge with the
+            developer community.
           </Typography>
         </Paper>
 
@@ -133,12 +127,7 @@ export default function AboutPage() {
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
             {skills.map((skill) => (
-              <Chip
-                key={skill.name}
-                label={skill.name}
-                variant="outlined"
-                size="medium"
-              />
+              <Chip key={skill.name} label={skill.name} variant="outlined" size="medium" />
             ))}
           </Box>
         </Box>

@@ -22,12 +22,6 @@ function getEnvInt(key: string, defaultValue: number): number {
   return value ? parseInt(value, 10) : defaultValue;
 }
 
-function getEnvBool(key: string, defaultValue: boolean): boolean {
-  const value = process.env[key];
-  if (!value) return defaultValue;
-  return value.toLowerCase() === 'true' || value === '1';
-}
-
 // =============================================================================
 // Environment Detection
 // =============================================================================
@@ -38,12 +32,6 @@ export const env = {
 
   /** Whether running in production */
   isProduction: process.env.NODE_ENV === 'production',
-
-  /** Whether running in development */
-  isDevelopment: process.env.NODE_ENV === 'development',
-
-  /** Whether running in test */
-  isTest: process.env.NODE_ENV === 'test',
 };
 
 // =============================================================================
@@ -131,11 +119,8 @@ export const auth = {
   /** Auth callback URL */
   url: getEnv('AUTH_URL') || getEnv('NEXTAUTH_URL', 'http://localhost:3000'),
 
-  /** Session duration in seconds */
-  sessionDuration: getEnvInt('AUTH_SESSION_DURATION', 86400), // 24 hours
-
-  /** CSRF secret */
-  csrfSecret: getEnv('CSRF_SECRET', 'csrf-dev-secret'),
+  /** Session duration in seconds (default: 24 hours) */
+  sessionDuration: getEnvInt('AUTH_SESSION_DURATION', 86400),
 };
 
 // =============================================================================
@@ -147,7 +132,7 @@ export const admin = {
   email: getEnv('ADMIN_EMAIL', 'admin@localhost.com'),
 
   /** Admin password (for initial seeding only) */
-  password: getEnv('ADMIN_PASSWORD') || getEnv('ADMIN_INITIAL_PASSWORD', 'changeme123'),
+  password: getEnv('ADMIN_PASSWORD', 'changeme123'),
 
   /** Admin display name */
   name: getEnv('ADMIN_NAME', 'Admin'),
@@ -172,12 +157,6 @@ export const upload = {
 
   /** Upload path */
   path: getEnv('UPLOAD_PATH', '/uploads'),
-
-  /** Whether to generate image variants (thumbnails, etc.) */
-  generateVariants: getEnvBool('UPLOAD_GENERATE_VARIANTS', true),
-
-  /** Maximum dimension for original images (will be resized if larger) */
-  maxOriginalDimension: getEnvInt('UPLOAD_MAX_DIMENSION', 4096),
 };
 
 // =============================================================================

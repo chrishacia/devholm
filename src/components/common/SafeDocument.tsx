@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { Box, Button, SxProps, Theme, Typography, CircularProgress } from '@mui/material';
-import { 
+import {
   PictureAsPdf,
   Description,
   Article,
@@ -11,6 +11,7 @@ import {
   OpenInNew,
   ErrorOutline,
 } from '@mui/icons-material';
+import { formatFileSize } from '@/lib/utils';
 
 interface SafeDocumentProps {
   src: string | null | undefined;
@@ -25,27 +26,20 @@ interface SafeDocumentProps {
 // Icon mapping for different document types
 const getDocumentIcon = (mimeType?: string) => {
   if (!mimeType) return InsertDriveFile;
-  
+
   if (mimeType.includes('pdf')) return PictureAsPdf;
   if (mimeType.includes('word') || mimeType.includes('document')) return Description;
   if (mimeType.includes('text')) return Article;
-  
+
   return InsertDriveFile;
 };
 
-// Format file size
-const formatFileSize = (bytes?: number): string => {
-  if (!bytes) return '';
-  
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
+// formatFileSize imported from @/lib/utils
 
 // Get human-readable document type
 const getDocumentType = (mimeType?: string): string => {
   if (!mimeType) return 'Document';
-  
+
   if (mimeType.includes('pdf')) return 'PDF Document';
   if (mimeType.includes('msword') || mimeType.includes('wordprocessingml')) return 'Word Document';
   if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) return 'Spreadsheet';
@@ -53,19 +47,19 @@ const getDocumentType = (mimeType?: string): string => {
   if (mimeType.includes('text/plain')) return 'Text File';
   if (mimeType.includes('text/csv')) return 'CSV File';
   if (mimeType.includes('text/markdown')) return 'Markdown File';
-  
+
   return 'Document';
 };
 
 /**
  * SafeDocument Component
  * ======================
- * 
+ *
  * A wrapper for document files that gracefully handles:
  * - Missing/broken document files (shows placeholder)
  * - Null/undefined src values
  * - Network errors when checking availability
- * 
+ *
  * Usage:
  * <SafeDocument src={file.url} filename={file.name} mimeType={file.type} />
  */
@@ -84,7 +78,7 @@ export function SafeDocument({
   // Check document availability on mount
   useEffect(() => {
     if (!src) return;
-    
+
     const checkAvailability = async () => {
       setIsChecking(true);
       try {
@@ -104,7 +98,7 @@ export function SafeDocument({
 
   const handleDownload = useCallback(() => {
     if (!src) return;
-    
+
     const link = document.createElement('a');
     link.href = src;
     link.download = filename;
@@ -165,7 +159,7 @@ export function SafeDocument({
       }}
     >
       <Icon sx={{ fontSize: 40, color: 'primary.main' }} />
-      
+
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="body2" fontWeight={500} noWrap>
           {filename}
@@ -181,12 +175,7 @@ export function SafeDocument({
       ) : (
         <Box sx={{ display: 'flex', gap: 1 }}>
           {showPreview && mimeType?.includes('pdf') && (
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<OpenInNew />}
-              onClick={handleOpen}
-            >
+            <Button size="small" variant="outlined" startIcon={<OpenInNew />} onClick={handleOpen}>
               View
             </Button>
           )}
