@@ -41,6 +41,7 @@ import {
   Analytics,
   Description,
   FolderOpen,
+  Build,
 } from '@mui/icons-material';
 import Link from '@/components/common/Link';
 import { useTheme as useAppTheme } from '@/theme/ThemeProvider';
@@ -71,6 +72,7 @@ const navItems: NavItem[] = [
   { label: 'Blog Posts', href: '/admin/posts', icon: <Article /> },
   { label: 'Projects', href: '/admin/projects', icon: <FolderOpen /> },
   { label: 'Resume', href: '/admin/resume', icon: <Description /> },
+  { label: 'Uses', href: '/admin/uses', icon: <Build /> },
   { label: 'Messages', href: '/admin/inbox', icon: <Inbox /> },
   { label: 'Media', href: '/admin/media', icon: <ImageIcon /> },
   { label: 'Analytics', href: '/admin/analytics', icon: <Analytics /> },
