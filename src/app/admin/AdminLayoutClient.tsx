@@ -39,6 +39,8 @@ import {
   DarkMode,
   LightMode,
   Analytics,
+  Description,
+  FolderOpen,
 } from '@mui/icons-material';
 import Link from '@/components/common/Link';
 import { useTheme as useAppTheme } from '@/theme/ThemeProvider';
@@ -67,6 +69,8 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: <Dashboard /> },
   { label: 'Blog Posts', href: '/admin/posts', icon: <Article /> },
+  { label: 'Projects', href: '/admin/projects', icon: <FolderOpen /> },
+  { label: 'Resume', href: '/admin/resume', icon: <Description /> },
   { label: 'Messages', href: '/admin/inbox', icon: <Inbox /> },
   { label: 'Media', href: '/admin/media', icon: <ImageIcon /> },
   { label: 'Analytics', href: '/admin/analytics', icon: <Analytics /> },
@@ -198,8 +202,8 @@ export default function AdminLayoutClient({ children }: AdminLayoutClientProps) 
       {/* Navigation */}
       <List sx={{ flex: 1, px: 1, py: 2 }}>
         {navItems.map((item) => {
-          const isActive = pathname === item.href ||
-            (item.href !== '/admin' && pathname.startsWith(item.href));
+          const isActive =
+            pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href));
 
           return (
             <ListItem key={item.href} disablePadding sx={{ mb: 0.5 }}>
@@ -264,9 +268,7 @@ export default function AdminLayoutClient({ children }: AdminLayoutClientProps) 
             <ListItemIcon sx={{ minWidth: collapsed && !isMobile ? 0 : 40 }}>
               <Home />
             </ListItemIcon>
-            {(!collapsed || isMobile) && (
-              <ListItemText primary="Back to Site" />
-            )}
+            {(!collapsed || isMobile) && <ListItemText primary="Back to Site" />}
           </ListItemButton>
         </Tooltip>
       </Box>
@@ -352,7 +354,9 @@ export default function AdminLayoutClient({ children }: AdminLayoutClientProps) 
                 fontSize: '0.9rem',
               }}
             >
-              {profile?.displayName?.charAt(0).toUpperCase() || session?.user?.name?.charAt(0).toUpperCase() || 'A'}
+              {profile?.displayName?.charAt(0).toUpperCase() ||
+                session?.user?.name?.charAt(0).toUpperCase() ||
+                'A'}
             </Avatar>
             <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
               <Typography variant="body2" fontWeight={600}>
@@ -372,25 +376,23 @@ export default function AdminLayoutClient({ children }: AdminLayoutClientProps) 
             transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             sx={{ mt: 1 }}
           >
-            <MenuItem
-              component={Link}
-              href="/admin/profile"
-              onClick={handleMenuClose}
-            >
-              <ListItemIcon><Person fontSize="small" /></ListItemIcon>
+            <MenuItem component={Link} href="/admin/profile" onClick={handleMenuClose}>
+              <ListItemIcon>
+                <Person fontSize="small" />
+              </ListItemIcon>
               Profile
             </MenuItem>
-            <MenuItem
-              component={Link}
-              href="/admin/settings"
-              onClick={handleMenuClose}
-            >
-              <ListItemIcon><Settings fontSize="small" /></ListItemIcon>
+            <MenuItem component={Link} href="/admin/settings" onClick={handleMenuClose}>
+              <ListItemIcon>
+                <Settings fontSize="small" />
+              </ListItemIcon>
               Settings
             </MenuItem>
             <Divider />
             <MenuItem onClick={handleSignOut}>
-              <ListItemIcon><Logout fontSize="small" /></ListItemIcon>
+              <ListItemIcon>
+                <Logout fontSize="small" />
+              </ListItemIcon>
               Sign Out
             </MenuItem>
           </Menu>
