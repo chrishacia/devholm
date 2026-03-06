@@ -2,6 +2,9 @@ import type { Metadata } from 'next';
 import AboutPageClient from './AboutPageClient';
 import { siteConfig } from '@/config';
 import { PersonJsonLd, BreadcrumbJsonLd } from '@/components/seo/JsonLd';
+import { fetchSiteSettings } from '@/lib/fetchSiteSettings';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'About',
@@ -24,7 +27,9 @@ export const metadata: Metadata = {
   },
 };
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  const settings = await fetchSiteSettings();
+
   return (
     <>
       <PersonJsonLd />
@@ -34,7 +39,7 @@ export default function AboutPage() {
           { name: 'About', url: `${siteConfig.url}/about` },
         ]}
       />
-      <AboutPageClient />
+      <AboutPageClient settings={settings} />
     </>
   );
 }

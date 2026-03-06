@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import UsesPageClient from './UsesPageClient';
 import { siteConfig } from '@/config';
+import { getAllCategoriesWithItems } from '@/db/uses';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Uses',
@@ -21,6 +24,8 @@ export const metadata: Metadata = {
   },
 };
 
-export default function UsesPage() {
-  return <UsesPageClient />;
+export default async function UsesPage() {
+  const categories = await getAllCategoriesWithItems();
+
+  return <UsesPageClient categories={categories} />;
 }

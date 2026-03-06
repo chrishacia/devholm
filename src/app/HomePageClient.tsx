@@ -1,20 +1,32 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Box, Typography, Button, Container, Card, CardContent, Chip, alpha, Skeleton } from '@mui/material';
+import { Box, Typography, Button, Container, Card, CardContent, Chip, alpha } from '@mui/material';
 import Link from '@/components/common/Link';
 import { ArrowForward, Code, Article, Person } from '@mui/icons-material';
 import { AuthAwareMainLayout, ThreeColumnLayout, SidebarWidget } from '@/components';
-import { useSiteSettings } from '@/hooks/useSiteSettings';
 import { siteConfig } from '@/config';
+import type { SiteSettings } from '@/hooks/useSiteSettings';
 
 interface FeaturedPost {
   id: string;
   title: string;
   excerpt: string | null;
   slug: string;
-  publishedAt: string;
+  publishedAt: string | Date | null;
   tags: Array<{ id: string; name: string; slug: string }>;
+}
+
+interface TagData {
+  id: string;
+  name: string;
+  slug: string;
+  postCount: number;
+}
+
+interface HomePageClientProps {
+  settings: SiteSettings;
+  initialPosts: FeaturedPost[];
+  initialTags: TagData[];
 }
 
 function LeftSidebar() {
@@ -49,13 +61,6 @@ function LeftSidebar() {
   );
 }
 
-interface TagData {
-  id: string;
-  name: string;
-  slug: string;
-  postCount: number;
-}
-
 function RightSidebar({ tags }: { tags: TagData[] }) {
   return (
     <>
@@ -80,22 +85,22 @@ function RightSidebar({ tags }: { tags: TagData[] }) {
       <SidebarWidget title="Popular Tags">
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           {tags.length === 0 ? (
-            <>
-              <Skeleton width={70} height={24} />
-              <Skeleton width={50} height={24} />
-              <Skeleton width={60} height={24} />
-            </>
+            <Typography variant="body2" color="text.secondary">
+              No tags yet
+            </Typography>
           ) : (
-            tags.slice(0, 8).map((tag) => (
-              <Chip
-                key={tag.id}
-                label={tag.name}
-                size="small"
-                component={Link}
-                href={`/blog/tag/${tag.slug}`}
-                clickable
-              />
-            ))
+            tags
+              .slice(0, 8)
+              .map((tag) => (
+                <Chip
+                  key={tag.id}
+                  label={tag.name}
+                  size="small"
+                  component={Link}
+                  href={`/blog/tag/${tag.slug}`}
+                  clickable
+                />
+              ))
           )}
         </Box>
       </SidebarWidget>
@@ -103,49 +108,10 @@ function RightSidebar({ tags }: { tags: TagData[] }) {
   );
 }
 
-export default function HomePage() {
-  const [featuredPosts, setFeaturedPosts] = useState<FeaturedPost[]>([]);
-  const [tags, setTags] = useState<TagData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const hasFetched = useRef(false);
+export default function HomePage({ settings, initialPosts, initialTags }: HomePageClientProps) {
+  const featuredPosts = initialPosts;
+  const tags = initialTags;
 
-  useEffect(() => {
-    // Prevent double-fetch from React Strict Mode
-    if (hasFetched.current) return;
-    hasFetched.current = true;
-
-    const fetchData = async () => {
-      try {
-        const [postsRes, tagsRes] = await Promise.all([
-          fetch('/api/posts?featured=true&pageSize=5'),
-          fetch('/api/posts/tags'),
-        ]);
-
-        if (postsRes.ok) {
-          const postsData = await postsRes.json();
-          setFeaturedPosts(postsData.posts || []);
-        }
-
-        if (tagsRes.ok) {
-          const tagsData = await tagsRes.json();
-          // Sort by post count and take top tags
-          const sortedTags = (tagsData.tags || []).sort(
-            (a: { postCount: number }, b: { postCount: number }) => b.postCount - a.postCount
-          );
-          setTags(sortedTags);
-        }
-      } catch (error) {
-        console.error('Error fetching homepage data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
-
-  // Get runtime settings (author name from database)
-  const { settings } = useSiteSettings();
   const authorName = settings?.author?.name || siteConfig.author.name;
 
   return (
@@ -202,9 +168,10 @@ export default function HomePage() {
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
                   backgroundClip: 'text',
-                  textShadow: theme.palette.mode === 'dark' 
-                    ? `0 0 40px ${alpha(theme.palette.primary.main, 0.4)}`
-                    : 'none',
+                  textShadow:
+                    theme.palette.mode === 'dark'
+                      ? `0 0 40px ${alpha(theme.palette.primary.main, 0.4)}`
+                      : 'none',
                 })}
               >
                 {authorName}
@@ -236,13 +203,7 @@ export default function HomePage() {
               >
                 Read the Blog
               </Button>
-              <Button 
-                component={Link} 
-                href="/about" 
-                variant="outlined" 
-                size="large"
-                sx={{ px: 4 }}
-              >
+              <Button component={Link} href="/about" variant="outlined" size="large" sx={{ px: 4 }}>
                 About Me
               </Button>
             </Box>
@@ -271,88 +232,72 @@ export default function HomePage() {
           </Box>
 
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {loading ? (
-              // Loading skeletons
-              Array.from({ length: 3 }).map((_, i) => (
-                <Card key={i}>
-                  <CardContent sx={{ p: 3 }}>
-                    <Skeleton width="80%" height={28} sx={{ mb: 1 }} />
-                    <Skeleton width="100%" height={20} />
-                    <Skeleton width="60%" height={20} sx={{ mb: 2 }} />
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Skeleton width={60} height={24} />
-                      <Skeleton width={50} height={24} />
-                      <Skeleton width={70} height={24} />
-                    </Box>
-                  </CardContent>
-                </Card>
-              ))
-            ) : featuredPosts.length === 0 ? (
+            {featuredPosts.length === 0 ? (
               <Card>
                 <CardContent sx={{ p: 4, textAlign: 'center' }}>
-                  <Typography color="text.secondary">
-                    No posts yet. Check back soon!
-                  </Typography>
+                  <Typography color="text.secondary">No posts yet. Check back soon!</Typography>
                 </CardContent>
               </Card>
             ) : (
               featuredPosts.map((post) => (
-              <Card
-                key={post.id}
-                component={Link}
-                href={`/blog/${post.slug}`}
-                sx={(theme) => ({
-                  textDecoration: 'none',
-                  transition: 'all 0.2s ease',
-                  '&:hover': {
-                    transform: 'translateY(-2px)',
-                    boxShadow: `0 8px 30px ${alpha(theme.palette.primary.main, 0.15)}`,
-                    borderColor: alpha(theme.palette.primary.main, 0.3),
-                  },
-                })}
-              >
-                <CardContent sx={{ p: 3 }}>
-                  <Typography
-                    variant="h6"
-                    component="h3"
-                    sx={{
-                      mb: 1,
-                      fontWeight: 600,
-                      color: 'text.primary',
-                    }}
-                  >
-                    {post.title}
-                  </Typography>
-
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{
-                      mb: 2,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {post.excerpt}
-                  </Typography>
-
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                    {post.tags.slice(0, 3).map((tag) => (
-                      <Chip key={tag.id} label={tag.name} size="small" variant="outlined" />
-                    ))}
-                    <Typography variant="caption" color="text.disabled" sx={{ ml: 'auto' }}>
-                      {new Date(post.publishedAt).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
+                <Card
+                  key={post.id}
+                  component={Link}
+                  href={`/blog/${post.slug}`}
+                  sx={(theme) => ({
+                    textDecoration: 'none',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: `0 8px 30px ${alpha(theme.palette.primary.main, 0.15)}`,
+                      borderColor: alpha(theme.palette.primary.main, 0.3),
+                    },
+                  })}
+                >
+                  <CardContent sx={{ p: 3 }}>
+                    <Typography
+                      variant="h6"
+                      component="h3"
+                      sx={{
+                        mb: 1,
+                        fontWeight: 600,
+                        color: 'text.primary',
+                      }}
+                    >
+                      {post.title}
                     </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            ))
+
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{
+                        mb: 2,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {post.excerpt}
+                    </Typography>
+
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      {post.tags.slice(0, 3).map((tag) => (
+                        <Chip key={tag.id} label={tag.name} size="small" variant="outlined" />
+                      ))}
+                      <Typography variant="caption" color="text.disabled" sx={{ ml: 'auto' }}>
+                        {post.publishedAt
+                          ? new Date(post.publishedAt).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            })
+                          : 'Draft'}
+                      </Typography>
+                    </Box>
+                  </CardContent>
+                </Card>
+              ))
             )}
           </Box>
         </Box>

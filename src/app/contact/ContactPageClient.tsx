@@ -12,12 +12,11 @@ import {
   Snackbar,
   Paper,
   alpha,
-  Skeleton,
 } from '@mui/material';
 import { Send, LinkedIn, GitHub, Twitter } from '@mui/icons-material';
 import { AuthAwareMainLayout } from '@/components';
 import Link from '@/components/common/Link';
-import { useSiteSettings } from '@/hooks/useSiteSettings';
+import type { SiteSettings } from '@/hooks/useSiteSettings';
 
 interface FormData {
   name: string;
@@ -84,8 +83,11 @@ function SocialLinkItem({ icon: IconComponent, label, href, value }: SocialLinkI
   );
 }
 
-export default function ContactPage() {
-  const { settings, loading: settingsLoading } = useSiteSettings();
+interface ContactPageClientProps {
+  settings: SiteSettings;
+}
+
+export default function ContactPage({ settings }: ContactPageClientProps) {
   const [formData, setFormData] = useState<FormData>(initialFormData);
   const [formLoadTime] = useState<number>(() => Date.now()); // Track when form loaded for bot detection
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -123,7 +125,7 @@ export default function ContactPage() {
       if (response.ok) {
         setSnackbar({
           open: true,
-          message: 'Message sent successfully! I\'ll get back to you soon.',
+          message: "Message sent successfully! I'll get back to you soon.",
           severity: 'success',
         });
         setFormData(initialFormData);
@@ -134,7 +136,10 @@ export default function ContactPage() {
     } catch (error) {
       setSnackbar({
         open: true,
-        message: error instanceof Error ? error.message : 'Failed to send message. Please try again or email me directly.',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Failed to send message. Please try again or email me directly.',
         severity: 'error',
       });
     } finally {
@@ -154,12 +159,9 @@ export default function ContactPage() {
           <Typography variant="h2" component="h1" gutterBottom sx={{ fontWeight: 700 }}>
             Contact
           </Typography>
-          <Typography
-            variant="h6"
-            color="text.secondary"
-            sx={{ maxWidth: 600, mx: 'auto' }}
-          >
-            Have a question, project idea, or just want to say hello? I&apos;d love to hear from you.
+          <Typography variant="h6" color="text.secondary" sx={{ maxWidth: 600, mx: 'auto' }}>
+            Have a question, project idea, or just want to say hello? I&apos;d love to hear from
+            you.
           </Typography>
         </Box>
 
@@ -283,57 +285,45 @@ export default function ContactPage() {
               <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
                 Feel free to connect with me on any of these platforms.
               </Typography>
-              {settingsLoading ? (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {[1, 2, 3].map((i) => (
-                    <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 2.5, p: 2.5 }}>
-                      <Skeleton variant="circular" width={48} height={48} />
-                      <Box>
-                        <Skeleton width={60} height={20} />
-                        <Skeleton width={100} height={24} />
-                      </Box>
-                    </Box>
-                  ))}
-                </Box>
-              ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {settings?.social?.linkedin && (
-                    <SocialLinkItem
-                      icon={LinkedIn}
-                      label="LinkedIn"
-                      href={`https://linkedin.com/in/${settings.social.linkedin}`}
-                      value={settings.social.linkedin}
-                    />
-                  )}
-                  {settings?.social?.github && (
-                    <SocialLinkItem
-                      icon={GitHub}
-                      label="GitHub"
-                      href={`https://github.com/${settings.social.github}`}
-                      value={settings.social.github}
-                    />
-                  )}
-                  {settings?.social?.twitter && (
-                    <SocialLinkItem
-                      icon={Twitter}
-                      label="X (Twitter)"
-                      href={`https://twitter.com/${settings.social.twitter}`}
-                      value={settings.social.twitter}
-                    />
-                  )}
-                  {!settings?.social?.linkedin && !settings?.social?.github && !settings?.social?.twitter && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {settings?.social?.linkedin && (
+                  <SocialLinkItem
+                    icon={LinkedIn}
+                    label="LinkedIn"
+                    href={`https://linkedin.com/in/${settings.social.linkedin}`}
+                    value={settings.social.linkedin}
+                  />
+                )}
+                {settings?.social?.github && (
+                  <SocialLinkItem
+                    icon={GitHub}
+                    label="GitHub"
+                    href={`https://github.com/${settings.social.github}`}
+                    value={settings.social.github}
+                  />
+                )}
+                {settings?.social?.twitter && (
+                  <SocialLinkItem
+                    icon={Twitter}
+                    label="X (Twitter)"
+                    href={`https://twitter.com/${settings.social.twitter}`}
+                    value={settings.social.twitter}
+                  />
+                )}
+                {!settings?.social?.linkedin &&
+                  !settings?.social?.github &&
+                  !settings?.social?.twitter && (
                     <Typography variant="body2" color="text.secondary">
                       Use the contact form to get in touch.
                     </Typography>
                   )}
-                </Box>
-              )}
+              </Box>
             </Paper>
 
             {/* Response Time */}
             <Alert severity="info" sx={{ mt: 3 }}>
-              I typically respond within 24-48 hours. For urgent matters, please mention it in
-              your subject line.
+              I typically respond within 24-48 hours. For urgent matters, please mention it in your
+              subject line.
             </Alert>
           </Grid2>
         </Grid2>

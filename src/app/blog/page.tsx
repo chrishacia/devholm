@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import BlogPageClient from './BlogPageClient';
 import { siteConfig } from '@/config';
+import { getPublishedPosts, getAllTags } from '@/db/posts';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Blog',
@@ -25,6 +28,15 @@ export const metadata: Metadata = {
   },
 };
 
-export default function BlogPage() {
-  return <BlogPageClient />;
+export default async function BlogPage() {
+  const [postsData, tags] = await Promise.all([getPublishedPosts(1, 10), getAllTags()]);
+
+  return (
+    <BlogPageClient
+      initialPosts={postsData.posts}
+      initialTotalPages={postsData.totalPages}
+      initialTotalPosts={postsData.total}
+      initialTags={tags}
+    />
+  );
 }

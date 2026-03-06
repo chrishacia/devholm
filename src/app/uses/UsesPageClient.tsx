@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -12,7 +11,6 @@ import {
   ListItemText,
   Paper,
   alpha,
-  Skeleton,
 } from '@mui/material';
 import {
   Computer,
@@ -64,41 +62,11 @@ interface UsesCategory {
   items: UsesItem[];
 }
 
-function LoadingSkeleton() {
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      {[1, 2, 3, 4].map((i) => (
-        <Paper key={i} sx={{ p: 3 }}>
-          <Skeleton variant="text" width={200} height={32} sx={{ mb: 2 }} />
-          <Skeleton variant="rectangular" height={150} />
-        </Paper>
-      ))}
-    </Box>
-  );
+interface UsesPageClientProps {
+  categories: UsesCategory[];
 }
 
-export default function UsesPage() {
-  const [categories, setCategories] = useState<UsesCategory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const response = await fetch('/api/uses');
-        if (!response.ok) throw new Error('Failed to fetch uses data');
-        const data = await response.json();
-        setCategories(data.categories || []);
-      } catch (err) {
-        console.error('Error fetching uses data:', err);
-        setError('Failed to load uses data');
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchData();
-  }, []);
-
+export default function UsesPage({ categories }: UsesPageClientProps) {
   return (
     <AuthAwareMainLayout>
       <Container maxWidth="lg" sx={{ py: { xs: 6, md: 10 } }}>
@@ -124,13 +92,7 @@ export default function UsesPage() {
         </Box>
 
         {/* Categories */}
-        {loading ? (
-          <LoadingSkeleton />
-        ) : error ? (
-          <Paper sx={{ p: 4, textAlign: 'center' }}>
-            <Typography color="error">{error}</Typography>
-          </Paper>
-        ) : categories.length === 0 ? (
+        {categories.length === 0 ? (
           <Paper sx={{ p: 4, textAlign: 'center' }}>
             <Build sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
             <Typography variant="h6" color="text.secondary">

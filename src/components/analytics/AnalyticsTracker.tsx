@@ -14,7 +14,7 @@
  * to avoid skewing analytics with owner activity.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { SessionProvider } from 'next-auth/react';

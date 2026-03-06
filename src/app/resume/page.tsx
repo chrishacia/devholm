@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import ResumePageClient from './ResumePageClient';
 import { siteConfig } from '@/config';
+import { getFullResume } from '@/db/resume';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Resume',
@@ -25,6 +28,23 @@ export const metadata: Metadata = {
   },
 };
 
-export default function ResumePage() {
-  return <ResumePageClient />;
+export default async function ResumePage() {
+  const resume = await getFullResume();
+
+  // Serialize dates for client component
+  const serializedResume = {
+    ...resume,
+    experiences: resume.experiences.map((exp) => ({
+      ...exp,
+      start_date: exp.start_date.toISOString(),
+      end_date: exp.end_date ? exp.end_date.toISOString() : null,
+    })),
+    education: resume.education.map((edu) => ({
+      ...edu,
+      start_date: edu.start_date ? edu.start_date.toISOString() : null,
+      end_date: edu.end_date ? edu.end_date.toISOString() : null,
+    })),
+  };
+
+  return <ResumePageClient resume={serializedResume} />;
 }

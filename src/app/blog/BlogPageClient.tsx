@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -24,6 +24,13 @@ interface TagWithCount extends Tag {
   postCount: number;
 }
 
+interface BlogPageClientProps {
+  initialPosts: PostWithTags[];
+  initialTotalPages: number;
+  initialTotalPosts: number;
+  initialTags: TagWithCount[];
+}
+
 interface PostCardProps {
   post: PostWithTags;
 }
@@ -37,8 +44,7 @@ function PostCard({ post }: PostCardProps) {
         transition: 'transform 0.2s, box-shadow 0.2s',
         '&:hover': {
           transform: 'translateY(-4px)',
-          boxShadow: (theme) =>
-            `0 12px 24px ${alpha(theme.palette.common.black, 0.15)}`,
+          boxShadow: (theme) => `0 12px 24px ${alpha(theme.palette.common.black, 0.15)}`,
         },
       }}
     >
@@ -69,7 +75,9 @@ function PostCard({ post }: PostCardProps) {
           <Code sx={{ fontSize: 48, color: 'text.secondary', opacity: 0.5 }} />
         )}
       </CardMedia>
-      <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: { xs: 2.5, md: 3 } }}>
+      <CardContent
+        sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: { xs: 2.5, md: 3 } }}
+      >
         <Box sx={{ mb: 1.5 }}>
           {post.tags.slice(0, 3).map((tag) => (
             <Chip
@@ -97,11 +105,7 @@ function PostCard({ post }: PostCardProps) {
         >
           {post.title}
         </Typography>
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{ mb: 2.5, flex: 1 }}
-        >
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, flex: 1 }}>
           {post.excerpt}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -143,19 +147,12 @@ function LoadingSkeleton() {
   );
 }
 
-function RightSidebar({ tags, loading }: { tags: TagWithCount[]; loading: boolean }) {
+function RightSidebar({ tags }: { tags: TagWithCount[] }) {
   return (
     <>
       <SidebarWidget title="Tags">
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {loading ? (
-            <>
-              <Skeleton width={80} height={24} />
-              <Skeleton width={60} height={24} />
-              <Skeleton width={90} height={24} />
-              <Skeleton width={70} height={24} />
-            </>
-          ) : tags.length === 0 ? (
+          {tags.length === 0 ? (
             <Typography variant="body2" color="text.secondary">
               No tags yet
             </Typography>
@@ -192,26 +189,37 @@ function RightSidebar({ tags, loading }: { tags: TagWithCount[]; loading: boolea
   );
 }
 
-export default function BlogPage() {
-  const [posts, setPosts] = useState<PostWithTags[]>([]);
-  const [tags, setTags] = useState<TagWithCount[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [tagsLoading, setTagsLoading] = useState(true);
+export default function BlogPage({
+  initialPosts,
+  initialTotalPages,
+  initialTotalPosts,
+  initialTags,
+}: BlogPageClientProps) {
+  const [posts, setPosts] = useState<PostWithTags[]>(initialPosts);
+  const [tags] = useState<TagWithCount[]>(initialTags);
+  const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalPosts, setTotalPosts] = useState(0);
+  const [totalPages, setTotalPages] = useState(initialTotalPages);
+  const [totalPosts, setTotalPosts] = useState(initialTotalPosts);
   const pageSize = 10;
-  const tagsFetched = useRef(false);
 
-  // Fetch posts (needs to re-run on page change)
+  // Fetch posts only when page > 1 (page 1 is SSR'd)
   useEffect(() => {
+    if (page === 1) {
+      // Use SSR data for page 1
+      setPosts(initialPosts);
+      setTotalPages(initialTotalPages);
+      setTotalPosts(initialTotalPosts);
+      return;
+    }
+
     const controller = new AbortController();
-    
+
     const fetchPosts = async () => {
       setLoading(true);
       try {
         const response = await fetch(`/api/posts?page=${page}&pageSize=${pageSize}`, {
-          signal: controller.signal
+          signal: controller.signal,
         });
         if (!response.ok) throw new Error('Failed to fetch posts');
         const data = await response.json();
@@ -229,29 +237,7 @@ export default function BlogPage() {
 
     fetchPosts();
     return () => controller.abort();
-  }, [page]);
-
-  // Fetch tags once (with deduplication for Strict Mode)
-  useEffect(() => {
-    if (tagsFetched.current) return;
-    tagsFetched.current = true;
-
-    const fetchTags = async () => {
-      try {
-        const response = await fetch('/api/posts/tags');
-        if (!response.ok) throw new Error('Failed to fetch tags');
-        const data = await response.json();
-        setTags(data.tags || []);
-      } catch (error) {
-        console.error('Error fetching tags:', error);
-        setTags([]);
-      } finally {
-        setTagsLoading(false);
-      }
-    };
-
-    fetchTags();
-  }, []);
+  }, [page, initialPosts, initialTotalPages, initialTotalPosts]);
 
   const handlePageChange = (_: React.ChangeEvent<unknown>, value: number) => {
     setPage(value);
@@ -276,10 +262,7 @@ export default function BlogPage() {
           )}
         </Box>
 
-        <ThreeColumnLayout
-          leftSidebar={null}
-          rightSidebar={<RightSidebar tags={tags} loading={tagsLoading} />}
-        >
+        <ThreeColumnLayout leftSidebar={null} rightSidebar={<RightSidebar tags={tags} />}>
           {/* Posts List */}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {loading ? (

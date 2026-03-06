@@ -10,7 +10,11 @@
 import { Box, Typography, Container, Grid2, Avatar, Chip, Paper, alpha } from '@mui/material';
 import { Code, Lightbulb, Rocket, Groups, Coffee, Psychology, Person } from '@mui/icons-material';
 import { AuthAwareMainLayout } from '@/components';
-import { useSiteSettings } from '@/hooks/useSiteSettings';
+import type { SiteSettings } from '@/hooks/useSiteSettings';
+
+interface AboutPageClientProps {
+  settings: SiteSettings;
+}
 
 // CUSTOMIZE: Add your own skills here
 const skills = [
@@ -35,8 +39,7 @@ const interests = [
   { icon: Psychology, label: 'Problem Solving' },
 ];
 
-export default function AboutPage() {
-  const { settings } = useSiteSettings();
+export default function AboutPage({ settings }: AboutPageClientProps) {
   const authorName = settings?.author?.name || 'Developer';
 
   return (

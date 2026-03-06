@@ -1,11 +1,14 @@
 import type { Metadata } from 'next';
 import ContactPageClient from './ContactPageClient';
 import { siteConfig } from '@/config';
+import { fetchSiteSettings } from '@/lib/fetchSiteSettings';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Contact',
   description:
-    'Get in touch. Whether you have a project idea, job opportunity, or just want to say hello - I\'d love to hear from you.',
+    "Get in touch. Whether you have a project idea, job opportunity, or just want to say hello - I'd love to hear from you.",
   openGraph: {
     title: `Contact | ${siteConfig.name}`,
     description: 'Get in touch for projects, opportunities, or just to say hello.',
@@ -21,6 +24,8 @@ export const metadata: Metadata = {
   },
 };
 
-export default function ContactPage() {
-  return <ContactPageClient />;
+export default async function ContactPage() {
+  const settings = await fetchSiteSettings();
+
+  return <ContactPageClient settings={settings} />;
 }

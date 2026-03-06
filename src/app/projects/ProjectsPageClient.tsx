@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -13,7 +12,6 @@ import {
   Button,
   Chip,
   alpha,
-  Skeleton,
 } from '@mui/material';
 import { GitHub, Launch, Code, Lock } from '@mui/icons-material';
 import { AuthAwareMainLayout } from '@/components';
@@ -31,47 +29,11 @@ interface Project {
   technologies: string[];
 }
 
-function LoadingSkeleton() {
-  return (
-    <Grid2 container spacing={3}>
-      {[1, 2, 3].map((i) => (
-        <Grid2 key={i} size={{ xs: 12, md: 6, lg: 4 }}>
-          <Skeleton variant="rectangular" height={320} sx={{ borderRadius: 1 }} />
-        </Grid2>
-      ))}
-    </Grid2>
-  );
+interface ProjectsPageClientProps {
+  projects: Project[];
 }
 
-export default function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const hasFetched = useRef(false);
-
-  useEffect(() => {
-    // Prevent double-fetch from React Strict Mode
-    if (hasFetched.current) return;
-    hasFetched.current = true;
-
-    async function fetchProjects() {
-      try {
-        const response = await fetch('/api/projects');
-        if (!response.ok) {
-          throw new Error('Failed to fetch projects');
-        }
-        const data = await response.json();
-        setProjects(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchProjects();
-  }, []);
-
+export default function ProjectsPage({ projects }: ProjectsPageClientProps) {
   const featuredProjects = projects.filter((p) => p.is_featured);
   const otherProjects = projects.filter((p) => !p.is_featured);
 
@@ -83,207 +45,169 @@ export default function ProjectsPage() {
           <Typography variant="h2" component="h1" gutterBottom sx={{ fontWeight: 700 }}>
             Projects
           </Typography>
-          <Typography
-            variant="h6"
-            color="text.secondary"
-            sx={{ maxWidth: 700, mx: 'auto' }}
-          >
-            These are projects of my past, present, future, and occasional hyperfocus.
-            I have a lot of ideas, and I&apos;m always looking for new ones. If you have an idea
-            and need a developer, please <Link href="/contact">contact me</Link>.
+          <Typography variant="h6" color="text.secondary" sx={{ maxWidth: 700, mx: 'auto' }}>
+            These are projects of my past, present, future, and occasional hyperfocus. I have a lot
+            of ideas, and I&apos;m always looking for new ones. If you have an idea and need a
+            developer, please <Link href="/contact">contact me</Link>.
           </Typography>
         </Box>
 
-        {loading ? (
-          <LoadingSkeleton />
-        ) : error ? (
-          <Box sx={{ textAlign: 'center', py: 8 }}>
-            <Typography color="error">{error}</Typography>
-          </Box>
-        ) : (
-          <>
-            {/* Featured Projects */}
-            {featuredProjects.length > 0 && (
-              <Box sx={{ mb: { xs: 8, md: 12 } }}>
-                <Typography
-                  variant="h4"
-                  component="h2"
-                  sx={{ fontWeight: 600, mb: 4 }}
-                >
-                  Featured Projects
-                </Typography>
-                <Grid2 container spacing={3}>
-                  {featuredProjects.map((project) => (
-                    <Grid2 key={project.id} size={{ xs: 12, md: 6, lg: 4 }}>
-                      <Card
+        <>
+          {/* Featured Projects */}
+          {featuredProjects.length > 0 && (
+            <Box sx={{ mb: { xs: 8, md: 12 } }}>
+              <Typography variant="h4" component="h2" sx={{ fontWeight: 600, mb: 4 }}>
+                Featured Projects
+              </Typography>
+              <Grid2 container spacing={3}>
+                {featuredProjects.map((project) => (
+                  <Grid2 key={project.id} size={{ xs: 12, md: 6, lg: 4 }}>
+                    <Card
+                      sx={{
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        transition: 'transform 0.2s, box-shadow 0.2s',
+                        '&:hover': {
+                          transform: 'translateY(-4px)',
+                          boxShadow: (theme) =>
+                            `0 12px 24px ${alpha(theme.palette.common.black, 0.15)}`,
+                        },
+                      }}
+                    >
+                      <CardMedia
+                        component="div"
                         sx={{
-                          height: '100%',
+                          height: 160,
+                          bgcolor: 'action.hover',
                           display: 'flex',
-                          flexDirection: 'column',
-                          transition: 'transform 0.2s, box-shadow 0.2s',
-                          '&:hover': {
-                            transform: 'translateY(-4px)',
-                            boxShadow: (theme) =>
-                              `0 12px 24px ${alpha(theme.palette.common.black, 0.15)}`,
-                          },
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundImage: project.image_url ? `url(${project.image_url})` : 'none',
+                          backgroundSize: 'contain',
+                          backgroundPosition: 'center',
+                          backgroundRepeat: 'no-repeat',
+                          p: 2,
                         }}
                       >
-                        <CardMedia
-                          component="div"
-                          sx={{
-                            height: 160,
-                            bgcolor: 'action.hover',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            backgroundImage: project.image_url ? `url(${project.image_url})` : 'none',
-                            backgroundSize: 'contain',
-                            backgroundPosition: 'center',
-                            backgroundRepeat: 'no-repeat',
-                            p: 2,
-                          }}
-                        >
-                          {!project.image_url && (
-                            <Code sx={{ fontSize: 48, color: 'text.secondary', opacity: 0.5 }} />
-                          )}
-                        </CardMedia>
-                        <CardContent sx={{ flexGrow: 1, p: 3 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                            <Typography variant="h6" component="h3" fontWeight={600}>
-                              {project.title}
-                            </Typography>
-                            {!project.github_url && !project.live_url && (
-                              <Lock sx={{ fontSize: 16, color: 'text.secondary' }} />
-                            )}
-                          </Box>
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            sx={{ mb: 2.5 }}
-                          >
-                            {project.description}
-                          </Typography>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                            {project.technologies.map((tech) => (
-                              <Chip
-                                key={tech}
-                                label={tech}
-                                size="small"
-                                variant="outlined"
-                              />
-                            ))}
-                          </Box>
-                        </CardContent>
-                        <CardActions sx={{ px: 3, pb: 3, pt: 0, gap: 1 }}>
-                          {project.github_url && (
-                            <Button
-                              size="small"
-                              startIcon={<GitHub sx={{ fontSize: '1rem' }} />}
-                              component={Link}
-                              href={project.github_url}
-                              target="_blank"
-                              sx={{ gap: 0.5 }}
-                            >
-                              GitHub
-                            </Button>
-                          )}
-                          {project.live_url && (
-                            <Button
-                              size="small"
-                              startIcon={<Launch sx={{ fontSize: '1rem' }} />}
-                              component={Link}
-                              href={project.live_url}
-                              target="_blank"
-                              sx={{ gap: 0.5 }}
-                            >
-                              Live
-                            </Button>
-                          )}
-                        </CardActions>
-                      </Card>
-                    </Grid2>
-                  ))}
-                </Grid2>
-              </Box>
-            )}
-
-            {/* Other Projects */}
-            {otherProjects.length > 0 && (
-              <Box sx={{ mb: { xs: 8, md: 12 } }}>
-                <Typography
-                  variant="h4"
-                  component="h2"
-                  sx={{ fontWeight: 600, mb: 4 }}
-                >
-                  Other Projects
-                </Typography>
-                <Grid2 container spacing={3}>
-                  {otherProjects.map((project) => (
-                    <Grid2 key={project.id} size={{ xs: 12, sm: 6, lg: 4 }}>
-                      <Card
-                        sx={{
-                          height: '100%',
-                          display: 'flex',
-                          flexDirection: 'column',
-                        }}
-                        variant="outlined"
-                      >
-                        <CardContent sx={{ flexGrow: 1, p: 3 }}>
-                          <Typography variant="h6" component="h3" gutterBottom fontWeight={600}>
+                        {!project.image_url && (
+                          <Code sx={{ fontSize: 48, color: 'text.secondary', opacity: 0.5 }} />
+                        )}
+                      </CardMedia>
+                      <CardContent sx={{ flexGrow: 1, p: 3 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                          <Typography variant="h6" component="h3" fontWeight={600}>
                             {project.title}
                           </Typography>
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            sx={{ mb: 2.5 }}
+                          {!project.github_url && !project.live_url && (
+                            <Lock sx={{ fontSize: 16, color: 'text.secondary' }} />
+                          )}
+                        </Box>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+                          {project.description}
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {project.technologies.map((tech) => (
+                            <Chip key={tech} label={tech} size="small" variant="outlined" />
+                          ))}
+                        </Box>
+                      </CardContent>
+                      <CardActions sx={{ px: 3, pb: 3, pt: 0, gap: 1 }}>
+                        {project.github_url && (
+                          <Button
+                            size="small"
+                            startIcon={<GitHub sx={{ fontSize: '1rem' }} />}
+                            component={Link}
+                            href={project.github_url}
+                            target="_blank"
+                            sx={{ gap: 0.5 }}
                           >
-                            {project.description}
-                          </Typography>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                            {project.technologies.map((tech) => (
-                              <Chip
-                                key={tech}
-                                label={tech}
-                                size="small"
-                                variant="outlined"
-                              />
-                            ))}
-                          </Box>
-                        </CardContent>
-                        <CardActions sx={{ px: 3, pb: 3, pt: 0, gap: 1 }}>
-                          {project.github_url && (
-                            <Button
-                              size="small"
-                              startIcon={<GitHub sx={{ fontSize: '1rem' }} />}
-                              component={Link}
-                              href={project.github_url}
-                              target="_blank"
-                              sx={{ gap: 0.5 }}
-                            >
-                              GitHub
-                            </Button>
-                          )}
-                          {project.live_url && (
-                            <Button
-                              size="small"
-                              startIcon={<Launch sx={{ fontSize: '1rem' }} />}
-                              component={Link}
-                              href={project.live_url}
-                              target="_blank"
-                              sx={{ gap: 0.5 }}
-                            >
-                              Live
-                            </Button>
-                          )}
-                        </CardActions>
-                      </Card>
-                    </Grid2>
-                  ))}
-                </Grid2>
-              </Box>
-            )}
-          </>
-        )}
+                            GitHub
+                          </Button>
+                        )}
+                        {project.live_url && (
+                          <Button
+                            size="small"
+                            startIcon={<Launch sx={{ fontSize: '1rem' }} />}
+                            component={Link}
+                            href={project.live_url}
+                            target="_blank"
+                            sx={{ gap: 0.5 }}
+                          >
+                            Live
+                          </Button>
+                        )}
+                      </CardActions>
+                    </Card>
+                  </Grid2>
+                ))}
+              </Grid2>
+            </Box>
+          )}
+
+          {/* Other Projects */}
+          {otherProjects.length > 0 && (
+            <Box sx={{ mb: { xs: 8, md: 12 } }}>
+              <Typography variant="h4" component="h2" sx={{ fontWeight: 600, mb: 4 }}>
+                Other Projects
+              </Typography>
+              <Grid2 container spacing={3}>
+                {otherProjects.map((project) => (
+                  <Grid2 key={project.id} size={{ xs: 12, sm: 6, lg: 4 }}>
+                    <Card
+                      sx={{
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                      }}
+                      variant="outlined"
+                    >
+                      <CardContent sx={{ flexGrow: 1, p: 3 }}>
+                        <Typography variant="h6" component="h3" gutterBottom fontWeight={600}>
+                          {project.title}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+                          {project.description}
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {project.technologies.map((tech) => (
+                            <Chip key={tech} label={tech} size="small" variant="outlined" />
+                          ))}
+                        </Box>
+                      </CardContent>
+                      <CardActions sx={{ px: 3, pb: 3, pt: 0, gap: 1 }}>
+                        {project.github_url && (
+                          <Button
+                            size="small"
+                            startIcon={<GitHub sx={{ fontSize: '1rem' }} />}
+                            component={Link}
+                            href={project.github_url}
+                            target="_blank"
+                            sx={{ gap: 0.5 }}
+                          >
+                            GitHub
+                          </Button>
+                        )}
+                        {project.live_url && (
+                          <Button
+                            size="small"
+                            startIcon={<Launch sx={{ fontSize: '1rem' }} />}
+                            component={Link}
+                            href={project.live_url}
+                            target="_blank"
+                            sx={{ gap: 0.5 }}
+                          >
+                            Live
+                          </Button>
+                        )}
+                      </CardActions>
+                    </Card>
+                  </Grid2>
+                ))}
+              </Grid2>
+            </Box>
+          )}
+        </>
 
         {/* Call to Action */}
         <Box
@@ -303,12 +227,7 @@ export default function ProjectsPage() {
           <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
             I&apos;m always open to discussing new projects, creative ideas, or opportunities.
           </Typography>
-          <Button
-            variant="contained"
-            size="large"
-            component={Link}
-            href="/contact"
-          >
+          <Button variant="contained" size="large" component={Link} href="/contact">
             Get in Touch
           </Button>
         </Box>
