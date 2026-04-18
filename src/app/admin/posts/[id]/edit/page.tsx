@@ -47,6 +47,7 @@ import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import Link from '@/components/common/Link';
+import { MediaBrowser } from '@/components';
 
 // Available tags (would come from API in the future)
 const availableTags = [
@@ -127,10 +128,14 @@ export default function EditPostPage() {
   const router = useRouter();
   const params = useParams();
   const postId = params.id as string;
-  
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error';
+  }>({
     open: false,
     message: '',
     severity: 'success',
@@ -138,6 +143,8 @@ export default function EditPostPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editorTab, setEditorTab] = useState(0);
+  const [coverImageBrowserOpen, setCoverImageBrowserOpen] = useState(false);
+  const [inlineImageBrowserOpen, setInlineImageBrowserOpen] = useState(false);
 
   const [form, setForm] = useState<PostForm>({
     title: '',
@@ -162,7 +169,7 @@ export default function EditPostPage() {
           throw new Error('Failed to fetch post');
         }
         const post = await response.json();
-        
+
         setForm({
           title: post.title || '',
           slug: post.slug || '',
@@ -229,7 +236,7 @@ export default function EditPostPage() {
 
     try {
       const status = publishStatus || form.status;
-      
+
       const response = await fetch(`/api/admin/posts/${postId}`, {
         method: 'PUT',
         headers: {
@@ -262,7 +269,8 @@ export default function EditPostPage() {
     } catch (error) {
       setSnackbar({
         open: true,
-        message: error instanceof Error ? error.message : 'Failed to update post. Please try again.',
+        message:
+          error instanceof Error ? error.message : 'Failed to update post. Please try again.',
         severity: 'error',
       });
     } finally {
@@ -318,16 +326,33 @@ export default function EditPostPage() {
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <Box>
         {/* Header */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 4, flexWrap: 'wrap', gap: 2 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            mb: 4,
+            flexWrap: 'wrap',
+            gap: 2,
+          }}
+        >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 2 } }}>
             <IconButton component={Link} href="/admin/posts" size="small">
               <ArrowBack />
             </IconButton>
             <Box>
-              <Typography variant="h4" fontWeight={700} sx={{ fontSize: { xs: '1.5rem', sm: '2rem', md: '2.125rem' } }}>
+              <Typography
+                variant="h4"
+                fontWeight={700}
+                sx={{ fontSize: { xs: '1.5rem', sm: '2rem', md: '2.125rem' } }}
+              >
                 Edit Post
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ display: { xs: 'none', sm: 'block' } }}
+              >
                 Last saved: just now
               </Typography>
             </Box>
@@ -455,7 +480,7 @@ export default function EditPostPage() {
                       <ToolbarButton
                         icon={<ImageIcon sx={{ fontSize: 18 }} />}
                         title="Image"
-                        onClick={() => insertMarkdown('![alt text](', ')')}
+                        onClick={() => setInlineImageBrowserOpen(true)}
                       />
                     </Box>
 
@@ -569,17 +594,10 @@ export default function EditPostPage() {
                   freeSolo
                   options={availableTags}
                   value={form.tags}
-                  onChange={(_, newValue) =>
-                    setForm((prev) => ({ ...prev, tags: newValue }))
-                  }
+                  onChange={(_, newValue) => setForm((prev) => ({ ...prev, tags: newValue }))}
                   renderTags={(value, getTagProps) =>
                     value.map((option, index) => (
-                      <Chip
-                        {...getTagProps({ index })}
-                        key={option}
-                        label={option}
-                        size="small"
-                      />
+                      <Chip {...getTagProps({ index })} key={option} label={option} size="small" />
                     ))
                   }
                   renderInput={(params) => (
@@ -595,26 +613,61 @@ export default function EditPostPage() {
                   Cover Image
                 </Typography>
 
-                <Box
-                  sx={{
-                    border: 2,
-                    borderStyle: 'dashed',
-                    borderColor: 'divider',
-                    borderRadius: 2,
-                    p: 4,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    '&:hover': { borderColor: 'primary.main' },
-                  }}
-                >
-                  <ImageIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
-                  <Typography variant="body2" color="text.secondary">
-                    Click to upload
-                  </Typography>
-                </Box>
+                {form.coverImage ? (
+                  <Box sx={{ position: 'relative' }}>
+                    <Box
+                      component="img"
+                      src={form.coverImage}
+                      alt="Cover image"
+                      sx={{
+                        width: '100%',
+                        borderRadius: 2,
+                        maxHeight: 200,
+                        objectFit: 'cover',
+                      }}
+                    />
+                    <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => setCoverImageBrowserOpen(true)}
+                        fullWidth
+                      >
+                        Change
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        onClick={() => setForm((prev) => ({ ...prev, coverImage: null }))}
+                      >
+                        Remove
+                      </Button>
+                    </Box>
+                  </Box>
+                ) : (
+                  <Box
+                    onClick={() => setCoverImageBrowserOpen(true)}
+                    sx={{
+                      border: 2,
+                      borderStyle: 'dashed',
+                      borderColor: 'divider',
+                      borderRadius: 2,
+                      p: 4,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      '&:hover': { borderColor: 'primary.main' },
+                    }}
+                  >
+                    <ImageIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+                    <Typography variant="body2" color="text.secondary">
+                      Click to browse or upload
+                    </Typography>
+                  </Box>
+                )}
               </CardContent>
             </Card>
 
@@ -718,6 +771,26 @@ export default function EditPostPage() {
             {snackbar.message}
           </Alert>
         </Snackbar>
+
+        {/* Media Browser for Cover Image */}
+        <MediaBrowser
+          open={coverImageBrowserOpen}
+          onClose={() => setCoverImageBrowserOpen(false)}
+          onSelect={(asset) => setForm((prev) => ({ ...prev, coverImage: asset.publicUrl }))}
+          selectedUrl={form.coverImage}
+          acceptedTypes="images"
+        />
+
+        {/* Media Browser for Inline Images */}
+        <MediaBrowser
+          open={inlineImageBrowserOpen}
+          onClose={() => setInlineImageBrowserOpen(false)}
+          onSelect={(asset) => {
+            setInlineImageBrowserOpen(false);
+            insertMarkdown(`![${asset.altText || asset.originalFilename}](${asset.publicUrl})`);
+          }}
+          acceptedTypes="images"
+        />
       </Box>
     </LocalizationProvider>
   );

@@ -44,6 +44,7 @@ import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import Link from '@/components/common/Link';
+import { MediaBrowser } from '@/components';
 
 // Available tags (would come from API)
 const availableTags = [
@@ -99,13 +100,19 @@ function ToolbarButton({ icon, title, onClick }: ToolbarButtonProps) {
 export default function NewPostPage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
-  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error';
+  }>({
     open: false,
     message: '',
     severity: 'success',
   });
   const [previewOpen, setPreviewOpen] = useState(false);
   const [editorTab, setEditorTab] = useState(0);
+  const [coverImageBrowserOpen, setCoverImageBrowserOpen] = useState(false);
+  const [inlineImageBrowserOpen, setInlineImageBrowserOpen] = useState(false);
 
   const [form, setForm] = useState<PostForm>({
     title: '',
@@ -238,16 +245,33 @@ export default function NewPostPage() {
     <LocalizationProvider dateAdapter={AdapterDateFns}>
       <Box>
         {/* Header */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 4, flexWrap: 'wrap', gap: 2 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            mb: 4,
+            flexWrap: 'wrap',
+            gap: 2,
+          }}
+        >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 2 } }}>
             <IconButton component={Link} href="/admin/posts" size="small">
               <ArrowBack />
             </IconButton>
             <Box>
-              <Typography variant="h4" fontWeight={700} sx={{ fontSize: { xs: '1.5rem', sm: '2rem', md: '2.125rem' } }}>
+              <Typography
+                variant="h4"
+                fontWeight={700}
+                sx={{ fontSize: { xs: '1.5rem', sm: '2rem', md: '2.125rem' } }}
+              >
                 New Post
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ display: { xs: 'none', sm: 'block' } }}
+              >
                 Create a new blog post
               </Typography>
             </Box>
@@ -383,7 +407,7 @@ export default function NewPostPage() {
                       <ToolbarButton
                         icon={<ImageIcon sx={{ fontSize: 18 }} />}
                         title="Image"
-                        onClick={() => insertMarkdown('![alt text](', ')')}
+                        onClick={() => setInlineImageBrowserOpen(true)}
                       />
                     </Box>
 
@@ -489,25 +513,14 @@ export default function NewPostPage() {
                   freeSolo
                   options={availableTags}
                   value={form.tags}
-                  onChange={(_, newValue) =>
-                    setForm((prev) => ({ ...prev, tags: newValue }))
-                  }
+                  onChange={(_, newValue) => setForm((prev) => ({ ...prev, tags: newValue }))}
                   renderTags={(value, getTagProps) =>
                     value.map((option, index) => (
-                      <Chip
-                        {...getTagProps({ index })}
-                        key={option}
-                        label={option}
-                        size="small"
-                      />
+                      <Chip {...getTagProps({ index })} key={option} label={option} size="small" />
                     ))
                   }
                   renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      placeholder="Add tags..."
-                      size="small"
-                    />
+                    <TextField {...params} placeholder="Add tags..." size="small" />
                   )}
                 />
               </CardContent>
@@ -520,29 +533,61 @@ export default function NewPostPage() {
                   Cover Image
                 </Typography>
 
-                <Box
-                  sx={{
-                    border: 2,
-                    borderStyle: 'dashed',
-                    borderColor: 'divider',
-                    borderRadius: 2,
-                    p: 4,
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    transition: 'border-color 0.2s',
-                    '&:hover': {
-                      borderColor: 'primary.main',
-                    },
-                  }}
-                >
-                  <ImageIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
-                  <Typography variant="body2" color="text.secondary">
-                    Click to upload or drag & drop
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    PNG, JPG up to 5MB
-                  </Typography>
-                </Box>
+                {form.coverImage ? (
+                  <Box sx={{ position: 'relative' }}>
+                    <Box
+                      component="img"
+                      src={form.coverImage}
+                      alt="Cover image"
+                      sx={{
+                        width: '100%',
+                        borderRadius: 2,
+                        maxHeight: 200,
+                        objectFit: 'cover',
+                      }}
+                    />
+                    <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => setCoverImageBrowserOpen(true)}
+                        fullWidth
+                      >
+                        Change
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        onClick={() => setForm((prev) => ({ ...prev, coverImage: null }))}
+                      >
+                        Remove
+                      </Button>
+                    </Box>
+                  </Box>
+                ) : (
+                  <Box
+                    onClick={() => setCoverImageBrowserOpen(true)}
+                    sx={{
+                      border: 2,
+                      borderStyle: 'dashed',
+                      borderColor: 'divider',
+                      borderRadius: 2,
+                      p: 4,
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      transition: 'border-color 0.2s',
+                      '&:hover': {
+                        borderColor: 'primary.main',
+                      },
+                    }}
+                  >
+                    <ImageIcon sx={{ fontSize: 48, color: 'text.secondary', mb: 1 }} />
+                    <Typography variant="body2" color="text.secondary">
+                      Click to browse or upload
+                    </Typography>
+                  </Box>
+                )}
               </CardContent>
             </Card>
 
@@ -583,12 +628,7 @@ export default function NewPostPage() {
         </Grid>
 
         {/* Full Preview Dialog */}
-        <Dialog
-          open={previewOpen}
-          onClose={() => setPreviewOpen(false)}
-          maxWidth="md"
-          fullWidth
-        >
+        <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} maxWidth="md" fullWidth>
           <DialogTitle>
             <Typography variant="h6">Post Preview</Typography>
           </DialogTitle>
@@ -616,9 +656,7 @@ export default function NewPostPage() {
                 },
               }}
               dangerouslySetInnerHTML={{
-                __html: form.content
-                  ? renderPreview(form.content)
-                  : '<p>No content yet.</p>',
+                __html: form.content ? renderPreview(form.content) : '<p>No content yet.</p>',
               }}
             />
           </DialogContent>
@@ -640,6 +678,26 @@ export default function NewPostPage() {
             {snackbar.message}
           </Alert>
         </Snackbar>
+
+        {/* Media Browser for Cover Image */}
+        <MediaBrowser
+          open={coverImageBrowserOpen}
+          onClose={() => setCoverImageBrowserOpen(false)}
+          onSelect={(asset) => setForm((prev) => ({ ...prev, coverImage: asset.publicUrl }))}
+          selectedUrl={form.coverImage}
+          acceptedTypes="images"
+        />
+
+        {/* Media Browser for Inline Images */}
+        <MediaBrowser
+          open={inlineImageBrowserOpen}
+          onClose={() => setInlineImageBrowserOpen(false)}
+          onSelect={(asset) => {
+            setInlineImageBrowserOpen(false);
+            insertMarkdown(`![${asset.altText || asset.originalFilename}](${asset.publicUrl})`);
+          }}
+          acceptedTypes="images"
+        />
       </Box>
     </LocalizationProvider>
   );

@@ -45,6 +45,7 @@ import {
   FolderOpen,
 } from '@mui/icons-material';
 import { SafeImage } from '@/components/common';
+import { MediaBrowser } from '@/components';
 
 // Project interface
 interface Project {
@@ -112,6 +113,7 @@ export default function ProjectsListPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [imageBrowserOpen, setImageBrowserOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
@@ -610,14 +612,65 @@ export default function ProjectsListPage() {
             required
             sx={{ mt: 2 }}
           />
-          <TextField
-            fullWidth
-            label="Image URL"
-            value={projectForm.imageUrl}
-            onChange={(e) => setProjectForm({ ...projectForm, imageUrl: e.target.value })}
-            sx={{ mt: 2 }}
-            helperText="Path to project screenshot or logo"
-          />
+          {/* Project Image */}
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+              Project Image
+            </Typography>
+            {projectForm.imageUrl ? (
+              <Box>
+                <Box
+                  component="img"
+                  src={projectForm.imageUrl}
+                  alt="Project image"
+                  sx={{
+                    width: '100%',
+                    maxHeight: 200,
+                    objectFit: 'cover',
+                    borderRadius: 1,
+                    border: 1,
+                    borderColor: 'divider',
+                  }}
+                />
+                <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setImageBrowserOpen(true)}
+                    fullWidth
+                  >
+                    Change Image
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    onClick={() => setProjectForm({ ...projectForm, imageUrl: '' })}
+                  >
+                    Remove
+                  </Button>
+                </Box>
+              </Box>
+            ) : (
+              <Box
+                onClick={() => setImageBrowserOpen(true)}
+                sx={{
+                  border: 2,
+                  borderStyle: 'dashed',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  p: 3,
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  '&:hover': { borderColor: 'primary.main' },
+                }}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  Click to browse or upload an image
+                </Typography>
+              </Box>
+            )}
+          </Box>
           <Box
             sx={{
               display: 'grid',
@@ -740,6 +793,17 @@ export default function ProjectsListPage() {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Media Browser for Project Image */}
+      <MediaBrowser
+        open={imageBrowserOpen}
+        onClose={() => setImageBrowserOpen(false)}
+        onSelect={(asset) =>
+          setProjectForm((prev) => ({ ...prev, imageUrl: asset.publicUrl || '' }))
+        }
+        selectedUrl={projectForm.imageUrl || null}
+        acceptedTypes="images"
+      />
     </Box>
   );
 }

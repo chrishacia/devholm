@@ -2,14 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/auth-helpers';
 import { writeFile, mkdir, unlink, readdir } from 'fs/promises';
 import path from 'path';
+import { upload } from '@/config/env';
 
 const RESUME_DIR = path.join(process.cwd(), 'public', 'uploads', 'resume');
 const RESUME_FILENAME = 'resume.pdf';
 const RESUME_PATH = path.join(RESUME_DIR, RESUME_FILENAME);
 const PUBLIC_URL = '/uploads/resume/resume.pdf';
 
-// Max file size: 10MB
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// Max file size: use centralized config (default 50MB)
+const MAX_FILE_SIZE = upload.maxSizeBytes;
 
 // Allowed MIME types for resume
 const ALLOWED_TYPES = [
@@ -72,7 +73,11 @@ export async function POST(request: NextRequest) {
 
     // Validate file size
     if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: 'File too large. Maximum size is 10MB' }, { status: 400 });
+      const maxMb = Math.round(MAX_FILE_SIZE / (1024 * 1024));
+      return NextResponse.json(
+        { error: `File too large. Maximum size is ${maxMb}MB` },
+        { status: 400 }
+      );
     }
 
     // Validate file type

@@ -30,6 +30,10 @@ import { checkRateLimit, getClientIp, rateLimitHeaders, RateLimits } from '@/lib
 import { upload } from '@/config/env';
 import { verifyAdmin } from '@/lib/auth-helpers';
 
+// Next.js route segment config – raise the default 1 MB body-parser limit
+export const maxDuration = 60; // seconds
+export const dynamic = 'force-dynamic';
+
 // =============================================================================
 // Configuration
 // =============================================================================
@@ -44,8 +48,15 @@ const MAX_FILE_SIZE = upload.maxSizeBytes || 50 * 1024 * 1024;
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
-  type: z.enum(['images', 'documents', 'videos', 'audio', 'other']).nullish().transform(val => val ?? undefined),
-  search: z.string().max(100).nullish().transform(val => val ?? undefined),
+  type: z
+    .enum(['images', 'documents', 'videos', 'audio', 'other'])
+    .nullish()
+    .transform((val) => val ?? undefined),
+  search: z
+    .string()
+    .max(100)
+    .nullish()
+    .transform((val) => val ?? undefined),
 });
 
 const deleteBodySchema = z.object({
@@ -100,10 +111,7 @@ export async function GET(request: NextRequest) {
     const result = await getMediaAssets(page, limit, type, search);
     const stats = await getMediaStats();
 
-    return NextResponse.json(
-      { ...result, stats },
-      { headers: rateLimitHeaders(rateLimit) }
-    );
+    return NextResponse.json({ ...result, stats }, { headers: rateLimitHeaders(rateLimit) });
   } catch (error) {
     console.error('Error fetching media:', error);
     return NextResponse.json({ error: 'Failed to fetch media' }, { status: 500 });
@@ -162,7 +170,7 @@ export async function POST(request: NextRequest) {
     // Check for duplicate file by hash
     const fileHash = generateFileHash(buffer);
     const existingAsset = await findByHash(fileHash);
-    
+
     if (existingAsset) {
       // Return existing asset instead of uploading duplicate
       return NextResponse.json(
@@ -178,17 +186,14 @@ export async function POST(request: NextRequest) {
     // Process the upload (validation, optimization, variant generation)
     // Need to recreate the File object since we consumed the arrayBuffer
     const newFile = new File([buffer], file.name, { type: file.type });
-    
+
     const uploadResult = await handleFileUpload(newFile, {
       maxSizeBytes: MAX_FILE_SIZE,
       generateVariants: true,
     });
 
     if (!uploadResult.success || !uploadResult.file) {
-      return NextResponse.json(
-        { error: uploadResult.error || 'Upload failed' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: uploadResult.error || 'Upload failed' }, { status: 400 });
     }
 
     // Save to database
@@ -234,10 +239,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error('Error uploading file:', error);
-    return NextResponse.json(
-      { error: 'Failed to upload file' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 });
   }
 }
 
@@ -305,9 +307,6 @@ export async function DELETE(request: NextRequest) {
     );
   } catch (error) {
     console.error('Error deleting media:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete media' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to delete media' }, { status: 500 });
   }
 }

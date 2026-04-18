@@ -79,10 +79,13 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      - UPLOAD_MAX_SIZE_MB=${UPLOAD_MAX_SIZE_MB:-50}
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf.template:ro
       - ./nginx/sites-enabled:/etc/nginx/sites-enabled:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
+    command: /bin/sh -c "envsubst '$$UPLOAD_MAX_SIZE_MB' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'"
     depends_on:
       - app
     networks:
