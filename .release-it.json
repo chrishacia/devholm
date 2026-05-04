@@ -1,0 +1,38 @@
+{
+  "plugins": {
+    "@release-it/conventional-changelog": {
+      "preset": {
+        "name": "conventionalcommits",
+        "types": [
+          { "type": "feat", "section": "Features" },
+          { "type": "fix", "section": "Bug Fixes" },
+          { "type": "perf", "section": "Performance" },
+          { "type": "refactor", "section": "Code Refactoring", "hidden": false },
+          { "type": "docs", "section": "Documentation", "hidden": false },
+          { "type": "chore", "hidden": true },
+          { "type": "test", "hidden": true },
+          { "type": "ci", "hidden": true }
+        ]
+      },
+      "infile": "CHANGELOG.md",
+      "header": "# Changelog\n\nAll notable changes to this project will be documented in this file.\n"
+    }
+  },
+  "git": {
+    "commitMessage": "chore(release): v${version}",
+    "tagName": "v${version}",
+    "tagAnnotation": "Release v${version}",
+    "requireCleanWorkingDir": false,
+    "requireUpstream": false,
+    "pushArgs": ["--follow-tags"]
+  },
+  "github": {
+    "release": false
+  },
+  "npm": {
+    "publish": false
+  },
+  "hooks": {
+    "before:init": ["pnpm type-check", "pnpm test"]
+  }
+}
