@@ -12,9 +12,10 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Copy package files
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 
-# Install dependencies
+# Install dependencies (HUSKY=0 disables prepare hook since .git isn't in build context)
+ENV HUSKY=0
 RUN pnpm install --frozen-lockfile
 
 # =============================================================================
@@ -33,6 +34,7 @@ COPY . .
 # Set environment variables for build
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+ENV HUSKY=0
 
 # Build the application
 RUN pnpm build
