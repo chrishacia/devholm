@@ -16,7 +16,7 @@ COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 
 # Install dependencies (HUSKY=0 disables prepare hook since .git isn't in build context)
 ENV HUSKY=0
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --config.strict-dep-builds=false
 
 # =============================================================================
 # Stage 2: Builder
