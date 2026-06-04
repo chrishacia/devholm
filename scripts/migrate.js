@@ -22,18 +22,28 @@ async function runMigrations() {
     process.exit(1);
   }
 
-  // Determine migrations directory (production vs development)
-  const migrationsDir = fs.existsSync(path.join(__dirname, 'migrations'))
-    ? path.join(__dirname, 'migrations')  // Production: /app/migrations
-    : path.join(__dirname, '../src/core/db/migrations');  // Development
+  // Determine migration directories (production vs development).
+  // Production image copies core migrations to /app/migrations and user migrations
+  // to /app/migrations/user. Both must be scanned so historical ledgers and
+  // extension migrations stay valid across upgrades.
+  const migrationDirs = fs.existsSync(path.join(__dirname, 'migrations'))
+    ? [
+        path.join(__dirname, 'migrations'),
+        path.join(__dirname, 'migrations/user'),
+      ].filter((dir) => fs.existsSync(dir))
+    : [
+        path.join(__dirname, '../src/core/db/migrations'),
+        path.join(__dirname, '../src/user/extensions/db/migrations'),
+      ].filter((dir) => fs.existsSync(dir));
 
-  console.log(`📂 Using migrations from: ${migrationsDir}`);
+  console.log('📂 Using migrations from:');
+  migrationDirs.forEach((dir) => console.log(`   - ${dir}`));
 
   const db = knex({
     client: 'pg',
     connection: databaseUrl,
     migrations: {
-      directory: migrationsDir,
+      directory: migrationDirs,
       tableName: 'knex_migrations',
       // Support both .ts and .js files
       loadExtensions: ['.ts', '.js'],

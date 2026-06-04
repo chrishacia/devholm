@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  Box,
   IconButton,
   Avatar,
-  Menu,
   MenuItem,
   Divider,
   ListItemIcon,
   ListItemText,
+  Paper,
   useTheme,
   alpha,
 } from '@mui/material';
@@ -35,16 +36,44 @@ interface AvatarMenuProps {
 
 export function AvatarMenu({ isLoggedIn, user, onLogout }: AvatarMenuProps) {
   const theme = useTheme();
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const open = Boolean(anchorEl);
 
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
+    setAnchorEl((current) => (current ? null : event.currentTarget));
   };
 
   const handleClose = () => {
     setAnchorEl(null);
   };
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Node && !containerRef.current?.contains(target)) {
+        handleClose();
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        handleClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
 
   const handleLogout = () => {
     handleClose();
@@ -74,7 +103,7 @@ export function AvatarMenu({ isLoggedIn, user, onLogout }: AvatarMenuProps) {
   ];
 
   return (
-    <>
+    <Box ref={containerRef} sx={{ position: 'relative' }}>
       <IconButton
         onClick={handleClick}
         aria-label={isLoggedIn ? 'Account menu' : 'Login'}
@@ -107,61 +136,60 @@ export function AvatarMenu({ isLoggedIn, user, onLogout }: AvatarMenuProps) {
         </Avatar>
       </IconButton>
 
-      <Menu
-        id="avatar-menu"
-        anchorEl={anchorEl}
-        open={open}
-        onClose={handleClose}
-        onClick={handleClose}
-        transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-        anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-        PaperProps={{
-          elevation: 3,
-          sx: {
-            mt: 1,
+      {open ? (
+        <Paper
+          id="avatar-menu"
+          elevation={3}
+          role="menu"
+          sx={{
+            position: 'absolute',
+            top: 'calc(100% + 8px)',
+            right: 0,
             minWidth: 200,
+            overflow: 'hidden',
+            zIndex: theme.zIndex.appBar + 1,
             '& .MuiMenuItem-root': {
               py: 1.5,
               px: 2,
             },
-          },
-        }}
-      >
-        {isLoggedIn
-          ? [
-              <MenuItem key="user-info" disabled sx={{ opacity: '1 !important' }}>
-                <ListItemText
-                  primary={user?.displayName || 'Admin'}
-                  secondary={user?.email}
-                  primaryTypographyProps={{ fontWeight: 600 }}
-                />
-              </MenuItem>,
-              <Divider key="divider-1" sx={{ my: 1 }} />,
-              ...adminMenuItems.map((item) => (
-                <MenuItem key={item.href} component={Link} href={item.href}>
+          }}
+        >
+          {isLoggedIn
+            ? [
+                <MenuItem key="user-info" disabled sx={{ opacity: '1 !important' }}>
+                  <ListItemText
+                    primary={user?.displayName || 'Admin'}
+                    secondary={user?.email}
+                    primaryTypographyProps={{ fontWeight: 600 }}
+                  />
+                </MenuItem>,
+                <Divider key="divider-1" sx={{ my: 1 }} />,
+                ...adminMenuItems.map((item) => (
+                  <MenuItem key={item.href} component={Link} href={item.href} onClick={handleClose}>
+                    <ListItemIcon>
+                      <item.icon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>{item.label}</ListItemText>
+                  </MenuItem>
+                )),
+                <Divider key="divider-2" sx={{ my: 1 }} />,
+                <MenuItem key="logout" onClick={handleLogout}>
                   <ListItemIcon>
-                    <item.icon fontSize="small" />
+                    <LogoutIcon fontSize="small" color="error" />
                   </ListItemIcon>
-                  <ListItemText>{item.label}</ListItemText>
-                </MenuItem>
-              )),
-              <Divider key="divider-2" sx={{ my: 1 }} />,
-              <MenuItem key="logout" onClick={handleLogout}>
-                <ListItemIcon>
-                  <LogoutIcon fontSize="small" color="error" />
-                </ListItemIcon>
-                <ListItemText primaryTypographyProps={{ color: 'error' }}>Logout</ListItemText>
-              </MenuItem>,
-            ]
-          : [
-              <MenuItem key="login" component={Link} href="/admin/login">
-                <ListItemIcon>
-                  <LoginIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Login</ListItemText>
-              </MenuItem>,
-            ]}
-      </Menu>
-    </>
+                  <ListItemText primaryTypographyProps={{ color: 'error' }}>Logout</ListItemText>
+                </MenuItem>,
+              ]
+            : [
+                <MenuItem key="login" component={Link} href="/admin/login" onClick={handleClose}>
+                  <ListItemIcon>
+                    <LoginIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Login</ListItemText>
+                </MenuItem>,
+              ]}
+        </Paper>
+      ) : null}
+    </Box>
   );
 }

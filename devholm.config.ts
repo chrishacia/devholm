@@ -31,7 +31,7 @@ import { aboutContent } from './src/user/content/about';
 import { homeContent } from './src/user/content/home';
 import { nowContent } from './src/user/content/now';
 
-// Phase 3: Admin Extensions (after creating src/user/extensions/admin/index.ts)
+// Phase 3: Admin Extensions (after editing src/user/extensions/admin/index.tsx)
 // import { adminExtensions } from './src/user/extensions/admin';
 
 // ─────────────────────────────────────────────────────────────────

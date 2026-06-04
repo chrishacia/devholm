@@ -1,6 +1,7 @@
 'use client';
 
 import { ReactNode, useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { SessionProvider } from 'next-auth/react';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v16-appRouter';
 import { ThemeProvider as MuiThemeProvider } from '@mui/material/styles';
@@ -17,7 +18,9 @@ interface ProvidersProps {
 // Inner component that can use the theme context
 function ThemeWrapper({ children }: { children: ReactNode }) {
   const { mode } = useTheme();
+  const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+  const showSearchDialog = !pathname?.startsWith('/admin');
   
   useEffect(() => {
     setMounted(true);
@@ -31,7 +34,7 @@ function ThemeWrapper({ children }: { children: ReactNode }) {
       {/* Prevent flash by hiding content until mounted */}
       <div style={{ visibility: mounted ? 'visible' : 'hidden' }}>
         {children}
-        <SearchDialog />
+        {showSearchDialog ? <SearchDialog /> : null}
       </div>
     </MuiThemeProvider>
   );
