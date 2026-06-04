@@ -36,12 +36,18 @@ See [docs/architecture.md](docs/architecture.md) for the full picture.
 ```bash
 pnpm install
 cp .env.example .env   # fill in DB + auth secrets
-pnpm db:migrate
+pnpm db:setup
 pnpm seed:admin
 pnpm dev
 ```
 
-See [docs/getting-started.md](docs/getting-started.md) for the complete guide.
+Optional demo content:
+
+```bash
+pnpm db:seed:demo
+```
+
+See [docs/getting-started.md](docs/getting-started.md) for the full quick start and [docs/developer-guide.md](docs/developer-guide.md) for the framework workflow.
 
 ---
 
@@ -52,10 +58,10 @@ Edit `devholm.config.ts` and the files in `src/user/`:
 ```typescript
 // devholm.config.ts
 const config: DevHolmConfig = {
-  content: { about, home, now },   // Your narrative content
-  slots: { 'home.hero.below': MyBanner },  // Inject components into views
-  views: { 'about': () => import('./src/user/views/about/AboutView') },  // Eject & override
-  extensions: { admin: myExtensions },  // Add admin sidebar items
+  content: { about, home, now }, // Your narrative content
+  slots: { 'home.hero.below': MyBanner }, // Inject components into views
+  views: { about: () => import('./src/user/views/about/AboutView') }, // Eject & override
+  extensions: { admin: myExtensions }, // Add admin sidebar items
 };
 ```
 
@@ -77,17 +83,19 @@ See [docs/cli.md](docs/cli.md).
 
 ## Documentation
 
-| Doc | Description |
-|---|---|
-| [Getting Started](docs/getting-started.md) | Installation and first setup |
-| [Architecture](docs/architecture.md) | Layer model, directory structure, aliases |
-| [Configuration](docs/configuration.md) | Full `devholm.config.ts` reference |
-| [Extensions](docs/extensions.md) | Slots, admin extensions, view overrides, migrations |
-| [CLI](docs/cli.md) | All CLI commands |
-| [Upgrading](docs/upgrading.md) | How to update DevHolm safely |
+| Doc                                        | Description                                            |
+| ------------------------------------------ | ------------------------------------------------------ |
+| [Getting Started](docs/getting-started.md) | Installation and first setup                           |
+| [Developer Guide](docs/developer-guide.md) | Local workflow, boundaries, seeds, and extension rules |
+| [Architecture](docs/architecture.md)       | Layer model, directory structure, aliases              |
+| [Configuration](docs/configuration.md)     | Full `devholm.config.ts` reference                     |
+| [Extensions](docs/extensions.md)           | Slots, admin extensions, view overrides, migrations    |
+| [CLI](docs/cli.md)                         | All CLI commands                                       |
+| [Upgrading](docs/upgrading.md)             | How to update DevHolm safely                           |
+| [Deployment](DEPLOYMENT.md)                | Server setup and production deployment                 |
+| [GitHub Secrets](GITHUB_SECRETS.md)        | Required repository secrets for CI/CD deploys          |
 
 ---
-
 
 - **Blog System** — Markdown support, tags, series, reading time, RSS feed
 - **Projects Portfolio** — Showcase your work with images and links

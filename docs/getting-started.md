@@ -1,93 +1,143 @@
-# Getting Started with DevHolm
+# DevHolm Quick Start
 
-DevHolm is a personal website framework built on Next.js 15. It provides a layered architecture that separates framework code from your personalizations, making it easy to update the framework without losing your customizations.
+This guide gets a new DevHolm site running locally and points you to the docs you need for deployment.
 
 ## Prerequisites
 
 - Node.js 20+
 - pnpm 10+
-- PostgreSQL 14+
+- PostgreSQL 16+ locally, or Docker with `docker compose`
 
-## Setup
-
-### 1. Clone and install
+## 1. Clone and install
 
 ```bash
-git clone https://github.com/yourusername/devholm-site.git my-site
+git clone https://github.com/devholm/devholm.com.git my-site
 cd my-site
 pnpm install
 ```
 
-### 2. Configure environment
-
-Copy the example env file:
+## 2. Create your local environment file
 
 ```bash
 cp .env.example .env
 ```
 
-Set the required variables:
+At minimum, set these values in `.env`:
 
 ```env
-DATABASE_URL=postgresql://user:password@localhost:5432/mysite
-NEXTAUTH_SECRET=your-secret-here
-NEXTAUTH_URL=http://localhost:3000
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-NEXT_PUBLIC_AUTHOR_NAME=Your Name
-NEXT_PUBLIC_AUTHOR_EMAIL=you@example.com
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_NAME=mysite_dev
+DATABASE_USER=postgres
+DATABASE_PASSWORD=postgres
+
+AUTH_SECRET=replace-this-for-local-dev
+AUTH_URL=http://localhost:3000
+
+ADMIN_EMAIL=admin@localhost.com
+ADMIN_PASSWORD=change-me
+ADMIN_NAME=Admin
 ```
 
-### 3. Configure your site
+Notes:
 
-Edit `devholm.config.ts`:
+- `AUTH_SECRET` is the local auth secret used by the app.
+- `AUTH_URL` should be your local app URL.
+- `ADMIN_*` values are used by `pnpm seed:admin`.
 
-```typescript
-import { aboutContent } from './src/user/content/about';
-import { homeContent } from './src/user/content/home';
-import { nowContent } from './src/user/content/now';
+## 3. Start PostgreSQL
 
-const config: DevHolmConfig = {
-  content: { about: aboutContent, home: homeContent, now: nowContent },
-  slots: {},
-  views: {},
-  extensions: { admin: [] },
-};
+### Option A: local PostgreSQL
 
-export default config;
-```
-
-### 4. Edit your content
-
-Update the files in `src/user/content/`:
-
-- `about.ts` — Bio, skills, interests
-- `home.ts` — Hero text, sidebar text
-- `now.ts` — Current project, location, focus areas
-
-### 5. Run migrations
+Create a database that matches your `.env` values.
 
 ```bash
-pnpm db:migrate
+createdb mysite_dev
 ```
 
-### 6. Create admin user
+### Option B: Docker PostgreSQL
+
+If you want a disposable local database, start only the database service:
 
 ```bash
+docker compose up -d postgres
+```
+
+## 4. Apply the database setup
+
+For a clean local install, run:
+
+```bash
+pnpm db:setup
 pnpm seed:admin
 ```
 
-### 7. Start the dev server
+What this does:
+
+- `pnpm db:setup` runs all migrations and the core bootstrap seeds.
+- `pnpm seed:admin` creates your admin user from `.env`.
+
+Optional demo content:
+
+```bash
+pnpm db:seed:demo
+```
+
+Use this if you want sample posts, tags, and other framework demo data in your local environment.
+
+## 5. Start the app
 
 ```bash
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open:
 
-## Next steps
+- Site: `http://localhost:3000`
+- Admin: `http://localhost:3000/admin`
 
-- [Configuration reference](./configuration.md)
-- [Extension system](./extensions.md)
-- [CLI reference](./cli.md)
-- [Customizing views](./extensions.md#3-view-overrides-eject)
-- [Architecture overview](./architecture.md)
+Log in with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` values from `.env`.
+
+## 6. Make your first customizations
+
+Start in these places:
+
+- `devholm.config.ts` for framework wiring
+- `src/user/content/` for your site narrative content
+- `src/user/extensions/` for site-owned features
+
+Useful first commands:
+
+```bash
+pnpm devholm status
+pnpm devholm list:slots
+pnpm devholm eject about
+pnpm devholm new:extension my-feature
+pnpm devholm new:migration add_example_table
+pnpm devholm new:seed seed-example-data
+```
+
+## 7. Validate before you commit
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+## 8. Prepare for deployment
+
+When you are ready to deploy with GitHub Actions:
+
+1. Read [GITHUB_SECRETS.md](../GITHUB_SECRETS.md) and create the required repository secrets.
+2. Read [DEPLOYMENT.md](../DEPLOYMENT.md) and prepare the target server.
+3. Push to `main` once your secrets and server are ready.
+
+## Next docs
+
+- [Developer Guide](./developer-guide.md)
+- [Architecture](./architecture.md)
+- [Configuration](./configuration.md)
+- [Extensions](./extensions.md)
+- [CLI](./cli.md)
+- [Upgrading](./upgrading.md)

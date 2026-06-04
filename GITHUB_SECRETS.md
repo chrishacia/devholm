@@ -1,6 +1,6 @@
 # GitHub Secrets Setup Guide
 
-Quick reference for setting up GitHub Actions secrets for automated deployment.
+This is the exact repository secret contract used by `.github/workflows/ci.yml` for production deploys.
 
 ## Navigate to Secrets
 
@@ -44,6 +44,11 @@ Quick reference for setting up GitHub Actions secrets for automated deployment.
 | `NEXTAUTH_SECRET` | Session encryption key | Generate with `openssl rand -base64 32` |
 | `ADMIN_EMAIL`     | Initial admin email    | Your admin email                        |
 | `ADMIN_PASSWORD`  | Initial admin password | Create a strong password                |
+
+Important:
+
+- The workflow injects `NEXTAUTH_SECRET` into both `NEXTAUTH_SECRET` and `AUTH_SECRET` in production.
+- You do not need to create a separate `AUTH_SECRET` repository secret for the current deploy workflow.
 
 ---
 
@@ -116,12 +121,12 @@ ADMIN_PASSWORD=MySecureP@ssw0rd!2024
 
 These are optional and have sensible defaults:
 
-| Name                 | Description                    | Default        |
-| -------------------- | ------------------------------ | -------------- |
-| `APP_PORT`           | Host port for the application  | `3000`         |
-| `CSRF_SECRET`        | CSRF protection secret         | Auto-generated |
-| `DOCKERHUB_USERNAME` | For Docker Hub instead of GHCR | Uses GHCR      |
-| `DOCKERHUB_TOKEN`    | Docker Hub access token        | Uses GHCR      |
+| Name                 | Description                    | Default                                |
+| -------------------- | ------------------------------ | -------------------------------------- |
+| `APP_PORT`           | Host port for the application  | `3000`                                 |
+| `CSRF_SECRET`        | CSRF protection secret         | Not currently wired into deploy output |
+| `DOCKERHUB_USERNAME` | For Docker Hub instead of GHCR | Uses GHCR                              |
+| `DOCKERHUB_TOKEN`    | Docker Hub access token        | Uses GHCR                              |
 
 ---
 
@@ -137,6 +142,13 @@ After adding all secrets, you can verify by:
 ---
 
 ## Troubleshooting
+
+### Missing secret names or mismatched values
+
+- Copy the names exactly as they appear above.
+- `SITE_URL` must include `https://`.
+- `DEPLOY_PATH` must already exist on the server.
+- `APP_PORT` must match your nginx upstream port.
 
 ### "Permission denied" SSH error
 
