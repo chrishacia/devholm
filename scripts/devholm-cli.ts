@@ -13,11 +13,13 @@
  *   new:seed <name>       Create a new user DB seed file
  *   list:slots            Print all available extension slot names
  *   status                Print framework structure summary
+ *   sync:check            Check if local changes are upstream-sync friendly
  */
 
 import { readdir, copyFile, mkdir, writeFile, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 
 const ROOT = path.resolve(__dirname, '..');
 const CORE_VIEWS = path.join(ROOT, 'src/core/views');
@@ -66,28 +68,34 @@ function timestamp(): string {
  */
 async function cmdEject(viewName: string) {
   const VALID_VIEWS = [
-    'about', 'blog', 'blog-post', 'contact', 'home', 'now',
-    'projects', 'resume', 'search', 'uses',
+    'about',
+    'blog',
+    'blog-post',
+    'contact',
+    'home',
+    'now',
+    'projects',
+    'resume',
+    'search',
+    'uses',
   ];
 
   if (!VALID_VIEWS.includes(viewName)) {
-    error(
-      `Unknown view "${viewName}". Valid views:\n  ${VALID_VIEWS.join(', ')}`
-    );
+    error(`Unknown view "${viewName}". Valid views:\n  ${VALID_VIEWS.join(', ')}`);
   }
 
   // Map view name to directory and component file name
   const dirMap: Record<string, { dir: string; file: string }> = {
-    'about': { dir: 'about', file: 'AboutView.tsx' },
-    'blog': { dir: 'blog', file: 'BlogView.tsx' },
+    about: { dir: 'about', file: 'AboutView.tsx' },
+    blog: { dir: 'blog', file: 'BlogView.tsx' },
     'blog-post': { dir: 'blog/post', file: 'BlogPostView.tsx' },
-    'contact': { dir: 'contact', file: 'ContactView.tsx' },
-    'home': { dir: 'home', file: 'HomeView.tsx' },
-    'now': { dir: 'now', file: 'NowView.tsx' },
-    'projects': { dir: 'projects', file: 'ProjectsView.tsx' },
-    'resume': { dir: 'resume', file: 'ResumeView.tsx' },
-    'search': { dir: 'search', file: 'SearchView.tsx' },
-    'uses': { dir: 'uses', file: 'UsesView.tsx' },
+    contact: { dir: 'contact', file: 'ContactView.tsx' },
+    home: { dir: 'home', file: 'HomeView.tsx' },
+    now: { dir: 'now', file: 'NowView.tsx' },
+    projects: { dir: 'projects', file: 'ProjectsView.tsx' },
+    resume: { dir: 'resume', file: 'ResumeView.tsx' },
+    search: { dir: 'search', file: 'SearchView.tsx' },
+    uses: { dir: 'uses', file: 'UsesView.tsx' },
   };
 
   const { dir, file } = dirMap[viewName];
@@ -133,10 +141,11 @@ async function cmdNewExtension(name: string) {
     error(`Extension directory already exists: ${extDir}`);
   }
 
-  const componentName = name
-    .split('-')
-    .map((s) => s[0].toUpperCase() + s.slice(1))
-    .join('') + 'Dashboard';
+  const componentName =
+    name
+      .split('-')
+      .map((s) => s[0].toUpperCase() + s.slice(1))
+      .join('') + 'Dashboard';
 
   await ensureDir(extDir);
 
@@ -171,8 +180,10 @@ export default function ${componentName}() {
   log('     export default function Page() { return <${componentName} />; }');
   log('');
   log('  2. Register in src/user/extensions/admin/index.tsx:');
-  log('     import { YourIcon } from \'@mui/icons-material\';');
-  log('     { navItem: { label: \'...\', href: \'/admin/${name}\', icon: <YourIcon />, position: \'after:analytics\' } }');
+  log("     import { YourIcon } from '@mui/icons-material';");
+  log(
+    "     { navItem: { label: '...', href: '/admin/${name}', icon: <YourIcon />, position: 'after:analytics' } }"
+  );
 }
 
 /**
@@ -357,6 +368,84 @@ async function cmdStatus() {
   log('');
 }
 
+/**
+ * sync:check
+ *
+ * Reports whether local edits are inside user-owned boundaries, which keeps
+ * downstream repos easy to update from upstream DevHolm.
+ */
+async function cmdSyncCheck() {
+  const SAFE_PREFIXES = ['src/user/', '.github/', 'nginx/'];
+  const SAFE_EXACT = new Set([
+    'devholm.config.ts',
+    'Dockerfile',
+    'docker-compose.yml',
+    'docker-entrypoint.sh',
+    'README.md',
+    'DEPLOYMENT.md',
+    'GITHUB_SECRETS.md',
+  ]);
+
+  function isSafePath(filePath: string): boolean {
+    return SAFE_EXACT.has(filePath) || SAFE_PREFIXES.some((prefix) => filePath.startsWith(prefix));
+  }
+
+  let remotes = '';
+  try {
+    remotes = execSync('git remote', { encoding: 'utf8' }).trim();
+  } catch {
+    error('Not inside a git repository, cannot run sync:check.');
+  }
+
+  const hasUpstream = remotes.split(/\s+/).includes('upstream');
+
+  let statusOutput = '';
+  try {
+    statusOutput = execSync('git status --porcelain', { encoding: 'utf8' });
+  } catch {
+    error('Unable to read git status.');
+  }
+
+  const changedFiles = statusOutput
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^..\s+/, '').replace(/^"|"$/g, ''));
+
+  const unsafeFiles = changedFiles.filter((filePath) => !isSafePath(filePath));
+
+  log('DevHolm Upstream Sync Check');
+  log('==========================');
+  log('');
+  log(`upstream remote: ${hasUpstream ? 'configured' : 'missing'}`);
+  if (!hasUpstream) {
+    log('  add it with: git remote add upstream https://github.com/devholm/devholm.com.git');
+  }
+  log(`changed files: ${changedFiles.length}`);
+  log('');
+
+  if (changedFiles.length === 0) {
+    log('Working tree is clean. You are ready to pull from upstream.');
+    return;
+  }
+
+  if (unsafeFiles.length === 0) {
+    log('All local changes are in downstream-safe boundaries.');
+    log('Pull/merge from upstream should stay low-conflict.');
+    return;
+  }
+
+  log('Found local edits outside downstream-safe boundaries:');
+  for (const filePath of unsafeFiles) {
+    log(`  - ${filePath}`);
+  }
+  log('');
+  log(
+    'Recommendation: move site-specific customization into src/user/ or devholm.config.ts before syncing upstream.'
+  );
+  process.exitCode = 2;
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -374,6 +463,7 @@ async function main() {
     log('  new:seed <name>       Create a new user DB seed file');
     log('  list:slots            Print all available extension slot names');
     log('  status                Print framework structure summary');
+    log('  sync:check            Check if local changes are upstream-sync friendly');
     return;
   }
 
@@ -399,6 +489,9 @@ async function main() {
       break;
     case 'status':
       await cmdStatus();
+      break;
+    case 'sync:check':
+      await cmdSyncCheck();
       break;
     default:
       error(`Unknown command "${command}". Run "pnpm devholm --help" for usage.`);

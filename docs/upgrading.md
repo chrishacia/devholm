@@ -9,6 +9,16 @@ The framework code lives in `src/core/` and `src/app/`, which is updated by DevH
 
 ## Upgrade steps
 
+### 0. Check downstream sync readiness
+
+Before merging upstream changes, run:
+
+```bash
+pnpm devholm sync:check
+```
+
+This command verifies your local edits stay inside downstream-safe boundaries (`src/user/**`, `devholm.config.ts`, and deploy/config files). If it reports edits in `src/core/**` or framework routing files, expect higher merge risk and move those customizations into `src/user/**` when possible.
+
 ### 1. Fetch the latest framework changes
 
 ```bash
@@ -48,14 +58,14 @@ pnpm typecheck && pnpm test && pnpm build
 
 ## What's safe to customize
 
-| Location | Safe to edit? |
-|---|---|
-| `devholm.config.ts` | ✓ Yes — your configuration contract |
-| `src/user/content/*.ts` | ✓ Yes — your narrative content |
-| `src/user/extensions/**` | ✓ Yes — your extensions |
-| `src/user/views/**` | ✓ Yes — ejected view overrides |
-| `src/core/**` | ✗ No — overwritten by updates |
-| `src/app/**/page.tsx` | ⚠ Thin wrappers only — minimize changes |
+| Location                 | Safe to edit?                            |
+| ------------------------ | ---------------------------------------- |
+| `devholm.config.ts`      | ✓ Yes — your configuration contract      |
+| `src/user/content/*.ts`  | ✓ Yes — your narrative content           |
+| `src/user/extensions/**` | ✓ Yes — your extensions                  |
+| `src/user/views/**`      | ✓ Yes — ejected view overrides           |
+| `src/core/**`            | ✗ No — overwritten by updates            |
+| `src/app/**/page.tsx`    | ⚠ Thin wrappers only — minimize changes |
 
 ## What breaks upgrades
 
