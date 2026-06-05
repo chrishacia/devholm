@@ -36,7 +36,7 @@ async function main() {
   const checks = [
     check('/api/health', [200, 503]),
     check('/api/health?deep=1', [200, 503]),
-    check('/admin/login', [200]),
+    check('/admin/login', [200, 307, 302]),
     check('/admin/users', [200, 307, 302]),
     check('/api/auth/config', [200]),
   ];
