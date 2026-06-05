@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import {
@@ -15,6 +15,7 @@ import {
   CircularProgress,
   Paper,
   alpha,
+  Divider,
 } from '@mui/material';
 import {
   Email,
@@ -23,7 +24,20 @@ import {
   VisibilityOff,
   AdminPanelSettings,
   Home,
+  GitHub,
 } from '@mui/icons-material';
+
+interface PublicAuthProvider {
+  provider: string;
+  label: string;
+}
+
+interface PublicAuthConfig {
+  settings: {
+    registrationEnabled: boolean;
+  };
+  providers: PublicAuthProvider[];
+}
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -32,6 +46,26 @@ export default function AdminLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [providerLoading, setProviderLoading] = useState(true);
+  const [oauthConfig, setOauthConfig] = useState<PublicAuthConfig | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/auth/config');
+        if (!response.ok) {
+          throw new Error('Failed to load auth providers');
+        }
+
+        const result = await response.json();
+        setOauthConfig(result.data);
+      } catch (fetchError) {
+        console.error('Failed to load auth config:', fetchError);
+      } finally {
+        setProviderLoading(false);
+      }
+    })();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +92,26 @@ export default function AdminLoginPage() {
       setError('An unexpected error occurred');
       setLoading(false);
     }
+  };
+
+  const handleOAuthSignIn = async (provider: string) => {
+    setError('');
+    setLoading(true);
+
+    try {
+      await signIn(provider, { callbackUrl: '/admin' });
+    } catch {
+      setError('Unable to start OAuth login');
+      setLoading(false);
+    }
+  };
+
+  const getProviderIcon = (provider: string) => {
+    if (provider === 'github') {
+      return <GitHub />;
+    }
+
+    return <AdminPanelSettings />;
   };
 
   return (
@@ -112,6 +166,33 @@ export default function AdminLoginPage() {
                 {error}
               </Alert>
             )}
+
+            {!providerLoading && oauthConfig?.providers.length ? (
+              <Box sx={{ mb: 3 }}>
+                {oauthConfig.providers.map((provider) => (
+                  <Button
+                    key={provider.provider}
+                    fullWidth
+                    variant="outlined"
+                    size="large"
+                    startIcon={getProviderIcon(provider.provider)}
+                    onClick={() => handleOAuthSignIn(provider.provider)}
+                    disabled={loading}
+                    sx={{ mb: 1.5, py: 1.25 }}
+                  >
+                    Continue with {provider.label}
+                  </Button>
+                ))}
+
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  {oauthConfig.settings.registrationEnabled
+                    ? 'OAuth registration is enabled for configured providers.'
+                    : 'OAuth registration is disabled. Only previously linked accounts can sign in.'}
+                </Typography>
+
+                <Divider sx={{ my: 3 }}>or</Divider>
+              </Box>
+            ) : null}
 
             <TextField
               fullWidth
@@ -176,11 +257,7 @@ export default function AdminLoginPage() {
                 fontWeight: 600,
               }}
             >
-              {loading ? (
-                <CircularProgress size={24} color="inherit" />
-              ) : (
-                'Sign In'
-              )}
+              {loading ? <CircularProgress size={24} color="inherit" /> : 'Sign In'}
             </Button>
           </Box>
 
@@ -196,11 +273,7 @@ export default function AdminLoginPage() {
           </Typography>
 
           {/* Back to Site */}
-          <Button
-            href="/"
-            startIcon={<Home />}
-            sx={{ mt: 2, mx: 'auto', display: 'flex' }}
-          >
+          <Button href="/" startIcon={<Home />} sx={{ mt: 2, mx: 'auto', display: 'flex' }}>
             Back to Site
           </Button>
         </Paper>

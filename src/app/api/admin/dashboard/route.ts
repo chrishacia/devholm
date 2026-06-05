@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/db';
+import { dismissAuthOnboardingStatus, getAuthOnboardingStatus } from '@/db/auth';
 import { getMessageStats } from '@/db/messages';
+import { checkRateLimit, getClientIp, rateLimitHeaders, RateLimits } from '@/lib/rate-limiter';
 import { verifyAdmin } from '@/lib/auth-helpers';
 
 /**
@@ -13,14 +15,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const rateLimit = await checkRateLimit({
+    action: 'admin-dashboard',
+    identifier: getClientIp(request),
+    ...RateLimits.ADMIN_API,
+  });
+
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded' },
+      { status: 429, headers: rateLimitHeaders(rateLimit) }
+    );
+  }
+
   try {
     const db = getDb();
 
     // Get posts stats
-    const postsStats = await db('posts')
-      .select('status')
-      .count('* as count')
-      .groupBy('status');
+    const postsStats = await db('posts').select('status').count('* as count').groupBy('status');
 
     const postsCounts = {
       total: 0,
@@ -43,15 +55,7 @@ export async function GET(request: NextRequest) {
 
     // Get recent posts (last 5)
     const recentPosts = await db('posts')
-      .select(
-        'id',
-        'title',
-        'slug',
-        'status',
-        'published_at',
-        'created_at',
-        'updated_at'
-      )
+      .select('id', 'title', 'slug', 'status', 'published_at', 'created_at', 'updated_at')
       .orderBy('created_at', 'desc')
       .limit(5);
 
@@ -80,16 +84,64 @@ export async function GET(request: NextRequest) {
       .orderBy('created_at', 'desc')
       .limit(5);
 
-    return NextResponse.json({
-      stats: {
-        posts: postsCounts,
-        messages: messageStats,
+    const onboarding = await getAuthOnboardingStatus(token.sub as string);
+
+    return NextResponse.json(
+      {
+        stats: {
+          posts: postsCounts,
+          messages: messageStats,
+        },
+        recentPosts: transformedPosts,
+        recentMessages,
+        onboarding,
       },
-      recentPosts: transformedPosts,
-      recentMessages,
-    });
+      { headers: rateLimitHeaders(rateLimit) }
+    );
   } catch (error) {
     console.error('Error fetching dashboard data:', error);
     return NextResponse.json({ error: 'Failed to fetch dashboard data' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const token = await verifyAdmin(request);
+  if (!token) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const rateLimit = await checkRateLimit({
+    action: 'admin-dashboard-dismiss',
+    identifier: getClientIp(request),
+    ...RateLimits.ADMIN_API,
+  });
+
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded' },
+      { status: 429, headers: rateLimitHeaders(rateLimit) }
+    );
+  }
+
+  try {
+    const body = await request.json();
+    if (body?.action !== 'dismiss-onboarding') {
+      return NextResponse.json(
+        { error: 'Invalid action' },
+        { status: 400, headers: rateLimitHeaders(rateLimit) }
+      );
+    }
+
+    await dismissAuthOnboardingStatus();
+    return NextResponse.json(
+      { message: 'Onboarding banner dismissed' },
+      { headers: rateLimitHeaders(rateLimit) }
+    );
+  } catch (error) {
+    console.error('Dashboard PATCH error:', error);
+    return NextResponse.json(
+      { error: 'Failed to update dashboard state' },
+      { status: 500, headers: rateLimitHeaders(rateLimit) }
+    );
   }
 }

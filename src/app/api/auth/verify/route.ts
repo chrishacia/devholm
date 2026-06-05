@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { getDb } from '@/db';
+import { ensureSiteUserForAdmin } from '@/db/auth';
 import { checkRateLimit } from '@/lib/rate-limiter';
 import { rateLimit as rateLimitConfig } from '@/config/env';
 
@@ -59,12 +60,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
+    const authSubject = await ensureSiteUserForAdmin(user);
+
     // Return user without password hash
     return NextResponse.json({
-      id: user.id,
-      email: user.email,
-      name: user.display_name || 'Admin',
-      role: 'admin',
+      id: authSubject.id,
+      email: authSubject.email,
+      name: authSubject.displayName || user.display_name || 'Admin',
+      role: authSubject.primaryRole,
+      roles: authSubject.roles,
+      permissions: authSubject.permissions,
+      isAdmin: authSubject.isAdmin,
     });
   } catch (error) {
     console.error('Verify error:', error);

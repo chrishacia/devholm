@@ -17,6 +17,9 @@ import {
   CircularProgress,
   Paper,
   InputAdornment,
+  Switch,
+  FormControlLabel,
+  Chip,
 } from '@mui/material';
 import {
   Save,
@@ -29,6 +32,7 @@ import {
   Facebook,
   Instagram,
   YouTube,
+  Security,
 } from '@mui/icons-material';
 import { SvgIcon } from '@mui/material';
 
@@ -94,6 +98,28 @@ interface SettingsData {
   seo: SeoConfig;
 }
 
+interface AuthSettingsData {
+  registrationEnabled: boolean;
+  accountLinkingEnabled: boolean;
+  installCompleted: boolean;
+}
+
+interface AuthProviderSummary {
+  provider: string;
+  label: string;
+  enabled: boolean;
+  clientIdConfigured: boolean;
+  clientSecretConfigured: boolean;
+  scopes: string[];
+  issuer?: string | null;
+}
+
+interface AuthProviderFormState extends AuthProviderSummary {
+  clientId: string;
+  clientSecret: string;
+  scopesInput: string;
+}
+
 // =============================================================================
 // Tab Panel Component
 // =============================================================================
@@ -134,9 +160,13 @@ export default function SettingsPage() {
 
   // Settings state
   const [settings, setSettings] = useState<SettingsData | null>(null);
+  const [authSettings, setAuthSettings] = useState<AuthSettingsData | null>(null);
+  const [authProviders, setAuthProviders] = useState<AuthProviderFormState[]>([]);
 
   // Form state (separate from saved state to track changes)
   const [formData, setFormData] = useState<SettingsData | null>(null);
+  const [authFormData, setAuthFormData] = useState<AuthSettingsData | null>(null);
+  const [authProviderFormData, setAuthProviderFormData] = useState<AuthProviderFormState[]>([]);
 
   // =============================================================================
   // Data Fetching
@@ -147,15 +177,35 @@ export default function SettingsPage() {
     setError(null);
 
     try {
-      const response = await fetch('/api/admin/settings');
+      const [settingsResponse, authResponse] = await Promise.all([
+        fetch('/api/admin/settings'),
+        fetch('/api/admin/auth/config'),
+      ]);
 
-      if (!response.ok) {
+      if (!settingsResponse.ok || !authResponse.ok) {
         throw new Error('Failed to fetch settings');
       }
 
-      const result = await response.json();
-      setSettings(result.data);
-      setFormData(result.data);
+      const [settingsResult, authResult] = await Promise.all([
+        settingsResponse.json(),
+        authResponse.json(),
+      ]);
+
+      const normalizedProviders = (authResult.data.providers as AuthProviderSummary[]).map(
+        (provider) => ({
+          ...provider,
+          clientId: '',
+          clientSecret: '',
+          scopesInput: provider.scopes.join(', '),
+        })
+      );
+
+      setSettings(settingsResult.data);
+      setFormData(settingsResult.data);
+      setAuthSettings(authResult.data.settings);
+      setAuthFormData(authResult.data.settings);
+      setAuthProviders(normalizedProviders);
+      setAuthProviderFormData(normalizedProviders);
     } catch (err) {
       console.error('Error fetching settings:', err);
       setError(err instanceof Error ? err.message : 'Failed to load settings');
@@ -208,6 +258,35 @@ export default function SettingsPage() {
     setHasChanges(true);
   };
 
+  const updateAuthSettingField = (field: keyof AuthSettingsData, value: boolean) => {
+    if (!authFormData) return;
+    setAuthFormData({
+      ...authFormData,
+      [field]: value,
+    });
+    setHasChanges(true);
+  };
+
+  const updateAuthProviderField = (
+    providerKey: string,
+    field: keyof AuthProviderFormState,
+    value: string | boolean | string[] | null | undefined
+  ) => {
+    setAuthProviderFormData((current) =>
+      current.map((provider) => {
+        if (provider.provider !== providerKey) {
+          return provider;
+        }
+
+        return {
+          ...provider,
+          [field]: value,
+        } as AuthProviderFormState;
+      })
+    );
+    setHasChanges(true);
+  };
+
   // =============================================================================
   // Save Handler
   // =============================================================================
@@ -249,20 +328,65 @@ export default function SettingsPage() {
         seo_twitter_card: formData.seo.twitterCard,
       };
 
-      const response = await fetch('/api/admin/settings', {
+      const settingsResponse = await fetch('/api/admin/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
 
-      if (!response.ok) {
-        const data = await response.json();
+      if (!settingsResponse.ok) {
+        const data = await settingsResponse.json();
         throw new Error(data.error || 'Failed to save settings');
       }
 
-      const result = await response.json();
+      let authResultData = null;
+      if (authFormData) {
+        const authResponse = await fetch('/api/admin/auth/config', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            settings: authFormData,
+            providers: authProviderFormData.map((provider) => ({
+              provider: provider.provider,
+              label: provider.label,
+              enabled: provider.enabled,
+              issuer: provider.issuer ?? null,
+              scopes: provider.scopesInput
+                .split(',')
+                .map((entry) => entry.trim())
+                .filter(Boolean),
+              ...(provider.clientId ? { clientId: provider.clientId } : {}),
+              ...(provider.clientSecret ? { clientSecret: provider.clientSecret } : {}),
+            })),
+          }),
+        });
+
+        if (!authResponse.ok) {
+          const data = await authResponse.json();
+          throw new Error(data.error || 'Failed to save auth settings');
+        }
+
+        authResultData = await authResponse.json();
+      }
+
+      const result = await settingsResponse.json();
+      const normalizedProviders = authResultData
+        ? (authResultData.data.providers as AuthProviderSummary[]).map((provider) => ({
+            ...provider,
+            clientId: '',
+            clientSecret: '',
+            scopesInput: provider.scopes.join(', '),
+          }))
+        : authProviders;
+
       setSettings(result.data);
       setFormData(result.data);
+      if (authResultData) {
+        setAuthSettings(authResultData.data.settings);
+        setAuthFormData(authResultData.data.settings);
+        setAuthProviders(normalizedProviders);
+        setAuthProviderFormData(normalizedProviders);
+      }
       setHasChanges(false);
       setSuccess('Settings saved successfully');
     } catch (err) {
@@ -276,8 +400,18 @@ export default function SettingsPage() {
   const handleCancel = () => {
     if (settings) {
       setFormData(settings);
-      setHasChanges(false);
     }
+    if (authSettings) {
+      setAuthFormData(authSettings);
+      setAuthProviderFormData(
+        authProviders.map((provider) => ({
+          ...provider,
+          clientId: '',
+          clientSecret: '',
+        }))
+      );
+    }
+    setHasChanges(false);
   };
 
   // =============================================================================
@@ -286,7 +420,15 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+      <Box
+        sx={{
+          p: 3,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: 400,
+        }}
+      >
         <CircularProgress />
       </Box>
     );
@@ -303,13 +445,22 @@ export default function SettingsPage() {
   return (
     <Box sx={{ p: { xs: 2, sm: 3 } }}>
       {/* Header */}
-      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+      <Box
+        sx={{
+          mb: 3,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
         <Box>
           <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
             Settings
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Configure your site settings, author information, and SEO defaults
+            Configure site content defaults, profile metadata, and authentication access
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
@@ -357,6 +508,7 @@ export default function SettingsPage() {
           <Tab icon={<Person />} label="Author" iconPosition="start" />
           <Tab icon={<Share />} label="Social" iconPosition="start" />
           <Tab icon={<SearchIcon />} label="SEO" iconPosition="start" />
+          <Tab icon={<Security />} label="Auth" iconPosition="start" />
         </Tabs>
       </Paper>
 
@@ -512,7 +664,8 @@ export default function SettingsPage() {
               Social Links
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Add your social media profile full URLs. These will be displayed in your site&apos;s footer and author cards.
+              Add your social media profile full URLs. These will be displayed in your site&apos;s
+              footer and author cards.
             </Typography>
             <Divider sx={{ mb: 3 }} />
 
@@ -539,7 +692,11 @@ export default function SettingsPage() {
                   placeholder="https://github.com/username"
                   slotProps={{ inputLabel: { shrink: true } }}
                   InputProps={{
-                    startAdornment: <InputAdornment position="start"><GitHub fontSize="small" /></InputAdornment>,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <GitHub fontSize="small" />
+                      </InputAdornment>
+                    ),
                   }}
                 />
               </Grid>
@@ -552,7 +709,11 @@ export default function SettingsPage() {
                   placeholder="https://linkedin.com/in/username"
                   slotProps={{ inputLabel: { shrink: true } }}
                   InputProps={{
-                    startAdornment: <InputAdornment position="start"><LinkedIn fontSize="small" /></InputAdornment>,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <LinkedIn fontSize="small" />
+                      </InputAdornment>
+                    ),
                   }}
                 />
               </Grid>
@@ -565,7 +726,11 @@ export default function SettingsPage() {
                   placeholder="https://facebook.com/username"
                   slotProps={{ inputLabel: { shrink: true } }}
                   InputProps={{
-                    startAdornment: <InputAdornment position="start"><Facebook fontSize="small" /></InputAdornment>,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Facebook fontSize="small" />
+                      </InputAdornment>
+                    ),
                   }}
                 />
               </Grid>
@@ -578,7 +743,11 @@ export default function SettingsPage() {
                   placeholder="https://instagram.com/username"
                   slotProps={{ inputLabel: { shrink: true } }}
                   InputProps={{
-                    startAdornment: <InputAdornment position="start"><Instagram fontSize="small" /></InputAdornment>,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Instagram fontSize="small" />
+                      </InputAdornment>
+                    ),
                   }}
                 />
               </Grid>
@@ -591,7 +760,11 @@ export default function SettingsPage() {
                   placeholder="https://tiktok.com/@username"
                   slotProps={{ inputLabel: { shrink: true } }}
                   InputProps={{
-                    startAdornment: <InputAdornment position="start"><TikTokIcon fontSize="small" /></InputAdornment>,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <TikTokIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
                   }}
                 />
               </Grid>
@@ -604,7 +777,11 @@ export default function SettingsPage() {
                   placeholder="https://youtube.com/@username"
                   slotProps={{ inputLabel: { shrink: true } }}
                   InputProps={{
-                    startAdornment: <InputAdornment position="start"><YouTube fontSize="small" /></InputAdornment>,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <YouTube fontSize="small" />
+                      </InputAdornment>
+                    ),
                   }}
                 />
               </Grid>
@@ -617,7 +794,11 @@ export default function SettingsPage() {
                   placeholder="https://discord.gg/invite-code"
                   slotProps={{ inputLabel: { shrink: true } }}
                   InputProps={{
-                    startAdornment: <InputAdornment position="start"><DiscordIcon fontSize="small" /></InputAdornment>,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <DiscordIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
                   }}
                 />
               </Grid>
@@ -683,6 +864,202 @@ export default function SettingsPage() {
                   onChange={(e) => updateSeoField('twitterCard', e.target.value)}
                   helperText="Usually 'summary' or 'summary_large_image'"
                 />
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      </TabPanel>
+
+      <TabPanel value={activeTab} index={4}>
+        <Grid container spacing={3}>
+          <Grid size={{ xs: 12, md: 5 }}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Registration Controls
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                  Registration is off by default. Enable it only when you want new OAuth users to
+                  create local accounts.
+                </Typography>
+                <Divider sx={{ mb: 2 }} />
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={Boolean(authFormData?.registrationEnabled)}
+                      onChange={(e) =>
+                        updateAuthSettingField('registrationEnabled', e.target.checked)
+                      }
+                    />
+                  }
+                  label="Allow OAuth registration"
+                  sx={{ display: 'flex', mb: 1 }}
+                />
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={Boolean(authFormData?.accountLinkingEnabled)}
+                      onChange={(e) =>
+                        updateAuthSettingField('accountLinkingEnabled', e.target.checked)
+                      }
+                    />
+                  }
+                  label="Allow account linking"
+                  sx={{ display: 'flex', mb: 1 }}
+                />
+
+                <Chip
+                  label={
+                    authFormData?.installCompleted
+                      ? 'Initial install complete'
+                      : 'Bootstrap pending'
+                  }
+                  color={authFormData?.installCompleted ? 'success' : 'warning'}
+                  variant="outlined"
+                  sx={{ mt: 2 }}
+                />
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 7 }}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  OAuth Providers
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                  Provider credentials are write-only. Saved values are never returned to the
+                  browser again.
+                </Typography>
+                <Divider sx={{ mb: 3 }} />
+
+                <Grid container spacing={2}>
+                  {authProviderFormData.map((provider) => (
+                    <Grid key={provider.provider} size={{ xs: 12 }}>
+                      <Paper variant="outlined" sx={{ p: 2.5 }}>
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            mb: 2,
+                            gap: 2,
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <Box>
+                            <Typography variant="subtitle1" fontWeight={700}>
+                              {provider.label}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Provider key: {provider.provider}
+                            </Typography>
+                          </Box>
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={provider.enabled}
+                                onChange={(e) =>
+                                  updateAuthProviderField(
+                                    provider.provider,
+                                    'enabled',
+                                    e.target.checked
+                                  )
+                                }
+                              />
+                            }
+                            label="Enabled"
+                          />
+                        </Box>
+
+                        <Grid container spacing={2}>
+                          <Grid size={{ xs: 12, md: 6 }}>
+                            <TextField
+                              fullWidth
+                              label="Client ID"
+                              value={provider.clientId}
+                              onChange={(e) =>
+                                updateAuthProviderField(
+                                  provider.provider,
+                                  'clientId',
+                                  e.target.value
+                                )
+                              }
+                              placeholder={
+                                provider.clientIdConfigured
+                                  ? 'Saved and hidden'
+                                  : 'Paste a new client ID'
+                              }
+                              helperText={
+                                provider.clientIdConfigured
+                                  ? 'A client ID is already stored.'
+                                  : 'Required before the provider can be used.'
+                              }
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, md: 6 }}>
+                            <TextField
+                              fullWidth
+                              label="Client Secret"
+                              type="password"
+                              value={provider.clientSecret}
+                              onChange={(e) =>
+                                updateAuthProviderField(
+                                  provider.provider,
+                                  'clientSecret',
+                                  e.target.value
+                                )
+                              }
+                              placeholder={
+                                provider.clientSecretConfigured
+                                  ? 'Saved and hidden'
+                                  : 'Paste a new client secret'
+                              }
+                              helperText={
+                                provider.clientSecretConfigured
+                                  ? 'A client secret is already stored.'
+                                  : 'Required before the provider can be used.'
+                              }
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, md: 6 }}>
+                            <TextField
+                              fullWidth
+                              label="Issuer"
+                              value={provider.issuer || ''}
+                              onChange={(e) =>
+                                updateAuthProviderField(
+                                  provider.provider,
+                                  'issuer',
+                                  e.target.value || null
+                                )
+                              }
+                              placeholder="Optional issuer override"
+                            />
+                          </Grid>
+                          <Grid size={{ xs: 12, md: 6 }}>
+                            <TextField
+                              fullWidth
+                              label="Scopes"
+                              value={provider.scopesInput}
+                              onChange={(e) =>
+                                updateAuthProviderField(
+                                  provider.provider,
+                                  'scopesInput',
+                                  e.target.value
+                                )
+                              }
+                              helperText="Comma-separated scopes sent to the provider"
+                            />
+                          </Grid>
+                        </Grid>
+                      </Paper>
+                    </Grid>
+                  ))}
+                </Grid>
               </CardContent>
             </Card>
           </Grid>

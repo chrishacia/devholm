@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Box,
   Typography,
@@ -20,6 +21,9 @@ import {
   DialogContent,
   DialogActions,
   InputAdornment,
+  Chip,
+  Paper,
+  Stack,
 } from '@mui/material';
 import {
   Save,
@@ -29,6 +33,9 @@ import {
   Lock,
   Delete,
   Email,
+  Link as LinkIcon,
+  LinkOff,
+  Hub,
 } from '@mui/icons-material';
 
 // =============================================================================
@@ -57,11 +64,25 @@ interface ProfileData {
   updatedAt: string;
 }
 
+interface LinkedAccountData {
+  id: string;
+  provider: string;
+  providerEmail: string | null;
+  providerUsername: string | null;
+  createdAt: string;
+}
+
+interface AvailableProvider {
+  provider: string;
+  label: string;
+}
+
 // =============================================================================
 // Profile Page Component
 // =============================================================================
 
 export default function ProfilePage() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +92,10 @@ export default function ProfilePage() {
   // Profile state
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [formData, setFormData] = useState<ProfileData | null>(null);
+  const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccountData[]>([]);
+  const [availableProviders, setAvailableProviders] = useState<AvailableProvider[]>([]);
+  const [linkingProvider, setLinkingProvider] = useState<string | null>(null);
+  const [unlinkingAccountId, setUnlinkingAccountId] = useState<string | null>(null);
 
   // Avatar upload state
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -124,9 +149,39 @@ export default function ProfilePage() {
     }
   }, []);
 
+  const fetchLinkedAccounts = useCallback(async () => {
+    try {
+      const response = await fetch('/api/admin/profile/linked-accounts');
+      if (!response.ok) {
+        throw new Error('Failed to fetch linked accounts');
+      }
+
+      const result = await response.json();
+      setLinkedAccounts(result.data.linkedAccounts);
+      setAvailableProviders(result.data.availableProviders);
+    } catch (err) {
+      console.error('Error fetching linked accounts:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load linked accounts');
+    }
+  }, []);
+
   useEffect(() => {
     fetchProfile();
-  }, [fetchProfile]);
+    fetchLinkedAccounts();
+  }, [fetchProfile, fetchLinkedAccounts]);
+
+  useEffect(() => {
+    const linkedProvider = searchParams.get('linked');
+    if (linkedProvider) {
+      setSuccess(`Linked ${linkedProvider} successfully`);
+      void fetchLinkedAccounts();
+    }
+
+    const linkError = searchParams.get('link_error');
+    if (linkError) {
+      setError('Unable to start provider linking for that account');
+    }
+  }, [fetchLinkedAccounts, searchParams]);
 
   // =============================================================================
   // Form Handlers
@@ -294,6 +349,37 @@ export default function ProfilePage() {
     }
   };
 
+  const handleLinkProvider = (provider: string) => {
+    setLinkingProvider(provider);
+    window.location.href = `/api/admin/profile/linked-accounts/link/${provider}`;
+  };
+
+  const handleUnlinkProvider = async (accountId: string) => {
+    setUnlinkingAccountId(accountId);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/admin/profile/linked-accounts/${accountId}`, {
+        method: 'DELETE',
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to unlink account');
+      }
+
+      setLinkedAccounts(result.data.linkedAccounts);
+      setAvailableProviders((current) => current);
+      await fetchLinkedAccounts();
+      setSuccess('Linked account removed');
+    } catch (err) {
+      console.error('Error unlinking provider:', err);
+      setError(err instanceof Error ? err.message : 'Failed to unlink provider');
+    } finally {
+      setUnlinkingAccountId(null);
+    }
+  };
+
   // =============================================================================
   // Password Change Handler
   // =============================================================================
@@ -387,7 +473,15 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+      <Box
+        sx={{
+          p: 3,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: 400,
+        }}
+      >
         <CircularProgress />
       </Box>
     );
@@ -406,7 +500,16 @@ export default function ProfilePage() {
   return (
     <Box sx={{ p: { xs: 2, sm: 3 } }}>
       {/* Header */}
-      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+      <Box
+        sx={{
+          mb: 3,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
         <Box>
           <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
             Profile
@@ -536,6 +639,76 @@ export default function ProfilePage() {
               </Button>
             </CardContent>
           </Card>
+
+          <Card sx={{ mt: 3 }}>
+            <CardContent>
+              <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
+                <Hub color="primary" />
+                <Typography variant="h6">Linked Accounts</Typography>
+              </Stack>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+                Connect more providers to this local account so sign-in is intentional instead of
+                inferred from matching emails.
+              </Typography>
+
+              <Stack spacing={1.5} sx={{ mb: 2.5 }}>
+                {linkedAccounts.map((account) => (
+                  <Paper key={account.id} variant="outlined" sx={{ p: 1.75, borderRadius: 3 }}>
+                    <Stack
+                      direction="row"
+                      justifyContent="space-between"
+                      alignItems="center"
+                      spacing={2}
+                    >
+                      <Box>
+                        <Typography fontWeight={700}>{account.provider}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {account.providerEmail ||
+                            account.providerUsername ||
+                            'No provider email returned'}
+                        </Typography>
+                      </Box>
+                      <Button
+                        color="error"
+                        size="small"
+                        startIcon={<LinkOff />}
+                        disabled={unlinkingAccountId === account.id}
+                        onClick={() => void handleUnlinkProvider(account.id)}
+                      >
+                        {unlinkingAccountId === account.id ? 'Removing...' : 'Unlink'}
+                      </Button>
+                    </Stack>
+                  </Paper>
+                ))}
+                {linkedAccounts.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    No OAuth providers are linked yet.
+                  </Typography>
+                ) : null}
+              </Stack>
+
+              <Divider sx={{ mb: 2 }} />
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>
+                Connect another provider
+              </Typography>
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                {availableProviders.map((provider) => (
+                  <Button
+                    key={provider.provider}
+                    variant="outlined"
+                    startIcon={<LinkIcon />}
+                    onClick={() => handleLinkProvider(provider.provider)}
+                    disabled={linkingProvider === provider.provider}
+                  >
+                    {linkingProvider === provider.provider ? 'Connecting...' : provider.label}
+                  </Button>
+                ))}
+                {availableProviders.length === 0 ? (
+                  <Chip label="No additional configured providers available" variant="outlined" />
+                ) : null}
+              </Stack>
+            </CardContent>
+          </Card>
         </Grid>
 
         {/* Profile Details */}
@@ -603,13 +776,16 @@ export default function ProfilePage() {
               </Grid>
             </CardContent>
           </Card>
-
-
         </Grid>
       </Grid>
 
       {/* Password Change Dialog */}
-      <Dialog open={passwordDialogOpen} onClose={() => setPasswordDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={passwordDialogOpen}
+        onClose={() => setPasswordDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Change Password</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -618,11 +794,17 @@ export default function ProfilePage() {
               label="Current Password"
               type={showPasswords.current ? 'text' : 'password'}
               value={passwordData.currentPassword}
-              onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+              onChange={(e) =>
+                setPasswordData({ ...passwordData, currentPassword: e.target.value })
+              }
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">
-                    <IconButton onClick={() => setShowPasswords({ ...showPasswords, current: !showPasswords.current })}>
+                    <IconButton
+                      onClick={() =>
+                        setShowPasswords({ ...showPasswords, current: !showPasswords.current })
+                      }
+                    >
                       {showPasswords.current ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
                   </InputAdornment>
@@ -639,7 +821,11 @@ export default function ProfilePage() {
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">
-                    <IconButton onClick={() => setShowPasswords({ ...showPasswords, new: !showPasswords.new })}>
+                    <IconButton
+                      onClick={() =>
+                        setShowPasswords({ ...showPasswords, new: !showPasswords.new })
+                      }
+                    >
                       {showPasswords.new ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
                   </InputAdornment>
@@ -651,11 +837,17 @@ export default function ProfilePage() {
               label="Confirm New Password"
               type={showPasswords.confirm ? 'text' : 'password'}
               value={passwordData.confirmPassword}
-              onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+              onChange={(e) =>
+                setPasswordData({ ...passwordData, confirmPassword: e.target.value })
+              }
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">
-                    <IconButton onClick={() => setShowPasswords({ ...showPasswords, confirm: !showPasswords.confirm })}>
+                    <IconButton
+                      onClick={() =>
+                        setShowPasswords({ ...showPasswords, confirm: !showPasswords.confirm })
+                      }
+                    >
                       {showPasswords.confirm ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
                   </InputAdornment>
@@ -669,7 +861,12 @@ export default function ProfilePage() {
           <Button
             onClick={handleChangePassword}
             variant="contained"
-            disabled={changingPassword || !passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword}
+            disabled={
+              changingPassword ||
+              !passwordData.currentPassword ||
+              !passwordData.newPassword ||
+              !passwordData.confirmPassword
+            }
           >
             {changingPassword ? <CircularProgress size={24} /> : 'Change Password'}
           </Button>
@@ -677,7 +874,12 @@ export default function ProfilePage() {
       </Dialog>
 
       {/* Email Change Dialog */}
-      <Dialog open={emailDialogOpen} onClose={() => setEmailDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={emailDialogOpen}
+        onClose={() => setEmailDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Change Email</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
