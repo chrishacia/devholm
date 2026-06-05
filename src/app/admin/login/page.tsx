@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import {
@@ -39,7 +39,7 @@ interface PublicAuthConfig {
   providers: PublicAuthProvider[];
 }
 
-export default function AdminLoginPage() {
+function AdminLoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
@@ -291,5 +291,13 @@ export default function AdminLoginPage() {
         </Paper>
       </Container>
     </Box>
+  );
+}
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminLoginPageContent />
+    </Suspense>
   );
 }
