@@ -144,6 +144,172 @@ export interface AuthUser {
   avatar_url: string | null;
 }
 
+export interface SiteUser extends AuthUser {
+  primary_auth_provider: string | null;
+  is_active: boolean;
+  email_verified_at: Date | null;
+  last_login_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface AuthRole {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  is_system: boolean;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface AuthPermission {
+  id: string;
+  slug: string;
+  resource: string;
+  action: string;
+  description: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface LinkedAuthAccount {
+  id: string;
+  userId: string;
+  provider: string;
+  providerAccountId: string;
+  providerEmail: string | null;
+  providerUsername: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface LinkedAuthAccountSummary {
+  id: string;
+  provider: string;
+  providerEmail: string | null;
+  providerUsername: string | null;
+  createdAt: Date;
+}
+
+export interface AuthSubject {
+  id: string;
+  email: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  primaryRole: string;
+  roles: string[];
+  permissions: string[];
+  isAdmin: boolean;
+}
+
+export interface AuthSettings {
+  registrationEnabled: boolean;
+  accountLinkingEnabled: boolean;
+  installCompleted: boolean;
+  setupBannerDismissed?: boolean;
+}
+
+export interface AuthProviderSummary {
+  provider: string;
+  label: string;
+  enabled: boolean;
+  clientIdConfigured: boolean;
+  clientSecretConfigured: boolean;
+  scopes: string[];
+  issuer?: string | null;
+}
+
+export interface AuthProviderConfig {
+  provider: string;
+  label?: string;
+  enabled: boolean;
+  clientId?: string;
+  clientSecret?: string;
+  scopes?: string[];
+  issuer?: string | null;
+}
+
+export interface AuthProviderCredentialSet {
+  provider: string;
+  label: string;
+  clientId: string;
+  clientSecret: string;
+  scopes: string[];
+  issuer?: string | null;
+}
+
+export interface AuthManagementUser {
+  id: string;
+  email: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  primaryRole: string;
+  roles: string[];
+  permissions: string[];
+  isActive: boolean;
+  isAdmin: boolean;
+  primaryAuthProvider: string | null;
+  lastLoginAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  linkedAccounts: LinkedAuthAccountSummary[];
+}
+
+export interface AuthRoleWithPermissions {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  permissions: string[];
+  memberCount: number;
+}
+
+export interface AuthInvitation {
+  id: string;
+  email: string;
+  roleSlugs: string[];
+  note: string | null;
+  invitedBy: string | null;
+  redeemedByUserId: string | null;
+  expiresAt: Date;
+  redeemedAt: Date | null;
+  revokedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AuthInvitationSummary extends AuthInvitation {
+  status: 'pending' | 'redeemed' | 'revoked' | 'expired';
+}
+
+export interface PublicAuthInvitation {
+  email: string;
+  roleSlugs: string[];
+  expiresAt: Date;
+  note?: string | null;
+  isValid?: boolean;
+  status: 'pending' | 'redeemed' | 'revoked' | 'expired';
+}
+
+export interface AuthOnboardingChecklistItem {
+  key: string;
+  title: string;
+  description: string;
+  href: string;
+  completed: boolean;
+}
+
+export interface AuthOnboardingStatus {
+  dismissed: boolean;
+  recoveryOverrideEnabled: boolean;
+  providersReady: number;
+  pendingInvitations: number;
+  linkedAccountCount: number;
+  items: AuthOnboardingChecklistItem[];
+}
+
 export interface LoginCredentials {
   email: string;
   password: string;

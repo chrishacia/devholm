@@ -121,6 +121,9 @@ export const auth = {
 
   /** Session duration in seconds (default: 24 hours) */
   sessionDuration: getEnvInt('AUTH_SESSION_DURATION', 86400),
+
+  /** Server-only escape hatch for setup recovery. Never expose this publicly. */
+  setupBypassEnabled: getEnv('AUTH_SETUP_BYPASS', 'false') === 'true',
 };
 
 // =============================================================================

@@ -9,8 +9,8 @@ interface LoginLayoutProps {
 export default async function LoginLayout({ children }: LoginLayoutProps) {
   // Check if already logged in
   const session = await auth();
-  
-  if (session?.user?.role === 'admin') {
+
+  if (session?.user?.isAdmin) {
     redirect('/admin');
   }
 

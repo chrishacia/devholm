@@ -20,7 +20,7 @@ function normalizePath(pathname: string): string {
 
 function resolveByPath<T extends { href?: string; path?: string }>(
   extensions: T[],
-  candidatePath: string,
+  candidatePath: string
 ): T | undefined {
   const normalizedCandidate = normalizePath(candidatePath);
   return extensions.find((extension) => {
@@ -30,7 +30,7 @@ function resolveByPath<T extends { href?: string; path?: string }>(
 }
 
 function hasDefaultExport(
-  module: Awaited<ReturnType<AdminPageExtension['loadPage']>>,
+  module: Awaited<ReturnType<AdminPageExtension['loadPage']>>
 ): module is { default: React.ComponentType } {
   return typeof module === 'object' && module !== null && 'default' in module;
 }
@@ -47,21 +47,17 @@ export function resolveAdminPageExtension(slug: string[]): AdminPageExtension | 
   return resolveByPath(adminPageExtensions, `/admin/${slug.join('/')}`);
 }
 
-export async function getAdminPageComponent(
-  slug: string[],
-): Promise<React.ComponentType | null> {
+export async function getAdminPageComponent(slug: string[]): Promise<React.ComponentType | null> {
   const extension = resolveAdminPageExtension(slug);
   if (!extension) {
     return null;
   }
 
-  const module = await extension.loadPage();
-  return hasDefaultExport(module) ? module.default : module;
+  const loadedModule = await extension.loadPage();
+  return hasDefaultExport(loadedModule) ? loadedModule.default : loadedModule;
 }
 
-export async function getAdminPageMetadata(
-  slug: string[],
-): Promise<Metadata | undefined> {
+export async function getAdminPageMetadata(slug: string[]): Promise<Metadata | undefined> {
   const extension = resolveAdminPageExtension(slug);
   return extension?.getMetadata ? extension.getMetadata() : undefined;
 }
@@ -73,7 +69,7 @@ export function resolveApiExtension(path: string[]): ApiExtension | undefined {
 export async function runApiExtension(
   method: ApiExtensionMethod,
   request: NextRequest,
-  path: string[],
+  path: string[]
 ): Promise<Response | null> {
   const extension = resolveApiExtension(path);
   if (!extension) {
