@@ -15,6 +15,7 @@ import {
   updateAdminPassword,
   verifyCurrentPassword,
   getAvatarMediaId,
+  ensureAdminShadowUser,
 } from '@/db/admin-users';
 import { getMediaAssetWithVariants, getAllStoragePaths, deleteMediaAssets } from '@/db/media';
 import { deleteMediaFiles } from '@/lib/image-processor';
@@ -39,11 +40,11 @@ function getVariantUrl(
 
   // Sort variants by width
   const sorted = [...asset.variants]
-    .filter(v => v.width !== null)
+    .filter((v) => v.width !== null)
     .sort((a, b) => (a.width || 0) - (b.width || 0));
 
   // Find smallest variant >= targetWidth
-  const suitable = sorted.find(v => (v.width || 0) >= targetWidth);
+  const suitable = sorted.find((v) => (v.width || 0) >= targetWidth);
   if (suitable) {
     return suitable.publicUrl;
   }
@@ -77,14 +78,49 @@ const updateEmailSchema = z.object({
   currentPassword: z.string().min(1),
 });
 
-const updatePasswordSchema = z.object({
-  currentPassword: z.string().min(1),
-  newPassword: z.string().min(8).max(100),
-  confirmPassword: z.string().min(1),
-}).refine((data) => data.newPassword === data.confirmPassword, {
-  message: 'Passwords do not match',
-  path: ['confirmPassword'],
-});
+const updatePasswordSchema = z
+  .object({
+    currentPassword: z.string().optional().default(''),
+    newPassword: z.string().min(8).max(100),
+    confirmPassword: z.string().min(1),
+    allowSetInitialPassword: z.boolean().optional().default(false),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
+
+async function resolveAdminIdentity(token: {
+  sub?: string | null;
+  email?: string | null;
+  name?: string | null;
+  picture?: string | null;
+  image?: string | null;
+}) {
+  const adminId = token.sub as string;
+  const profile = await getAdminUserProfile(adminId);
+  if (profile) {
+    return { adminId, profile };
+  }
+
+  if (!token.email) {
+    return { adminId, profile: null };
+  }
+
+  const resolvedId = await ensureAdminShadowUser({
+    id: adminId,
+    email: token.email,
+    displayName: token.name,
+    avatarUrl: token.picture ?? token.image ?? null,
+  });
+
+  if (!resolvedId) {
+    return { adminId, profile: null };
+  }
+
+  const resolvedProfile = await getAdminUserProfile(resolvedId);
+  return { adminId: resolvedId, profile: resolvedProfile };
+}
 
 // =============================================================================
 // GET /api/admin/profile - Get current user's profile
@@ -113,8 +149,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const userId = token.sub as string;
-    const profile = await getAdminUserProfile(userId);
+    const { profile } = await resolveAdminIdentity(token);
 
     if (!profile) {
       return NextResponse.json(
@@ -147,10 +182,7 @@ export async function GET(request: NextRequest) {
     );
   } catch (error) {
     console.error('Profile GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch profile' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 });
   }
 }
 
@@ -191,13 +223,13 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const userId = token.sub as string;
+    const { adminId: userId } = await resolveAdminIdentity(token);
     const updateData = parseResult.data;
 
     // If updating avatar, clean up old avatar media first
     if (updateData.avatarMediaId !== undefined) {
       const oldAvatarMediaId = await getAvatarMediaId(userId);
-      
+
       // If there's an old avatar and we're replacing it (or removing it)
       if (oldAvatarMediaId && oldAvatarMediaId !== updateData.avatarMediaId) {
         try {
@@ -261,10 +293,7 @@ export async function PATCH(request: NextRequest) {
     );
   } catch (error) {
     console.error('Profile PATCH error:', error);
-    return NextResponse.json(
-      { error: 'Failed to update profile' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
   }
 }
 
@@ -309,7 +338,7 @@ export async function PUT(request: NextRequest) {
         );
       }
 
-      const userId = token.sub as string;
+      const { adminId: userId } = await resolveAdminIdentity(token);
       const { email, currentPassword } = parseResult.data;
 
       // Verify current password
@@ -344,16 +373,19 @@ export async function PUT(request: NextRequest) {
         );
       }
 
-      const userId = token.sub as string;
-      const { currentPassword, newPassword } = parseResult.data;
+      const { adminId: userId } = await resolveAdminIdentity(token);
+      const { currentPassword, newPassword, allowSetInitialPassword } = parseResult.data;
 
-      // Verify current password
-      const passwordValid = await verifyCurrentPassword(userId, currentPassword);
-      if (!passwordValid) {
-        return NextResponse.json(
-          { error: 'Current password is incorrect' },
-          { status: 400, headers: rateLimitHeaders(rateLimit) }
-        );
+      // For OAuth-first accounts, allow setting an initial password without
+      // requiring a current password challenge.
+      if (!allowSetInitialPassword) {
+        const passwordValid = await verifyCurrentPassword(userId, currentPassword);
+        if (!passwordValid) {
+          return NextResponse.json(
+            { error: 'Current password is incorrect' },
+            { status: 400, headers: rateLimitHeaders(rateLimit) }
+          );
+        }
       }
 
       // Update password
@@ -377,9 +409,6 @@ export async function PUT(request: NextRequest) {
     );
   } catch (error) {
     console.error('Profile PUT error:', error);
-    return NextResponse.json(
-      { error: 'Failed to update' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update' }, { status: 500 });
   }
 }

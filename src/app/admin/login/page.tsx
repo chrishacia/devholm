@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import {
   Box,
@@ -41,6 +41,7 @@ interface PublicAuthConfig {
 
 export default function AdminLoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -66,6 +67,17 @@ export default function AdminLoginPage() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    const loginError = searchParams.get('error');
+    const provider = searchParams.get('provider');
+
+    if (loginError === 'oauth-email-required') {
+      setError(
+        `Your ${provider || 'OAuth'} account did not provide an email. Add an email to that provider account, then sign in again. After sign-in, you can also set a local password in Profile.`
+      );
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -7,6 +7,7 @@
 
 import { getDb } from './index';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 // =============================================================================
 // Types
@@ -49,6 +50,67 @@ export interface UpdateProfileData {
   githubHandle?: string | null;
   linkedinHandle?: string | null;
   avatarMediaId?: string | null;
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+/**
+ * Ensure there is an admin_users row usable by legacy profile + credential flows.
+ * Returns the resolved admin_users.id for downstream operations.
+ */
+export async function ensureAdminShadowUser(input: {
+  id: string;
+  email: string;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+}): Promise<string | null> {
+  const db = getDb();
+  const normalizedEmail = normalizeEmail(input.email);
+
+  const byId = await db('admin_users').where('id', input.id).first('id');
+  if (byId?.id) {
+    await db('admin_users')
+      .where('id', byId.id)
+      .update({
+        email: normalizedEmail,
+        display_name: input.displayName ?? db.raw('display_name'),
+        avatar_url: input.avatarUrl ?? db.raw('avatar_url'),
+        updated_at: new Date(),
+      });
+    return byId.id as string;
+  }
+
+  const byEmail = await db('admin_users')
+    .whereRaw('LOWER(email) = ?', [normalizedEmail])
+    .first('id');
+  if (byEmail?.id) {
+    await db('admin_users')
+      .where('id', byEmail.id)
+      .update({
+        display_name: input.displayName ?? db.raw('display_name'),
+        avatar_url: input.avatarUrl ?? db.raw('avatar_url'),
+        updated_at: new Date(),
+      });
+    return byEmail.id as string;
+  }
+
+  const passwordHash = await bcrypt.hash(crypto.randomUUID(), 12);
+  const [created] = await db('admin_users')
+    .insert({
+      id: input.id,
+      email: normalizedEmail,
+      display_name: input.displayName ?? 'Admin',
+      avatar_url: input.avatarUrl ?? null,
+      password_hash: passwordHash,
+      totp_enabled: false,
+      created_at: new Date(),
+      updated_at: new Date(),
+    })
+    .returning('id');
+
+  return (created?.id as string | undefined) ?? null;
 }
 
 // =============================================================================
@@ -150,7 +212,15 @@ export async function verifyAdminCredentials(
 ): Promise<AdminUser | null> {
   const db = getDb();
   const user = await db('admin_users')
-    .select('id', 'email', 'display_name', 'avatar_url', 'password_hash', 'created_at', 'updated_at')
+    .select(
+      'id',
+      'email',
+      'display_name',
+      'avatar_url',
+      'password_hash',
+      'created_at',
+      'updated_at'
+    )
     .where('email', email)
     .first();
 
@@ -282,9 +352,7 @@ export async function updateAdminEmail(id: string, email: string): Promise<boole
   const existing = await db('admin_users').where('email', email).whereNot('id', id).first();
   if (existing) return false;
 
-  const result = await db('admin_users')
-    .where('id', id)
-    .update({ email, updated_at: new Date() });
+  const result = await db('admin_users').where('id', id).update({ email, updated_at: new Date() });
 
   return result > 0;
 }
@@ -296,12 +364,10 @@ export async function updateAdminPassword(id: string, newPassword: string): Prom
   const db = getDb();
   const passwordHash = await bcrypt.hash(newPassword, 12);
 
-  const result = await db('admin_users')
-    .where('id', id)
-    .update({
-      password_hash: passwordHash,
-      updated_at: new Date(),
-    });
+  const result = await db('admin_users').where('id', id).update({
+    password_hash: passwordHash,
+    updated_at: new Date(),
+  });
 
   return result > 0;
 }
@@ -333,13 +399,11 @@ export async function deleteAdminUser(id: string): Promise<boolean> {
  */
 export async function clearAvatarMediaReference(mediaId: string): Promise<number> {
   const db = getDb();
-  const result = await db('admin_users')
-    .where('avatar_media_id', mediaId)
-    .update({ 
-      avatar_media_id: null, 
-      avatar_url: null,
-      updated_at: new Date() 
-    });
+  const result = await db('admin_users').where('avatar_media_id', mediaId).update({
+    avatar_media_id: null,
+    avatar_url: null,
+    updated_at: new Date(),
+  });
   return result;
 }
 
@@ -348,10 +412,7 @@ export async function clearAvatarMediaReference(mediaId: string): Promise<number
  */
 export async function getAvatarMediaId(userId: string): Promise<string | null> {
   const db = getDb();
-  const row = await db('admin_users')
-    .select('avatar_media_id')
-    .where('id', userId)
-    .first();
+  const row = await db('admin_users').select('avatar_media_id').where('id', userId).first();
   return row?.avatar_media_id || null;
 }
 

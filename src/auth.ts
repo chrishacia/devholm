@@ -158,6 +158,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth(async () => ({
         return true;
       }
 
+      if (!user.email) {
+        return `/admin/login?error=oauth-email-required&provider=${encodeURIComponent(account.provider)}`;
+      }
+
       const cookieStore = await cookies();
       const linkState = parseLinkCookie(cookieStore.get(LINK_ACCOUNT_COOKIE)?.value);
       const inviteState = parseInviteCookie(cookieStore.get(INVITE_ACCOUNT_COOKIE)?.value);

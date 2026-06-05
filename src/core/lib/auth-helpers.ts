@@ -76,9 +76,16 @@ export async function verifyPermission(
   permission: string
 ): Promise<JWT | null> {
   const token = await getAdminToken(request);
-  if (!token || !hasPermission(token, permission)) {
+  if (!token) {
     return null;
   }
+
+  // Compatibility path: role-based admins can still access admin APIs while
+  // permission grants are being rolled out across migrated environments.
+  if (!hasPermission(token, permission) && !hasAdminAccess(token)) {
+    return null;
+  }
+
   return token;
 }
 

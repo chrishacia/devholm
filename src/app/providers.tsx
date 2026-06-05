@@ -9,6 +9,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeContextProvider, useTheme } from '@/theme/ThemeProvider';
 import { getTheme } from '@/theme/theme';
 import SearchDialog from '@/components/common/SearchDialog';
+import ClientErrorMonitor from '@/components/monitoring/ClientErrorMonitor';
 import { SiteSettingsProvider } from '@/hooks/useSiteSettings';
 
 interface ProvidersProps {
@@ -21,18 +22,19 @@ function ThemeWrapper({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
   const showSearchDialog = !pathname?.startsWith('/admin');
-  
+
   useEffect(() => {
     setMounted(true);
   }, []);
-  
+
   const theme = getTheme(mode);
-  
+
   return (
     <MuiThemeProvider theme={theme}>
       <CssBaseline />
       {/* Prevent flash by hiding content until mounted */}
       <div style={{ visibility: mounted ? 'visible' : 'hidden' }}>
+        <ClientErrorMonitor />
         {children}
         {showSearchDialog ? <SearchDialog /> : null}
       </div>
@@ -53,4 +55,3 @@ export function Providers({ children }: ProvidersProps) {
     </SessionProvider>
   );
 }
-

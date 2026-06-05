@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { redirect } from 'next/navigation';
 import { SessionProvider } from 'next-auth/react';
 import { auth } from '@/auth';
 import AdminLayoutClient from './AdminLayoutClient';
@@ -20,7 +21,23 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
   try {
     session = await auth();
   } catch {
-    // auth DB unavailable — render shell without session
+    // auth DB unavailable — force login route instead of rendering broken admin shell
+  }
+
+  const roles = Array.isArray(session?.user?.roles) ? session.user.roles : [];
+  const hasAdminAccess =
+    session?.user?.isAdmin === true ||
+    session?.user?.role === 'admin' ||
+    session?.user?.role === 'superadmin' ||
+    roles.includes('admin') ||
+    roles.includes('superadmin');
+
+  if (!session?.user) {
+    redirect('/admin/login');
+  }
+
+  if (!hasAdminAccess) {
+    redirect('/');
   }
 
   return (

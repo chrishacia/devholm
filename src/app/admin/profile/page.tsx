@@ -97,6 +97,10 @@ function ProfilePageInner() {
   const [linkingProvider, setLinkingProvider] = useState<string | null>(null);
   const [unlinkingAccountId, setUnlinkingAccountId] = useState<string | null>(null);
 
+  const hasCredentialsAccount = linkedAccounts.some(
+    (account) => account.provider === 'credentials'
+  );
+
   // Avatar upload state
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -405,6 +409,7 @@ function ProfilePageInner() {
         body: JSON.stringify({
           action: 'password',
           currentPassword: passwordData.currentPassword,
+          allowSetInitialPassword: !hasCredentialsAccount,
           newPassword: passwordData.newPassword,
           confirmPassword: passwordData.confirmPassword,
         }),
@@ -417,7 +422,9 @@ function ProfilePageInner() {
 
       setPasswordDialogOpen(false);
       setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      setSuccess('Password changed successfully');
+      setSuccess(
+        hasCredentialsAccount ? 'Password changed successfully' : 'Password set successfully'
+      );
     } catch (err) {
       console.error('Error changing password:', err);
       setError(err instanceof Error ? err.message : 'Failed to change password');
@@ -789,6 +796,12 @@ function ProfilePageInner() {
         <DialogTitle>Change Password</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {!hasCredentialsAccount ? (
+              <Alert severity="info">
+                This account was created with OAuth. Set a password to enable email/password login.
+                If your OAuth provider did not share an email, update your email first.
+              </Alert>
+            ) : null}
             <TextField
               fullWidth
               label="Current Password"
@@ -797,6 +810,8 @@ function ProfilePageInner() {
               onChange={(e) =>
                 setPasswordData({ ...passwordData, currentPassword: e.target.value })
               }
+              required={hasCredentialsAccount}
+              helperText={hasCredentialsAccount ? undefined : 'Optional for initial password setup'}
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">

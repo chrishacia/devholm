@@ -32,6 +32,7 @@
     "db:seed:user": "tsx scripts/run-seeds.ts user",
     "db:setup": "pnpm db:migrate && pnpm db:seed:bootstrap",
     "seed:admin": "tsx src/db/seed-admin.ts",
+    "debug:smoke": "node scripts/debug-smoke.js",
     "prepare": "husky",
     "release": "release-it",
     "release:dry": "release-it --dry-run"

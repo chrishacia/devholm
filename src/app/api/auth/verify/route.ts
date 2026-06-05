@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     const db = getDb();
     const user = await db('admin_users')
       .select('id', 'email', 'display_name', 'password_hash')
-      .where('email', email)
+      .whereRaw('LOWER(email) = ?', [String(email).trim().toLowerCase()])
       .first();
 
     if (!user) {

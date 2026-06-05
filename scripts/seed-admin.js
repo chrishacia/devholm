@@ -35,7 +35,16 @@ async function seedAdmin() {
     const existing = await db('admin_users').where('email', adminEmail).first();
 
     if (existing) {
-      console.log(`✅ Admin user ${adminEmail} already exists`);
+      const passwordMatches = await bcrypt.compare(adminPassword, existing.password_hash);
+      if (!passwordMatches) {
+        const passwordHash = await bcrypt.hash(adminPassword, 12);
+        await db('admin_users')
+          .where('id', existing.id)
+          .update({ password_hash: passwordHash, updated_at: new Date() });
+        console.log(`✅ Admin user ${adminEmail} password synchronized from environment`);
+      } else {
+        console.log(`✅ Admin user ${adminEmail} already exists`);
+      }
     } else {
       // Hash password and create admin
       const passwordHash = await bcrypt.hash(adminPassword, 12);
