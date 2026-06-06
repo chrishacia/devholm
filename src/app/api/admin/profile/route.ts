@@ -17,6 +17,8 @@ import {
   getAvatarMediaId,
   ensureAdminShadowUser,
 } from '@/db/admin-users';
+import { getLinkedAccountsForUser } from '@/db/auth';
+import { getDb } from '@/db';
 import { getMediaAssetWithVariants, getAllStoragePaths, deleteMediaAssets } from '@/db/media';
 import { deleteMediaFiles } from '@/lib/image-processor';
 import { updateSetting } from '@/db/settings';
@@ -374,11 +376,19 @@ export async function PUT(request: NextRequest) {
       }
 
       const { adminId: userId } = await resolveAdminIdentity(token);
-      const { currentPassword, newPassword, allowSetInitialPassword } = parseResult.data;
+      const { currentPassword, newPassword } = parseResult.data;
 
-      // For OAuth-first accounts, allow setting an initial password without
-      // requiring a current password challenge.
-      if (!allowSetInitialPassword) {
+      // Never trust client flags for password challenge rules.
+      // Determine on the server whether credentials auth already exists.
+      const [linkedAccounts, siteUser] = await Promise.all([
+        getLinkedAccountsForUser(userId),
+        getDb()('site_users').where('id', userId).select('primary_auth_provider').first(),
+      ]);
+      const hasCredentialsAccount =
+        linkedAccounts.some((account) => account.provider === 'credentials') ||
+        siteUser?.primary_auth_provider === 'credentials';
+
+      if (hasCredentialsAccount) {
         const passwordValid = await verifyCurrentPassword(userId, currentPassword);
         if (!passwordValid) {
           return NextResponse.json(

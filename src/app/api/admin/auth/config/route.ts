@@ -12,6 +12,7 @@ import { checkRateLimit, getClientIp, rateLimitHeaders, RateLimits } from '@/lib
 const authConfigUpdateSchema = z.object({
   settings: z
     .object({
+      credentialsEnabled: z.boolean().optional(),
       registrationEnabled: z.boolean().optional(),
       accountLinkingEnabled: z.boolean().optional(),
       installCompleted: z.boolean().optional(),

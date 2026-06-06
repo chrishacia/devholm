@@ -108,6 +108,13 @@ const SYSTEM_PROVIDERS = [
 async function insertDefaultAuthSettings(knex: Knex): Promise<void> {
   const defaults = [
     {
+      key: 'auth_credentials_enabled',
+      value: 'true',
+      type: 'boolean',
+      category: 'auth',
+      description: 'Whether password/credentials login is enabled.',
+    },
+    {
       key: 'auth_registration_enabled',
       value: 'false',
       type: 'boolean',

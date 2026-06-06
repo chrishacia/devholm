@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { getDb } from './index';
-import { getSettings, updateSettings } from './settings';
+import { getSettings, updateSettings, upsertSetting } from './settings';
 import { auth as authConfig } from '@/config/env';
 import { decryptSecret, encryptSecret } from '@/lib/secret-store';
 import type {
@@ -258,6 +258,7 @@ function toAuthSubject(
 
 export async function getAuthSettings(): Promise<AuthSettings> {
   const settings = await getSettings([
+    'auth_credentials_enabled',
     'auth_registration_enabled',
     'auth_account_linking_enabled',
     'auth_install_completed',
@@ -265,6 +266,7 @@ export async function getAuthSettings(): Promise<AuthSettings> {
   ]);
 
   return {
+    credentialsEnabled: settings.auth_credentials_enabled !== false,
     registrationEnabled: settings.auth_registration_enabled === true,
     accountLinkingEnabled: settings.auth_account_linking_enabled !== false,
     installCompleted: settings.auth_install_completed === true,
@@ -274,6 +276,16 @@ export async function getAuthSettings(): Promise<AuthSettings> {
 
 export async function updateAuthSettings(input: Partial<AuthSettings>): Promise<void> {
   const updates: Record<string, boolean> = {};
+
+  if (typeof input.credentialsEnabled === 'boolean') {
+    await upsertSetting(
+      'auth_credentials_enabled',
+      input.credentialsEnabled,
+      'boolean',
+      'auth',
+      'Whether username/password credential login is enabled.'
+    );
+  }
 
   if (typeof input.registrationEnabled === 'boolean') {
     updates.auth_registration_enabled = input.registrationEnabled;

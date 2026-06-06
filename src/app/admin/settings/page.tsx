@@ -99,6 +99,7 @@ interface SettingsData {
 }
 
 interface AuthSettingsData {
+  credentialsEnabled: boolean;
   registrationEnabled: boolean;
   accountLinkingEnabled: boolean;
   installCompleted: boolean;
@@ -883,6 +884,19 @@ export default function SettingsPage() {
                   create local accounts.
                 </Typography>
                 <Divider sx={{ mb: 2 }} />
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={Boolean(authFormData?.credentialsEnabled)}
+                      onChange={(e) =>
+                        updateAuthSettingField('credentialsEnabled', e.target.checked)
+                      }
+                    />
+                  }
+                  label="Allow password (credentials) login"
+                  sx={{ display: 'flex', mb: 1 }}
+                />
 
                 <FormControlLabel
                   control={

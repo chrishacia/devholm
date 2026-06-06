@@ -29,6 +29,7 @@ const installWizardSchema = z.object({
     tagline: z.string().max(160).optional().nullable(),
   }),
   auth: z.object({
+    credentialsEnabled: z.boolean(),
     registrationEnabled: z.boolean(),
     accountLinkingEnabled: z.boolean(),
   }),
@@ -164,6 +165,7 @@ export async function POST(request: NextRequest) {
     });
 
     await updateAuthSettings({
+      credentialsEnabled: auth.credentialsEnabled,
       registrationEnabled: auth.registrationEnabled,
       accountLinkingEnabled: auth.accountLinkingEnabled,
       installCompleted: true,

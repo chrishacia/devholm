@@ -34,6 +34,7 @@ interface PublicAuthProvider {
 
 interface PublicAuthConfig {
   settings: {
+    credentialsEnabled: boolean;
     registrationEnabled: boolean;
   };
   providers: PublicAuthProvider[];
@@ -83,6 +84,12 @@ function AdminLoginPageContent() {
     e.preventDefault();
     setError('');
     setLoading(true);
+
+    if (oauthConfig && !oauthConfig.settings.credentialsEnabled) {
+      setError('Password login is disabled. Use an enabled OAuth provider.');
+      setLoading(false);
+      return;
+    }
 
     try {
       const result = await signIn('credentials', {
@@ -206,71 +213,79 @@ function AdminLoginPageContent() {
               </Box>
             ) : null}
 
-            <TextField
-              fullWidth
-              label="Email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-              autoFocus
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <Email sx={{ color: 'text.secondary' }} />
-                    </InputAdornment>
-                  ),
-                },
-              }}
-              sx={{ mb: 3 }}
-            />
+            {oauthConfig?.settings.credentialsEnabled !== false ? (
+              <>
+                <TextField
+                  fullWidth
+                  label="Email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  autoFocus
+                  slotProps={{
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <Email sx={{ color: 'text.secondary' }} />
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                  sx={{ mb: 3 }}
+                />
 
-            <TextField
-              fullWidth
-              label="Password"
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <Lock sx={{ color: 'text.secondary' }} />
-                    </InputAdornment>
-                  ),
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton
-                        onClick={() => setShowPassword(!showPassword)}
-                        edge="end"
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      >
-                        {showPassword ? <VisibilityOff /> : <Visibility />}
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                },
-              }}
-              sx={{ mb: 3 }}
-            />
+                <TextField
+                  fullWidth
+                  label="Password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  slotProps={{
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <Lock sx={{ color: 'text.secondary' }} />
+                        </InputAdornment>
+                      ),
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton
+                            onClick={() => setShowPassword(!showPassword)}
+                            edge="end"
+                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                          >
+                            {showPassword ? <VisibilityOff /> : <Visibility />}
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                  sx={{ mb: 3 }}
+                />
 
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              size="large"
-              disabled={loading || !email || !password}
-              sx={{
-                py: 1.5,
-                fontWeight: 600,
-              }}
-            >
-              {loading ? <CircularProgress size={24} color="inherit" /> : 'Sign In'}
-            </Button>
+                <Button
+                  type="submit"
+                  fullWidth
+                  variant="contained"
+                  size="large"
+                  disabled={loading || !email || !password}
+                  sx={{
+                    py: 1.5,
+                    fontWeight: 600,
+                  }}
+                >
+                  {loading ? <CircularProgress size={24} color="inherit" /> : 'Sign In'}
+                </Button>
+              </>
+            ) : (
+              <Alert severity="info" sx={{ mb: 1 }}>
+                Password login is disabled for this site. Use an enabled OAuth provider.
+              </Alert>
+            )}
           </Box>
 
           {/* Footer */}

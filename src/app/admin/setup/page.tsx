@@ -47,6 +47,7 @@ interface WizardData {
     tagline: string;
   };
   auth: {
+    credentialsEnabled: boolean;
     registrationEnabled: boolean;
     accountLinkingEnabled: boolean;
     installCompleted: boolean;
@@ -116,7 +117,7 @@ export default function AdminSetupPage() {
   };
 
   const updateAuthField = (
-    field: 'registrationEnabled' | 'accountLinkingEnabled',
+    field: 'credentialsEnabled' | 'registrationEnabled' | 'accountLinkingEnabled',
     value: boolean
   ) => {
     if (!formData) return;
@@ -184,6 +185,7 @@ export default function AdminSetupPage() {
           site: formData.site,
           author: formData.author,
           auth: {
+            credentialsEnabled: formData.auth.credentialsEnabled,
             registrationEnabled: formData.auth.registrationEnabled,
             accountLinkingEnabled: formData.auth.accountLinkingEnabled,
           },
@@ -353,6 +355,16 @@ export default function AdminSetupPage() {
                   <FormControlLabel
                     control={
                       <Switch
+                        checked={formData.auth.credentialsEnabled}
+                        onChange={(e) => updateAuthField('credentialsEnabled', e.target.checked)}
+                      />
+                    }
+                    label="Allow password (credentials) login"
+                    sx={{ display: 'flex', mb: 2 }}
+                  />
+                  <FormControlLabel
+                    control={
+                      <Switch
                         checked={formData.auth.registrationEnabled}
                         onChange={(e) => updateAuthField('registrationEnabled', e.target.checked)}
                       />
@@ -516,6 +528,9 @@ export default function AdminSetupPage() {
                       <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3 }}>
                         <Typography variant="subtitle2" color="text.secondary">
                           Auth posture
+                        </Typography>
+                        <Typography variant="body1">
+                          Credentials {formData.auth.credentialsEnabled ? 'enabled' : 'disabled'}
                         </Typography>
                         <Typography variant="body1">
                           Registration {formData.auth.registrationEnabled ? 'enabled' : 'disabled'}

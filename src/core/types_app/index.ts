@@ -204,6 +204,7 @@ export interface AuthSubject {
 }
 
 export interface AuthSettings {
+  credentialsEnabled: boolean;
   registrationEnabled: boolean;
   accountLinkingEnabled: boolean;
   installCompleted: boolean;

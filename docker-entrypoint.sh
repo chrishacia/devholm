@@ -11,10 +11,14 @@ else
   echo "⚠️ Migration failed, but continuing startup..."
 fi
 
-# Seed admin user if credentials provided
+# Seed admin user only when explicitly allowed in production
 if [ -n "$ADMIN_EMAIL" ] && [ -n "$ADMIN_PASSWORD" ]; then
-  echo "👤 Ensuring admin user exists..."
-  node /app/seed-admin.js || echo "⚠️ Admin seeding skipped or failed"
+  if [ "$NODE_ENV" = "production" ] && [ "$ENABLE_ADMIN_SEED_ON_BOOT" != "true" ]; then
+    echo "🔒 Skipping admin seed on production boot (set ENABLE_ADMIN_SEED_ON_BOOT=true to enable)"
+  else
+    echo "👤 Ensuring admin user exists..."
+    node /app/seed-admin.js || echo "⚠️ Admin seeding skipped or failed"
+  fi
 fi
 
 # Send telemetry ping (optional, disable with TELEMETRY_DISABLED=true)

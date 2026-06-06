@@ -49,6 +49,7 @@ Important:
 
 - The workflow injects `NEXTAUTH_SECRET` into both `NEXTAUTH_SECRET` and `AUTH_SECRET` in production.
 - You do not need to create a separate `AUTH_SECRET` repository secret for the current deploy workflow.
+- Production boot-time admin seeding is disabled by default (`ENABLE_ADMIN_SEED_ON_BOOT` must be `true` to enable it).
 
 ---
 
@@ -142,6 +143,37 @@ After adding all secrets, you can verify by:
 ---
 
 ## Troubleshooting
+
+### Lost admin credentials (GitHub Secrets are write-only)
+
+If you no longer know the current admin password, you can force-reset it with an explicit one-off command on the server.
+
+1. Pick a new temporary password.
+2. Run this on your local machine (replace values):
+
+```bash
+ssh -i ~/.ssh/your_deploy_key root@your-server '
+docker exec \
+	-e ADMIN_EMAIL="admin@yoursite.com" \
+	-e ADMIN_PASSWORD="NEW_TEMP_PASSWORD" \
+	-e FORCE_ADMIN_PASSWORD_RESET="true" \
+	yourproject-app \
+	node /app/seed-admin.js
+'
+```
+
+How this works:
+
+- Production startup does not run admin seeding unless explicitly enabled.
+- `seed-admin.js` is create-only by default for existing admins.
+- Password updates require explicit `FORCE_ADMIN_PASSWORD_RESET=true`.
+- You do not need to read old GitHub Secret values to recover access.
+
+After recovery:
+
+1. Log in to `/admin/login` with the new password.
+2. Change the password in admin profile/settings immediately.
+3. Update `ADMIN_PASSWORD` in GitHub Secrets so your recovery baseline stays current.
 
 ### Missing secret names or mismatched values
 

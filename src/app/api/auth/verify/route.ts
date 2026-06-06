@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { getDb } from '@/db';
-import { ensureSiteUserForAdmin } from '@/db/auth';
+import { ensureSiteUserForAdmin, getAuthSettings } from '@/db/auth';
 import { checkRateLimit } from '@/lib/rate-limiter';
 import { rateLimit as rateLimitConfig } from '@/config/env';
 
@@ -11,6 +11,14 @@ import { rateLimit as rateLimitConfig } from '@/config/env';
  */
 export async function POST(request: NextRequest) {
   try {
+    const authSettings = await getAuthSettings();
+    if (!authSettings.credentialsEnabled) {
+      return NextResponse.json(
+        { error: 'Password login is disabled for this site' },
+        { status: 403 }
+      );
+    }
+
     // Rate limit login attempts
     const ip =
       request.headers.get('x-forwarded-for')?.split(',')[0] ||
