@@ -102,12 +102,5 @@
     "*.{js,jsx,json,md,css}": [
       "prettier --write"
     ]
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "sharp",
-      "unrs-resolver"
-    ]
   }
 }
