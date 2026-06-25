@@ -22,12 +22,13 @@ This is the exact repository secret contract used by `.github/workflows/ci.yml` 
 
 ### Server Connection
 
-| Name          | Description          | How to Get                                      |
-| ------------- | -------------------- | ----------------------------------------------- |
-| `DEPLOY_HOST` | Your server hostname | `yoursite.com` or your server IP                |
-| `DEPLOY_USER` | SSH username         | Usually `root` or a deploy user like `deploy`   |
-| `DEPLOY_KEY`  | SSH private key      | See [Generate SSH Key](#generate-ssh-key) below |
-| `DEPLOY_PATH` | Deployment directory | `/var/www/yoursite.com`                         |
+| Name          | Description                    | How to Get                                      |
+| ------------- | ------------------------------ | ----------------------------------------------- |
+| `DEPLOY_HOST` | Your server hostname           | `yoursite.com` or your server IP                |
+| `DEPLOY_USER` | SSH username                   | Usually `root` or a deploy user like `deploy`   |
+| `DEPLOY_KEY`  | SSH private key                | See [Generate SSH Key](#generate-ssh-key) below |
+| `DEPLOY_PATH` | Deployment directory           | `/var/www/yoursite.com`                         |
+| `APP_PORT`    | Unique host port for this site | `3001`                                          |
 
 ### Database
 
@@ -124,10 +125,15 @@ These are optional and have sensible defaults:
 
 | Name                 | Description                    | Default                                |
 | -------------------- | ------------------------------ | -------------------------------------- |
-| `APP_PORT`           | Host port for the application  | `3000`                                 |
 | `CSRF_SECRET`        | CSRF protection secret         | Not currently wired into deploy output |
 | `DOCKERHUB_USERNAME` | For Docker Hub instead of GHCR | Uses GHCR                              |
 | `DOCKERHUB_TOKEN`    | Docker Hub access token        | Uses GHCR                              |
+
+Important:
+
+- `APP_PORT` is required for production deploys on this workflow.
+- Use a unique value per site when hosting multiple apps on one VPS.
+- Your nginx upstream for this site must match this value exactly.
 
 ---
 

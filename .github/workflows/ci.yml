@@ -22,9 +22,13 @@
 # ADMIN_EMAIL          - Initial admin email address
 # ADMIN_PASSWORD       - Initial admin password (will be hashed)
 #
+# Additional Required Secret:
+# ---------------------------
+# APP_PORT             - Host port for this site (must be unique per site on shared VPS)
+#                        Example: site-a=3000, site-b=3001, site-c=3002
+#
 # Optional Secrets:
 # -----------------
-# APP_PORT             - Host port (default: 3000, use different for multiple sites)
 # CSRF_SECRET          - CSRF protection secret
 # DOCKERHUB_USERNAME   - For pushing to Docker Hub instead of GHCR
 # DOCKERHUB_TOKEN      - Docker Hub access token
@@ -61,7 +65,6 @@ env:
   PNPM_VERSION: '10'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  APP_PORT: 3000
 
 jobs:
   # ===========================================================================
@@ -293,9 +296,55 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Validate APP_PORT secret
+        id: port
+        env:
+          APP_PORT_SECRET: ${{ secrets.APP_PORT }}
+        run: |
+          APP_PORT_VALUE="${APP_PORT_SECRET}"
+
+          if [ -z "$APP_PORT_VALUE" ]; then
+            echo "❌ Missing required APP_PORT repository secret."
+            echo "Set APP_PORT to a unique host port for this site (for example 3001)."
+            exit 1
+          fi
+
+          if ! [[ "$APP_PORT_VALUE" =~ ^[0-9]+$ ]]; then
+            echo "❌ APP_PORT must be numeric. Received: '$APP_PORT_VALUE'"
+            exit 1
+          fi
+
+          if [ "$APP_PORT_VALUE" -lt 1024 ] || [ "$APP_PORT_VALUE" -gt 65535 ]; then
+            echo "❌ APP_PORT must be between 1024 and 65535. Received: '$APP_PORT_VALUE'"
+            exit 1
+          fi
+
+          echo "app_port=$APP_PORT_VALUE" >> "$GITHUB_OUTPUT"
+
+      - name: Check remote port collision
+        run: |
+          APP_PORT_VALUE='${{ steps.port.outputs.app_port }}'
+          TARGET_CONTAINER='${{ secrets.PROJECT_NAME }}-app'
+
+          ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << ENDSSH
+            set -e
+            APP_PORT_VALUE="$APP_PORT_VALUE"
+            TARGET_CONTAINER="$TARGET_CONTAINER"
+
+            PORT_OWNER=\$(docker ps --format '{{.Names}} {{.Ports}}' | awk -v p=":${APP_PORT_VALUE}->" 'index(\$0, p) { print \$1; exit }')
+
+            if [ -n "\$PORT_OWNER" ] && [ "\$PORT_OWNER" != "\$TARGET_CONTAINER" ]; then
+              echo "❌ Port \$APP_PORT_VALUE is already in use by container '\$PORT_OWNER'."
+              echo "Choose a different APP_PORT secret for this repository."
+              exit 1
+            fi
+
+            echo "✅ Port \$APP_PORT_VALUE is available (or already owned by \$TARGET_CONTAINER)."
+          ENDSSH
+
       - name: Generate docker-compose.override.yml
         run: |
-          APP_PORT_VALUE="${APP_PORT}"
+          APP_PORT_VALUE='${{ steps.port.outputs.app_port }}'
 
           # Generate override file with environment variables baked in
           # This file persists on the server and survives restarts

@@ -17,6 +17,7 @@ This guide covers the complete deployment process for this Next.js application u
 ## Prerequisites
 
 ### Server Requirements
+
 - Ubuntu 22.04 LTS or similar Linux distribution
 - Minimum 2GB RAM, 2 vCPU
 - 20GB disk space
@@ -24,6 +25,7 @@ This guide covers the complete deployment process for this Next.js application u
 - Existing SSL certificate (or use Let's Encrypt)
 
 ### Software to Install
+
 - Docker Engine 24.0+
 - Docker Compose v2
 - PostgreSQL 16 (can run in Docker)
@@ -43,15 +45,22 @@ See [GITHUB_SECRETS.md](./GITHUB_SECRETS.md) for detailed instructions on settin
 ## Port Configuration
 
 The application port is configured via the `APP_PORT` GitHub Secret. This port is used to:
+
 1. Map the Docker container's port 3000 to the host port
 2. Configure the nginx reverse proxy to forward traffic
 
-**Default:** `3000`
+**Required:** Set `APP_PORT` explicitly in GitHub repository secrets.
 
 **Multiple Sites:** If you're running multiple DevHolm instances (or other apps) on the same server, use different ports:
+
 - Site 1: `APP_PORT=3000`
 - Site 2: `APP_PORT=3001`
 - Site 3: `APP_PORT=3002`
+
+Deployment safety behavior:
+
+- CI now fails fast if `APP_PORT` is missing or invalid.
+- CI checks for host-port collisions with other containers before deploy.
 
 Your nginx configuration must match the port you specify. See the [Nginx Configuration](#nginx-configuration) section below.
 
@@ -160,11 +169,11 @@ server {
     listen 80;
     listen [::]:80;
     server_name yoursite.com www.yoursite.com;
-    
+
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
-    
+
     location / {
         return 301 https://$host$request_uri;
     }
@@ -180,7 +189,7 @@ server {
     ssl_certificate /etc/letsencrypt/live/yoursite.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/yoursite.com/privkey.pem;
     ssl_trusted_certificate /etc/letsencrypt/live/yoursite.com/chain.pem;
-    
+
     # SSL Settings
     ssl_session_timeout 1d;
     ssl_session_cache shared:SSL:50m;
@@ -188,7 +197,7 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
-    
+
     # HSTS
     add_header Strict-Transport-Security "max-age=63072000" always;
 
@@ -204,7 +213,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
+
         # Timeouts
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
