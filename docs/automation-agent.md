@@ -94,3 +94,38 @@ Actions:
 - Rotate tokens immediately if leaked.
 - Use narrowly scoped deployment secrets for each bot.
 - Monitor app logs for repeated `401`/`429` responses.
+
+## Curl Examples
+
+Create and publish a post:
+
+```bash
+curl -X POST "https://your-site.com/api/agent/posts" \
+  -H "Authorization: Bearer ${AUTOMATION_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Shipped: June Automation Update",
+    "content": "# Update\\n\\nAutomation endpoint is live.",
+    "status": "published",
+    "tags": ["release", "automation"]
+  }'
+```
+
+Fetch unread messages (page 1, 20 items):
+
+```bash
+curl "https://your-site.com/api/agent/messages?page=1&pageSize=20&status=unread" \
+  -H "Authorization: Bearer ${AUTOMATION_TOKEN}"
+```
+
+Mark messages as spam:
+
+```bash
+curl -X PATCH "https://your-site.com/api/agent/messages" \
+  -H "Authorization: Bearer ${AUTOMATION_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "spam",
+    "ids": ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"]
+  }'
+```
