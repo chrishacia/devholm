@@ -50,6 +50,22 @@ Suggested minimum keys:
 - ADMIN_PASSWORD
 - ADMIN_NAME
 
+Optional local port keys:
+
+- PORT (for local server port)
+- NEXT_PUBLIC_APP_URL (match PORT)
+- AUTH_URL (match PORT)
+
+Example local port setup:
+
+- PORT=3001
+- NEXT_PUBLIC_APP_URL=http://localhost:3001
+- AUTH_URL=http://localhost:3001
+
+Production note:
+
+- Production port mapping is controlled by the `APP_PORT` GitHub Actions secret, not `.env`.
+
 ## Stage 2: Start Database And Bootstrap
 
 Option A: Docker database

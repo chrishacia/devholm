@@ -47,6 +47,19 @@ Notes:
 - `AUTH_URL` should be your local app URL.
 - `ADMIN_*` values are used by `pnpm seed:admin`.
 
+Local port note:
+
+- If you want to run locally on a non-default port, set `PORT` in `.env` and update both `AUTH_URL` and `NEXT_PUBLIC_APP_URL` to match.
+- Example for port 3001:
+
+```env
+PORT=3001
+AUTH_URL=http://localhost:3001
+NEXT_PUBLIC_APP_URL=http://localhost:3001
+```
+
+- `APP_PORT` is different: it is a production deploy secret used by CI/CD for Docker host port mapping.
+
 ## 3. Start PostgreSQL
 
 ### Option A: local PostgreSQL
