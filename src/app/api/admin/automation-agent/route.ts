@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getDb } from '@/db';
 import {
   createAgentToken,
+  createAgentTokenExpiry,
   getAutomationAgentConfig,
   setAutomationAgentConfig,
   toPublicAutomationConfig,
@@ -18,6 +19,9 @@ const updateSchema = z.object({
   messagesWriteEnabled: z.boolean().optional(),
   allowCustomAuthor: z.boolean().optional(),
   defaultAuthorId: z.string().uuid().nullable().optional(),
+  tokenExpiresAt: z.string().datetime().nullable().optional(),
+  allowedIps: z.array(z.string().min(3).max(64)).max(50).optional(),
+  requireHttps: z.boolean().optional(),
   rotateToken: z.boolean().optional(),
 });
 
@@ -125,11 +129,15 @@ export async function PATCH(request: NextRequest) {
       messagesWriteEnabled: updates.messagesWriteEnabled,
       allowCustomAuthor: updates.allowCustomAuthor,
       defaultAuthorId: updates.defaultAuthorId,
+      tokenExpiresAt: updates.tokenExpiresAt,
+      allowedIps: updates.allowedIps,
+      requireHttps: updates.requireHttps,
       ...(generatedToken
         ? {
             tokenHash: hashAgentToken(generatedToken),
             tokenHint: `${generatedToken.slice(0, 4)}...${generatedToken.slice(-4)}`,
             tokenUpdatedAt: new Date().toISOString(),
+            tokenExpiresAt: createAgentTokenExpiry(30),
           }
         : {}),
     });

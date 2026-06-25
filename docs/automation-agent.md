@@ -8,8 +8,13 @@ This feature allows a bot or AI agent to create/publish posts and moderate inbox
 - Managed in admin at `/admin/settings` under the `Automation` tab.
 - Token is stored as a SHA-256 hash, never plaintext.
 - Token rotation generates a new token and shows it once.
+- Token rotation now sets a 30-day expiry by default.
+- Optional source IP allowlist support.
+- HTTPS enforcement support for production ingress.
+- Replay mitigation headers are required on every agent request.
 - Per-endpoint rate limits are enforced.
 - Input is validated with Zod and sanitized before writes.
+- Agent actions are written to an audit event table.
 
 ## Configure It
 
@@ -26,11 +31,18 @@ This feature allows a bot or AI agent to create/publish posts and moderate inbox
 
 ## Auth Header
 
-Use this header on all automation requests:
+Use these headers on all automation requests:
 
 ```http
 Authorization: Bearer <your-automation-token>
+X-Agent-Timestamp: <unix-seconds>
+X-Agent-Nonce: <unique-request-id>
 ```
+
+Rules:
+
+- `X-Agent-Timestamp` must be within +/- 5 minutes of server time.
+- `X-Agent-Nonce` must be unique (one-time) in a 10-minute window.
 
 ## Endpoints
 
@@ -100,8 +112,13 @@ Actions:
 Create and publish a post:
 
 ```bash
+TS="$(date +%s)"
+NONCE="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+
 curl -X POST "https://your-site.com/api/agent/posts" \
   -H "Authorization: Bearer ${AUTOMATION_TOKEN}" \
+  -H "X-Agent-Timestamp: ${TS}" \
+  -H "X-Agent-Nonce: ${NONCE}" \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Shipped: June Automation Update",
@@ -114,15 +131,25 @@ curl -X POST "https://your-site.com/api/agent/posts" \
 Fetch unread messages (page 1, 20 items):
 
 ```bash
+TS="$(date +%s)"
+NONCE="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+
 curl "https://your-site.com/api/agent/messages?page=1&pageSize=20&status=unread" \
-  -H "Authorization: Bearer ${AUTOMATION_TOKEN}"
+  -H "Authorization: Bearer ${AUTOMATION_TOKEN}" \
+  -H "X-Agent-Timestamp: ${TS}" \
+  -H "X-Agent-Nonce: ${NONCE}"
 ```
 
 Mark messages as spam:
 
 ```bash
+TS="$(date +%s)"
+NONCE="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+
 curl -X PATCH "https://your-site.com/api/agent/messages" \
   -H "Authorization: Bearer ${AUTOMATION_TOKEN}" \
+  -H "X-Agent-Timestamp: ${TS}" \
+  -H "X-Agent-Nonce: ${NONCE}" \
   -H "Content-Type: application/json" \
   -d '{
     "action": "spam",

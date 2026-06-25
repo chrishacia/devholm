@@ -3,10 +3,17 @@ import { NextRequest } from 'next/server';
 
 const getSetting = vi.hoisted(() => vi.fn());
 const upsertSetting = vi.hoisted(() => vi.fn());
+const checkRateLimit = vi.hoisted(() => vi.fn());
+const getClientIp = vi.hoisted(() => vi.fn());
 
 vi.mock('@/db/settings', () => ({
   getSetting,
   upsertSetting,
+}));
+
+vi.mock('@/lib/rate-limiter', () => ({
+  checkRateLimit,
+  getClientIp,
 }));
 
 import {
@@ -20,6 +27,8 @@ import {
 describe('automation-agent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    checkRateLimit.mockResolvedValue({ allowed: true });
+    getClientIp.mockReturnValue('127.0.0.1');
   });
 
   it('returns safe defaults when setting is missing', async () => {
@@ -40,6 +49,9 @@ describe('automation-agent', () => {
       messagesWriteEnabled: false,
       allowCustomAuthor: false,
       defaultAuthorId: null,
+      tokenExpiresAt: null,
+      allowedIps: [],
+      requireHttps: true,
       tokenHash: null,
       tokenHint: null,
       tokenUpdatedAt: null,
@@ -62,6 +74,9 @@ describe('automation-agent', () => {
       messagesWriteEnabled: false,
       allowCustomAuthor: false,
       defaultAuthorId: null,
+      tokenExpiresAt: null,
+      allowedIps: [],
+      requireHttps: false,
       tokenHash: hashAgentToken(token),
       tokenHint: 'hint',
       tokenUpdatedAt: new Date().toISOString(),
@@ -70,6 +85,9 @@ describe('automation-agent', () => {
     const request = new NextRequest('http://localhost:3000/api/agent/posts', {
       headers: {
         authorization: `Bearer ${token}`,
+        'x-agent-timestamp': String(Math.floor(Date.now() / 1000)),
+        'x-agent-nonce': 'nonce_1234567890',
+        'x-forwarded-proto': 'https',
       },
     });
 
@@ -86,6 +104,9 @@ describe('automation-agent', () => {
       messagesWriteEnabled: true,
       allowCustomAuthor: false,
       defaultAuthorId: null,
+      tokenExpiresAt: null,
+      allowedIps: [],
+      requireHttps: false,
       tokenHash: hashAgentToken('correct-token'),
       tokenHint: 'hint',
       tokenUpdatedAt: new Date().toISOString(),
@@ -94,6 +115,9 @@ describe('automation-agent', () => {
     const request = new NextRequest('http://localhost:3000/api/agent/posts', {
       headers: {
         authorization: 'Bearer wrong-token',
+        'x-agent-timestamp': String(Math.floor(Date.now() / 1000)),
+        'x-agent-nonce': 'nonce_abcdefghij',
+        'x-forwarded-proto': 'https',
       },
     });
 
