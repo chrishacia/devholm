@@ -24,6 +24,9 @@ RUN pnpm install --frozen-lockfile --config.strict-dep-builds=false
 FROM node:22-alpine AS builder
 WORKDIR /app
 
+ARG COMMIT_SHA=""
+ARG REPO_SLUG=""
+
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@11.2.2 --activate
 
@@ -35,6 +38,10 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 ENV HUSKY=0
+ENV COMMIT_SHA=${COMMIT_SHA}
+ENV GITHUB_SHA=${COMMIT_SHA}
+ENV REPO_SLUG=${REPO_SLUG}
+ENV GITHUB_REPOSITORY=${REPO_SLUG}
 
 # Build the application
 RUN pnpm build
@@ -49,6 +56,8 @@ RUN pnpm deploy --filter=. --prod --legacy --config.strict-dep-builds=false /app
 FROM node:22-alpine AS runner
 WORKDIR /app
 
+ARG COMMIT_SHA=""
+
 # Install build dependencies needed for native modules (bcryptjs)
 RUN apk add --no-cache libc6-compat
 
@@ -57,6 +66,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+ENV COMMIT_SHA=${COMMIT_SHA}
 
 # Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \

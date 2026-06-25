@@ -19,7 +19,8 @@ export async function GET(request: Request) {
       uptime: process.uptime(),
       environment: process.env.NODE_ENV || 'development',
       version: process.env.NEXT_PUBLIC_APP_VERSION || process.env.npm_package_version || 'unknown',
-      buildSha: process.env.GITHUB_SHA || process.env.COMMIT_SHA || '',
+      buildSha:
+        process.env.GITHUB_SHA || process.env.COMMIT_SHA || process.env.NEXT_PUBLIC_BUILD_SHA || '',
       checks: {
         database: dbHealthy,
       },

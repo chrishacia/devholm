@@ -53,11 +53,14 @@ export function compareVersions(a: string, b: string): number {
 }
 
 export function getCurrentBuildInfo(): BuildInfo {
+  const buildSha =
+    process.env.GITHUB_SHA || process.env.COMMIT_SHA || process.env.NEXT_PUBLIC_BUILD_SHA || '';
+
   return {
     version: normalizeVersion(
       process.env.NEXT_PUBLIC_APP_VERSION || process.env.npm_package_version
     ),
-    buildSha: process.env.GITHUB_SHA || process.env.COMMIT_SHA || '',
+    buildSha,
   };
 }
 

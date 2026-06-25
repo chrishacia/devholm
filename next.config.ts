@@ -3,12 +3,19 @@ import { version } from './package.json';
 
 // Derive upload limit from the same env var used in src/config/env.ts
 const uploadMaxSizeMb = parseInt(process.env.UPLOAD_MAX_SIZE_MB || '50', 10);
+const commitSha = process.env.GITHUB_SHA || process.env.COMMIT_SHA || '';
+const shortSha = commitSha ? commitSha.slice(0, 7) : '';
+const baseVersion = process.env.npm_package_version || version;
+const repoSlug = process.env.GITHUB_REPOSITORY || process.env.REPO_SLUG || '';
+const isDevholmFrameworkRepo = repoSlug === 'chrishacia/devholm';
+const displayVersion =
+  isDevholmFrameworkRepo && shortSha ? `${baseVersion}+${shortSha}` : baseVersion;
 
 const nextConfig: NextConfig = {
   // Bake the package.json version into the client bundle
   env: {
-    NEXT_PUBLIC_APP_VERSION: process.env.npm_package_version || version,
-    NEXT_PUBLIC_BUILD_SHA: process.env.GITHUB_SHA || process.env.COMMIT_SHA || '',
+    NEXT_PUBLIC_APP_VERSION: displayVersion,
+    NEXT_PUBLIC_BUILD_SHA: commitSha,
   },
 
   // Enable React strict mode for better development experience
