@@ -149,7 +149,7 @@ Use this as your release gate:
 
 - Domain DNS points to deploy host
 - TLS certificates are available on host
-- Nginx upstream matches APP_PORT
+- Nginx upstream matches resolved APP_PORT from DEPLOY_PATH/.devholm/deploy-state.env
 - Required GitHub secrets all configured
 - Deployment path exists and is writable by deploy user
 - CI test and build jobs are green

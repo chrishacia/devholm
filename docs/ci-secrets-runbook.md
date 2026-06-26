@@ -84,7 +84,13 @@ On server:
 - deployment directory exists at DEPLOY_PATH
 - nginx configured for SITE_URL hostnames
 - TLS certificate provisioned
-- upstream proxy port matches APP_PORT
+- upstream proxy port matches resolved APP_PORT (from DEPLOY_PATH/.devholm/deploy-state.env)
+
+First-install behavior:
+
+- `APP_PORT` secret is optional and treated as a preferred port hint.
+- If the requested port is unavailable, deploy auto-selects a free host port in `3000-3999`.
+- The resolved port is persisted for future deploys so updates do not rewire existing sites.
 
 ## Step 5: Dry Run Validation
 

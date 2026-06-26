@@ -131,9 +131,12 @@ These are optional and have sensible defaults:
 
 Important:
 
-- `APP_PORT` is required for production deploys on this workflow.
-- Use a unique value per site when hosting multiple apps on one VPS.
-- Your nginx upstream for this site must match this value exactly.
+- `APP_PORT` is optional on first install and is treated as a preferred host-port hint.
+- On first install, if `APP_PORT` is missing or in use, deploy auto-selects a free port in `3000-3999`.
+- Deploy persists the resolved port in `DEPLOY_PATH/.devholm/deploy-state.env` and reuses it on future updates.
+- First-install reverse-proxy templates are generated at:
+  - `DEPLOY_PATH/.devholm/templates/nginx-<PROJECT_NAME>.conf`
+  - `DEPLOY_PATH/.devholm/templates/apache-<PROJECT_NAME>.conf`
 
 ---
 
@@ -186,7 +189,7 @@ After recovery:
 - Copy the names exactly as they appear above.
 - `SITE_URL` must include `https://`.
 - `DEPLOY_PATH` must already exist on the server.
-- `APP_PORT` must match your nginx upstream port.
+- Your active nginx/apache upstream must match the resolved `APP_PORT` from `DEPLOY_PATH/.devholm/deploy-state.env`.
 
 ### "Permission denied" SSH error
 

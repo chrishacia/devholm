@@ -44,12 +44,21 @@ See [GITHUB_SECRETS.md](./GITHUB_SECRETS.md) for detailed instructions on settin
 
 ## Port Configuration
 
-The application port is configured via the `APP_PORT` GitHub Secret. This port is used to:
+The application port is configured by the deployment workflow and persisted per install. It is used to:
 
 1. Map the Docker container's port 3000 to the host port
 2. Configure the nginx reverse proxy to forward traffic
 
-**Required:** Set `APP_PORT` explicitly in GitHub repository secrets.
+`APP_PORT` in GitHub Secrets is now optional on first install and treated as a preferred port hint.
+
+Port resolution behavior:
+
+1. Existing install: keep the previously persisted port (`DEPLOY_PATH/.devholm/deploy-state.env`).
+2. Existing container without state file: backfill using that container's published port.
+3. First install with valid free `APP_PORT`: use it.
+4. First install with missing/conflicting `APP_PORT`: auto-select next free port in `3000-3999`.
+
+This ensures first-time installs self-correct on shared VPS hosts while updates never rewire a healthy instance.
 
 **Multiple Sites:** If you're running multiple DevHolm instances (or other apps) on the same server, use different ports:
 
@@ -59,10 +68,12 @@ The application port is configured via the `APP_PORT` GitHub Secret. This port i
 
 Deployment safety behavior:
 
-- CI now fails fast if `APP_PORT` is missing or invalid.
-- CI checks for host-port collisions with other containers before deploy.
+- CI resolves and persists a stable app port per site install.
+- CI checks for host-port collisions with other running containers and host listeners.
+- CI generates a first-install nginx template at `DEPLOY_PATH/.devholm/templates/nginx-<PROJECT_NAME>.conf`.
+- CI generates a first-install Apache template at `DEPLOY_PATH/.devholm/templates/apache-<PROJECT_NAME>.conf`.
 
-Your nginx configuration must match the port you specify. See the [Nginx Configuration](#nginx-configuration) section below.
+Your active reverse-proxy configuration must match the resolved port. The generated templates above are the source of truth for first setup.
 
 ---
 

@@ -299,51 +299,245 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Validate APP_PORT secret
+      - name: Resolve deploy port and first-install manifests
         id: port
         env:
           APP_PORT_SECRET: ${{ secrets.APP_PORT }}
         run: |
-          APP_PORT_VALUE="${APP_PORT_SECRET}"
+          REQUESTED_PORT="${APP_PORT_SECRET}"
+          TARGET_CONTAINER='${{ secrets.PROJECT_NAME }}-app'
+          PROJECT_NAME='${{ secrets.PROJECT_NAME }}'
+          SITE_URL='${{ secrets.SITE_URL }}'
+          DEPLOY_PATH='${{ secrets.DEPLOY_PATH }}'
+
+          REMOTE_OUT=$(ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "REQUESTED_PORT='${REQUESTED_PORT}' TARGET_CONTAINER='${TARGET_CONTAINER}' PROJECT_NAME='${PROJECT_NAME}' SITE_URL='${SITE_URL}' DEPLOY_PATH='${DEPLOY_PATH}' bash -s" << 'ENDSSH'
+            set -euo pipefail
+
+            state_dir="$DEPLOY_PATH/.devholm"
+            state_file="$state_dir/deploy-state.env"
+            template_dir="$state_dir/templates"
+
+            mkdir -p "$state_dir" "$template_dir"
+
+            is_numeric() {
+              case "$1" in
+                ''|*[!0-9]*) return 1 ;;
+                *) return 0 ;;
+              esac
+            }
+
+            is_valid_port() {
+              is_numeric "$1" && [ "$1" -ge 1024 ] && [ "$1" -le 65535 ]
+            }
+
+            get_container_port() {
+              docker ps --format '{{.Names}} {{.Ports}}' | awk -v name="$TARGET_CONTAINER" '
+                $1 == name {
+                  if (match($0, /:([0-9]+)->3000\/tcp/, a)) {
+                    print a[1];
+                    exit;
+                  }
+                }
+              '
+            }
+
+            docker_port_owner() {
+              docker ps --format '{{.Names}} {{.Ports}}' | awk -v p=":$1->" 'index($0, p) { print $1; exit }'
+            }
+
+            host_listener_exists() {
+              ss -ltn "( sport = :$1 )" 2>/dev/null | awk 'NR > 1 { found = 1; exit } END { exit found ? 0 : 1 }'
+            }
+
+            is_port_usable() {
+              local p="$1"
+              local owner
+
+              owner="$(docker_port_owner "$p" || true)"
+              if [ -n "$owner" ] && [ "$owner" != "$TARGET_CONTAINER" ]; then
+                return 1
+              fi
+
+              if host_listener_exists "$p"; then
+                if [ -n "$owner" ] && [ "$owner" = "$TARGET_CONTAINER" ]; then
+                  return 0
+                fi
+                return 1
+              fi
+
+              return 0
+            }
+
+            choose_free_port() {
+              local p
+              for p in $(seq 3000 3999); do
+                if is_port_usable "$p"; then
+                  echo "$p"
+                  return 0
+                fi
+              done
+              return 1
+            }
+
+            existing_port="$(get_container_port || true)"
+            chosen_port=""
+            first_install="0"
+
+            if [ -f "$state_file" ]; then
+              # shellcheck disable=SC1090
+              . "$state_file"
+              if is_valid_port "${APP_PORT:-}"; then
+                chosen_port="$APP_PORT"
+                echo "Using persisted APP_PORT=$chosen_port from $state_file" >&2
+              fi
+            fi
+
+            if [ -z "$chosen_port" ] && [ -n "$existing_port" ]; then
+              chosen_port="$existing_port"
+              first_install="1"
+              echo "Backfilling install state using running container port $chosen_port" >&2
+            fi
+
+            if [ -z "$chosen_port" ]; then
+              first_install="1"
+
+              if is_valid_port "$REQUESTED_PORT" && is_port_usable "$REQUESTED_PORT"; then
+                chosen_port="$REQUESTED_PORT"
+                echo "Using requested APP_PORT=$chosen_port for first install" >&2
+              else
+                chosen_port="$(choose_free_port || true)"
+                if [ -z "$chosen_port" ]; then
+                  echo "Could not find a free host port in 3000-3999. Set APP_PORT explicitly to an available port." >&2
+                  exit 1
+                fi
+
+                if is_valid_port "$REQUESTED_PORT"; then
+                  owner="$(docker_port_owner "$REQUESTED_PORT" || true)"
+                  if [ -n "$owner" ]; then
+                    echo "Requested APP_PORT=$REQUESTED_PORT is already owned by container '$owner'; auto-selected $chosen_port" >&2
+                  else
+                    echo "Requested APP_PORT=$REQUESTED_PORT has an active host listener; auto-selected $chosen_port" >&2
+                  fi
+                else
+                  echo "No valid APP_PORT provided; auto-selected $chosen_port" >&2
+                fi
+              fi
+            fi
+
+            if ! is_valid_port "$chosen_port"; then
+              echo "Resolved APP_PORT is invalid: '$chosen_port'" >&2
+              exit 1
+            fi
+
+            site_domain="$(printf '%s' "$SITE_URL" | sed -E 's#^[a-zA-Z]+://##; s#/.*$##')"
+
+            {
+              echo "PROJECT_NAME=$PROJECT_NAME"
+              echo "SITE_URL=$SITE_URL"
+              echo "SITE_DOMAIN=$site_domain"
+              echo "TARGET_CONTAINER=$TARGET_CONTAINER"
+              echo "APP_PORT=$chosen_port"
+              if [ -f "$state_file" ]; then
+                grep -q '^FIRST_INSTALL_AT=' "$state_file" || echo "FIRST_INSTALL_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              else
+                echo "FIRST_INSTALL_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              fi
+              echo "UPDATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            } > "$state_file"
+            chmod 600 "$state_file"
+
+            cat > "$template_dir/nginx-${PROJECT_NAME}.conf" << EOF
+            server {
+                listen 80;
+                listen [::]:80;
+                server_name ${site_domain} www.${site_domain};
+
+                location / {
+                    return 301 https://\$host\$request_uri;
+                }
+            }
+
+            server {
+                listen 443 ssl http2;
+                listen [::]:443 ssl http2;
+                server_name ${site_domain} www.${site_domain};
+
+                # Update certificate paths for your host.
+                ssl_certificate /etc/letsencrypt/live/${site_domain}/fullchain.pem;
+                ssl_certificate_key /etc/letsencrypt/live/${site_domain}/privkey.pem;
+
+                location / {
+                    proxy_pass http://127.0.0.1:${chosen_port};
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade \$http_upgrade;
+                    proxy_set_header Connection "upgrade";
+                    proxy_set_header Host \$host;
+                    proxy_set_header X-Real-IP \$remote_addr;
+                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto \$scheme;
+                    proxy_read_timeout 86400;
+                }
+            }
+            EOF
+
+            cat > "$template_dir/apache-${PROJECT_NAME}.conf" << EOF
+            <VirtualHost *:80>
+                ServerName ${site_domain}
+                ServerAlias www.${site_domain}
+                Redirect permanent / https://${site_domain}/
+            </VirtualHost>
+
+            <IfModule mod_ssl.c>
+            <VirtualHost *:443>
+                ServerName ${site_domain}
+                ServerAlias www.${site_domain}
+
+                # Update certificate paths for your host.
+                SSLEngine on
+                SSLCertificateFile /etc/letsencrypt/live/${site_domain}/fullchain.pem
+                SSLCertificateKeyFile /etc/letsencrypt/live/${site_domain}/privkey.pem
+
+                ProxyPreserveHost On
+                ProxyPass / http://127.0.0.1:${chosen_port}/
+                ProxyPassReverse / http://127.0.0.1:${chosen_port}/
+
+                RequestHeader set X-Forwarded-Proto "https"
+                RequestHeader set X-Forwarded-Port "443"
+            </VirtualHost>
+            </IfModule>
+            EOF
+
+            chmod 644 "$template_dir/nginx-${PROJECT_NAME}.conf" "$template_dir/apache-${PROJECT_NAME}.conf"
+
+            printf 'APP_PORT=%s\n' "$chosen_port"
+            printf 'FIRST_INSTALL=%s\n' "$first_install"
+            printf 'STATE_FILE=%s\n' "$state_file"
+            printf 'TEMPLATE_DIR=%s\n' "$template_dir"
+          ENDSSH
+          )
+
+          APP_PORT_VALUE="$(printf '%s\n' "$REMOTE_OUT" | awk -F= '/^APP_PORT=/{print $2; exit}')"
+          FIRST_INSTALL_VALUE="$(printf '%s\n' "$REMOTE_OUT" | awk -F= '/^FIRST_INSTALL=/{print $2; exit}')"
+          STATE_FILE_VALUE="$(printf '%s\n' "$REMOTE_OUT" | awk -F= '/^STATE_FILE=/{print $2; exit}')"
+          TEMPLATE_DIR_VALUE="$(printf '%s\n' "$REMOTE_OUT" | awk -F= '/^TEMPLATE_DIR=/{print $2; exit}')"
 
           if [ -z "$APP_PORT_VALUE" ]; then
-            echo "❌ Missing required APP_PORT repository secret."
-            echo "Set APP_PORT to a unique host port for this site (for example 3001)."
-            exit 1
-          fi
-
-          if ! [[ "$APP_PORT_VALUE" =~ ^[0-9]+$ ]]; then
-            echo "❌ APP_PORT must be numeric. Received: '$APP_PORT_VALUE'"
-            exit 1
-          fi
-
-          if [ "$APP_PORT_VALUE" -lt 1024 ] || [ "$APP_PORT_VALUE" -gt 65535 ]; then
-            echo "❌ APP_PORT must be between 1024 and 65535. Received: '$APP_PORT_VALUE'"
+            echo "❌ Could not resolve APP_PORT from remote provisioning step."
+            echo "$REMOTE_OUT"
             exit 1
           fi
 
           echo "app_port=$APP_PORT_VALUE" >> "$GITHUB_OUTPUT"
+          echo "first_install=$FIRST_INSTALL_VALUE" >> "$GITHUB_OUTPUT"
+          echo "state_file=$STATE_FILE_VALUE" >> "$GITHUB_OUTPUT"
+          echo "template_dir=$TEMPLATE_DIR_VALUE" >> "$GITHUB_OUTPUT"
 
-      - name: Check remote port collision
-        run: |
-          APP_PORT_VALUE='${{ steps.port.outputs.app_port }}'
-          TARGET_CONTAINER='${{ secrets.PROJECT_NAME }}-app'
-
-          ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << ENDSSH
-            set -e
-            APP_PORT_VALUE="$APP_PORT_VALUE"
-            TARGET_CONTAINER="$TARGET_CONTAINER"
-
-            PORT_OWNER=\$(docker ps --format '{{.Names}} {{.Ports}}' | awk -v p=":${APP_PORT_VALUE}->" 'index(\$0, p) { print \$1; exit }')
-
-            if [ -n "\$PORT_OWNER" ] && [ "\$PORT_OWNER" != "\$TARGET_CONTAINER" ]; then
-              echo "❌ Port \$APP_PORT_VALUE is already in use by container '\$PORT_OWNER'."
-              echo "Choose a different APP_PORT secret for this repository."
-              exit 1
-            fi
-
-            echo "✅ Port \$APP_PORT_VALUE is available (or already owned by \$TARGET_CONTAINER)."
-          ENDSSH
+          echo "Resolved APP_PORT=$APP_PORT_VALUE"
+          if [ "$FIRST_INSTALL_VALUE" = "1" ]; then
+            echo "First-install provisioning completed."
+          else
+            echo "Existing install detected; preserving prior wiring."
+          fi
 
       - name: Generate docker-compose.override.yml
         run: |
@@ -405,6 +599,9 @@ jobs:
       - name: Deploy to server
         run: |
           echo "🚀 Starting deployment to ${{ secrets.DEPLOY_HOST }}"
+          echo "Resolved APP_PORT: ${{ steps.port.outputs.app_port }}"
+          echo "Install state file: ${{ steps.port.outputs.state_file }}"
+          echo "Generated vhost templates: ${{ steps.port.outputs.template_dir }}"
 
           # Copy docker-compose files to server
           scp -o StrictHostKeyChecking=no docker-compose.yml ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/
@@ -417,6 +614,11 @@ jobs:
 
             # Secure the override file (contains secrets)
             chmod 600 docker-compose.override.yml
+
+            # Keep installer state private for future deploy stability
+            if [ -f .devholm/deploy-state.env ]; then
+              chmod 600 .devholm/deploy-state.env
+            fi
 
             echo "🧹 Reclaiming Docker disk space before image pull..."
             docker image prune -af || true
