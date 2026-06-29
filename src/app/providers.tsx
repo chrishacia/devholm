@@ -7,10 +7,11 @@ import { AppRouterCacheProvider } from '@mui/material-nextjs/v16-appRouter';
 import { ThemeProvider as MuiThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeContextProvider, useTheme } from '@/theme/ThemeProvider';
-import { getTheme } from '@/theme/theme';
+import { getTheme as getCoreTheme } from '@/theme/theme';
 import SearchDialog from '@/components/common/SearchDialog';
 import ClientErrorMonitor from '@/components/monitoring/ClientErrorMonitor';
 import { SiteSettingsProvider } from '@/hooks/useSiteSettings';
+import config from '@config';
 
 interface ProvidersProps {
   children: ReactNode;
@@ -27,6 +28,7 @@ function ThemeWrapper({ children }: { children: ReactNode }) {
     setMounted(true);
   }, []);
 
+  const getTheme = config.theme ?? getCoreTheme;
   const theme = getTheme(mode);
 
   return (
