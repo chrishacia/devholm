@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const db = getDb();
-    
+
     let query = db('posts')
       .select(
         'posts.id',
@@ -34,7 +34,9 @@ export async function GET(request: NextRequest) {
         'posts.created_at',
         'posts.updated_at',
         'posts.featured_image_url as cover_image',
-        db.raw('(SELECT json_agg(t.name) FROM tags t INNER JOIN post_tags pt ON pt.tag_id = t.id WHERE pt.post_id = posts.id) as tags')
+        db.raw(
+          '(SELECT json_agg(t.name) FROM tags t INNER JOIN post_tags pt ON pt.tag_id = t.id WHERE pt.post_id = posts.id) as tags'
+        )
       )
       .orderBy('posts.created_at', 'desc');
 
@@ -44,8 +46,7 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       query = query.where(function () {
-        this.whereILike('posts.title', `%${search}%`)
-          .orWhereILike('posts.excerpt', `%${search}%`);
+        this.whereILike('posts.title', `%${search}%`).orWhereILike('posts.excerpt', `%${search}%`);
       });
     }
 
@@ -56,8 +57,7 @@ export async function GET(request: NextRequest) {
     }
     if (search) {
       countQuery.where(function () {
-        this.whereILike('title', `%${search}%`)
-          .orWhereILike('excerpt', `%${search}%`);
+        this.whereILike('title', `%${search}%`).orWhereILike('excerpt', `%${search}%`);
       });
     }
     const [{ count: totalCount }] = await countQuery;
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const db = getDb();
-    
+
     const body = await request.json();
     const {
       title,
@@ -120,23 +120,19 @@ export async function POST(request: NextRequest) {
       coverImage,
       metaTitle,
       metaDescription,
+      canonicalUrl,
+      noindex,
     } = body;
 
     // Validate required fields
     if (!title || !slug || !content) {
-      return NextResponse.json(
-        { error: 'Title, slug, and content are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Title, slug, and content are required' }, { status: 400 });
     }
 
     // Check if slug is unique
     const existingPost = await db('posts').where('slug', slug).first();
     if (existingPost) {
-      return NextResponse.json(
-        { error: 'A post with this slug already exists' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'A post with this slug already exists' }, { status: 400 });
     }
 
     // Calculate reading time (rough estimate: 200 words per minute)
@@ -150,10 +146,13 @@ export async function POST(request: NextRequest) {
       excerpt: excerpt || null,
       content_markdown: content,
       status: status || 'draft',
-      published_at: status === 'published' ? new Date() : publishedAt ? new Date(publishedAt) : null,
+      published_at:
+        status === 'published' ? new Date() : publishedAt ? new Date(publishedAt) : null,
       featured_image_url: coverImage || null,
       seo_title: metaTitle || null,
       seo_description: metaDescription || null,
+      canonical_url: canonicalUrl || null,
+      noindex: noindex === true,
       author_id: token.id as string,
       reading_time_minutes: readingTime,
     };
@@ -189,26 +188,33 @@ export async function POST(request: NextRequest) {
     const post = await db('posts')
       .select(
         'posts.*',
-        db.raw('(SELECT json_agg(t.name) FROM tags t INNER JOIN post_tags pt ON pt.tag_id = t.id WHERE pt.post_id = posts.id) as tags')
+        db.raw(
+          '(SELECT json_agg(t.name) FROM tags t INNER JOIN post_tags pt ON pt.tag_id = t.id WHERE pt.post_id = posts.id) as tags'
+        )
       )
       .where('posts.id', newPostId)
       .first();
 
-    return NextResponse.json({
-      id: post.id,
-      title: post.title,
-      slug: post.slug,
-      excerpt: post.excerpt,
-      content: post.content_markdown,
-      status: post.status,
-      publishedAt: post.published_at,
-      createdAt: post.created_at,
-      updatedAt: post.updated_at,
-      coverImage: post.featured_image_url,
-      metaTitle: post.seo_title,
-      metaDescription: post.seo_description,
-      tags: post.tags || [],
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        id: post.id,
+        title: post.title,
+        slug: post.slug,
+        excerpt: post.excerpt,
+        content: post.content_markdown,
+        status: post.status,
+        publishedAt: post.published_at,
+        createdAt: post.created_at,
+        updatedAt: post.updated_at,
+        coverImage: post.featured_image_url,
+        metaTitle: post.seo_title,
+        metaDescription: post.seo_description,
+        canonicalUrl: post.canonical_url,
+        noindex: Boolean(post.noindex),
+        tags: post.tags || [],
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.error('Error creating post:', error);
     return NextResponse.json({ error: 'Failed to create post' }, { status: 500 });

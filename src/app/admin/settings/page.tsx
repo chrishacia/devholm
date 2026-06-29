@@ -91,6 +91,28 @@ interface SeoConfig {
   defaultTitle: string;
   ogImage: string | null;
   twitterCard: string;
+  verification: VerificationConfig;
+  robots: RobotsConfig;
+  sitemap: SitemapConfig;
+}
+
+interface VerificationConfig {
+  google: string | null;
+  bing: string | null;
+  yandex: string | null;
+}
+
+interface RobotsConfig {
+  enabled: boolean;
+  disallowPaths: string[];
+  customRules: string;
+}
+
+interface SitemapConfig {
+  enabled: boolean;
+  includePosts: boolean;
+  includeTags: boolean;
+  customPaths: string[];
 }
 
 interface SettingsData {
@@ -98,6 +120,13 @@ interface SettingsData {
   author: AuthorInfo;
   social: SocialLinks;
   seo: SeoConfig;
+}
+
+function parseMultilineList(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 interface AuthSettingsData {
@@ -307,6 +336,45 @@ export default function SettingsPage() {
     setHasChanges(true);
   };
 
+  const updateRobotsField = <K extends keyof RobotsConfig>(field: K, value: RobotsConfig[K]) => {
+    if (!formData) return;
+    setFormData({
+      ...formData,
+      seo: {
+        ...formData.seo,
+        robots: { ...formData.seo.robots, [field]: value },
+      },
+    });
+    setHasChanges(true);
+  };
+
+  const updateVerificationField = <K extends keyof VerificationConfig>(
+    field: K,
+    value: VerificationConfig[K]
+  ) => {
+    if (!formData) return;
+    setFormData({
+      ...formData,
+      seo: {
+        ...formData.seo,
+        verification: { ...formData.seo.verification, [field]: value },
+      },
+    });
+    setHasChanges(true);
+  };
+
+  const updateSitemapField = <K extends keyof SitemapConfig>(field: K, value: SitemapConfig[K]) => {
+    if (!formData) return;
+    setFormData({
+      ...formData,
+      seo: {
+        ...formData.seo,
+        sitemap: { ...formData.seo.sitemap, [field]: value },
+      },
+    });
+    setHasChanges(true);
+  };
+
   const updateAuthSettingField = (field: keyof AuthSettingsData, value: boolean) => {
     if (!authFormData) return;
     setAuthFormData({
@@ -360,7 +428,7 @@ export default function SettingsPage() {
 
     try {
       // Build the updates object
-      const updates: Record<string, string | null> = {
+      const updates: Record<string, string | boolean | string[] | null> = {
         // Site settings
         site_name: formData.site.name,
         site_description: formData.site.description,
@@ -387,6 +455,16 @@ export default function SettingsPage() {
         seo_default_title: formData.seo.defaultTitle,
         seo_og_image: formData.seo.ogImage,
         seo_twitter_card: formData.seo.twitterCard,
+        seo_verification_google: formData.seo.verification.google,
+        seo_verification_bing: formData.seo.verification.bing,
+        seo_verification_yandex: formData.seo.verification.yandex,
+        seo_robots_enabled: formData.seo.robots.enabled,
+        seo_robots_disallow_paths: formData.seo.robots.disallowPaths,
+        seo_robots_custom_rules: formData.seo.robots.customRules,
+        seo_sitemap_enabled: formData.seo.sitemap.enabled,
+        seo_sitemap_include_posts: formData.seo.sitemap.includePosts,
+        seo_sitemap_include_tags: formData.seo.sitemap.includeTags,
+        seo_sitemap_custom_paths: formData.seo.sitemap.customPaths,
       };
 
       const settingsResponse = await fetch('/api/admin/settings', {
@@ -1111,7 +1189,157 @@ export default function SettingsPage() {
                   value={formData.seo.twitterCard}
                   onChange={(e) => updateSeoField('twitterCard', e.target.value)}
                   helperText="Usually 'summary' or 'summary_large_image'"
+                  sx={{ mb: 3 }}
                 />
+
+                <Typography variant="subtitle2" gutterBottom>
+                  Webmaster Verification
+                </Typography>
+
+                <TextField
+                  fullWidth
+                  label="Google Verification"
+                  value={formData.seo.verification.google || ''}
+                  onChange={(e) => updateVerificationField('google', e.target.value || null)}
+                  helperText="Verification token from Google Search Console"
+                  slotProps={{ inputLabel: { shrink: true } }}
+                  sx={{ mb: 2 }}
+                />
+
+                <TextField
+                  fullWidth
+                  label="Bing Verification"
+                  value={formData.seo.verification.bing || ''}
+                  onChange={(e) => updateVerificationField('bing', e.target.value || null)}
+                  helperText="Verification token from Bing Webmaster Tools"
+                  slotProps={{ inputLabel: { shrink: true } }}
+                  sx={{ mb: 2 }}
+                />
+
+                <TextField
+                  fullWidth
+                  label="Yandex Verification"
+                  value={formData.seo.verification.yandex || ''}
+                  onChange={(e) => updateVerificationField('yandex', e.target.value || null)}
+                  helperText="Verification token from Yandex Webmaster"
+                  slotProps={{ inputLabel: { shrink: true } }}
+                />
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Robots.txt
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                  Generates a live /robots.txt endpoint from these settings. Default output allows
+                  crawling except for /admin, plus any paths you list below.
+                </Typography>
+                <Divider sx={{ mb: 3 }} />
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.seo.robots.enabled}
+                      onChange={(e) => updateRobotsField('enabled', e.target.checked)}
+                    />
+                  }
+                  label="Enable robots.txt crawl access"
+                  sx={{ display: 'flex', mb: 2 }}
+                />
+
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={4}
+                  label="Extra Disallow Paths"
+                  value={formData.seo.robots.disallowPaths.join('\n')}
+                  onChange={(e) =>
+                    updateRobotsField('disallowPaths', parseMultilineList(e.target.value))
+                  }
+                  helperText="One path per line, for example /private or /staging"
+                  slotProps={{ inputLabel: { shrink: true } }}
+                  sx={{ mb: 3 }}
+                />
+
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={5}
+                  label="Custom Robots Rules"
+                  value={formData.seo.robots.customRules}
+                  onChange={(e) => updateRobotsField('customRules', e.target.value)}
+                  helperText="Optional raw directives appended as-is, for example custom user-agent rules"
+                  slotProps={{ inputLabel: { shrink: true } }}
+                />
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12 }}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Sitemap.xml
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                  Generates a live /sitemap.xml endpoint from your site settings and published
+                  content.
+                </Typography>
+                <Divider sx={{ mb: 3 }} />
+
+                <Grid container spacing={3}>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={formData.seo.sitemap.enabled}
+                          onChange={(e) => updateSitemapField('enabled', e.target.checked)}
+                        />
+                      }
+                      label="Enable sitemap.xml"
+                      sx={{ display: 'flex', mb: 1 }}
+                    />
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={formData.seo.sitemap.includePosts}
+                          onChange={(e) => updateSitemapField('includePosts', e.target.checked)}
+                        />
+                      }
+                      label="Include published blog posts"
+                      sx={{ display: 'flex', mb: 1 }}
+                    />
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={formData.seo.sitemap.includeTags}
+                          onChange={(e) => updateSitemapField('includeTags', e.target.checked)}
+                        />
+                      }
+                      label="Include blog tag archive pages"
+                      sx={{ display: 'flex' }}
+                    />
+                  </Grid>
+
+                  <Grid size={{ xs: 12, md: 8 }}>
+                    <TextField
+                      fullWidth
+                      multiline
+                      minRows={6}
+                      label="Additional Sitemap Paths"
+                      value={formData.seo.sitemap.customPaths.join('\n')}
+                      onChange={(e) =>
+                        updateSitemapField('customPaths', parseMultilineList(e.target.value))
+                      }
+                      helperText="One relative or absolute URL per line. Relative paths should start with /."
+                      slotProps={{ inputLabel: { shrink: true } }}
+                    />
+                  </Grid>
+                </Grid>
               </CardContent>
             </Card>
           </Grid>

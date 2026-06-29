@@ -9,9 +9,19 @@ import type {
   ApiExtension,
   ApiExtensionMethod,
   ExtensionHelpers,
+  MetadataExtension,
+  RobotsExtension,
+  SitemapExtension,
+  StructuredDataExtension,
 } from '@core/types/extensions.server';
 import { adminPageExtensions } from '@user/extensions/admin/pages';
 import { apiExtensions } from '@user/extensions/api';
+import {
+  metadataExtensions,
+  robotsExtensions,
+  sitemapExtensions,
+  structuredDataExtensions,
+} from '@user/extensions/seo';
 
 function normalizePath(pathname: string): string {
   const segments = pathname.split('/').filter(Boolean);
@@ -60,6 +70,53 @@ export async function getAdminPageComponent(slug: string[]): Promise<React.Compo
 export async function getAdminPageMetadata(slug: string[]): Promise<Metadata | undefined> {
   const extension = resolveAdminPageExtension(slug);
   return extension?.getMetadata ? extension.getMetadata() : undefined;
+}
+
+export function resolveMetadataExtensions(path: string): MetadataExtension[] {
+  const normalizedCandidate = normalizePath(path);
+  return metadataExtensions.filter(
+    (extension) => normalizePath(extension.path) === normalizedCandidate
+  );
+}
+
+export async function getMetadataExtensionData(path: string): Promise<Metadata[]> {
+  const helpers = getExtensionHelpers();
+  return Promise.all(
+    resolveMetadataExtensions(path).map((extension) => extension.getMetadata(helpers))
+  );
+}
+
+export function resolveStructuredDataExtensions(path: string): StructuredDataExtension[] {
+  const normalizedCandidate = normalizePath(path);
+  return structuredDataExtensions.filter(
+    (extension) => normalizePath(extension.path) === normalizedCandidate
+  );
+}
+
+export async function getStructuredDataExtensionData(
+  path: string
+): Promise<Record<string, unknown>[]> {
+  const helpers = getExtensionHelpers();
+  const resolved = await Promise.all(
+    resolveStructuredDataExtensions(path).map((extension) => extension.getData(helpers))
+  );
+  return resolved.flatMap((entry) => (Array.isArray(entry) ? entry : [entry]));
+}
+
+export async function getSitemapExtensionEntries() {
+  const helpers = getExtensionHelpers();
+  const resolved = await Promise.all(
+    sitemapExtensions.map((extension: SitemapExtension) => extension.getEntries(helpers))
+  );
+  return resolved.flat();
+}
+
+export async function getRobotsExtensionRules() {
+  const helpers = getExtensionHelpers();
+  const resolved = await Promise.all(
+    robotsExtensions.map((extension: RobotsExtension) => extension.getRules(helpers))
+  );
+  return resolved.flat();
 }
 
 export function resolveApiExtension(path: string[]): ApiExtension | undefined {

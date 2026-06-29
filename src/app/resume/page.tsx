@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import ResumeView from '@core/views/resume/ResumeView';
-import { siteConfig } from '@/config';
 import { getFullResume } from '@/db/resume';
 import { fetchSiteSettings } from '@/lib/fetchSiteSettings';
+import SeoExtensionJsonLd from '@/components/seo/SeoExtensionJsonLd';
+import { buildExtendedPageMetadata, getSeoSiteSettings } from '@/lib/seo/metadata';
 import { readdir } from 'fs/promises';
 import path from 'path';
 
@@ -12,38 +13,36 @@ async function getResumeFileInfo(): Promise<{ url: string; filename: string } | 
     const files = await readdir(resumeDir);
     const resumeFile = files.find((f) => f.startsWith('resume.'));
     if (resumeFile) return { url: `/uploads/resume/${resumeFile}`, filename: resumeFile };
-  } catch { /* directory doesn't exist */ }
+  } catch {
+    /* directory doesn't exist */
+  }
   return null;
 }
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'Resume',
-  description:
-    'Professional resume - Full Stack Developer with experience in React, Next.js, TypeScript, Node.js, and more.',
-  openGraph: {
-    title: `Resume | ${siteConfig.name}`,
-    description: 'Professional resume and work experience.',
-    url: `${siteConfig.url}/resume`,
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: `Resume | ${siteConfig.name}`,
-    description: 'Professional resume and work experience.',
-  },
-  alternates: {
-    canonical: `${siteConfig.url}/resume`,
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await getSeoSiteSettings();
+  return buildExtendedPageMetadata(settings, {
+    title: 'Resume',
+    description:
+      'Professional resume - Full Stack Developer with experience in React, Next.js, TypeScript, Node.js, and more.',
+    path: '/resume',
+    robots: {
+      index: true,
+      follow: true,
+    },
+  });
+}
 
 export default async function ResumePage() {
   const [resumeData, settings, resumeFile] = await Promise.all([
-    getFullResume().catch(() => ({ skills: {} as Record<string, never>, experiences: [], education: [], certifications: [] })),
+    getFullResume().catch(() => ({
+      skills: {} as Record<string, never>,
+      experiences: [],
+      education: [],
+      certifications: [],
+    })),
     fetchSiteSettings(),
     getResumeFileInfo().catch(() => null),
   ]);
@@ -65,5 +64,10 @@ export default async function ResumePage() {
     resumeFile,
   };
 
-  return <ResumeView resume={serializedResume} settings={settings} />;
+  return (
+    <>
+      <SeoExtensionJsonLd path="/resume" />
+      <ResumeView resume={serializedResume} settings={settings} />
+    </>
+  );
 }

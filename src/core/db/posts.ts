@@ -14,6 +14,9 @@ export interface Post {
   updatedAt: Date;
   metaTitle: string | null;
   metaDescription: string | null;
+  canonicalUrl: string | null;
+  ogImageUrl: string | null;
+  noindex: boolean;
   readingTime: number | null;
   views?: number;
   authorId?: string;
@@ -33,6 +36,9 @@ export interface PostInsert {
   published_at?: Date | null;
   seo_title?: string | null;
   seo_description?: string | null;
+  canonical_url?: string | null;
+  og_image_url?: string | null;
+  noindex?: boolean;
   reading_time_minutes?: number | null;
   author_id?: string;
 }
@@ -51,6 +57,9 @@ export interface PostUpdate {
   published_at?: Date | null;
   seo_title?: string | null;
   seo_description?: string | null;
+  canonical_url?: string | null;
+  og_image_url?: string | null;
+  noindex?: boolean;
   reading_time_minutes?: number | null;
   updated_at?: Date;
 }
@@ -74,13 +83,16 @@ export interface PaginatedPosts {
   totalPages: number;
 }
 
+export interface PublishedPostEntry {
+  slug: string;
+  publishedAt: Date | null;
+  updatedAt: Date;
+}
+
 /**
  * Get all published posts with pagination
  */
-export async function getPublishedPosts(
-  page = 1,
-  pageSize = 10
-): Promise<PaginatedPosts> {
+export async function getPublishedPosts(page = 1, pageSize = 10): Promise<PaginatedPosts> {
   const offset = (page - 1) * pageSize;
 
   // Get total count
@@ -107,6 +119,9 @@ export async function getPublishedPosts(
       'updated_at as updatedAt',
       'seo_title as metaTitle',
       'seo_description as metaDescription',
+      'canonical_url as canonicalUrl',
+      'og_image_url as ogImageUrl',
+      'noindex',
       'reading_time_minutes as readingTime'
     )
     .where('status', 'published')
@@ -155,6 +170,9 @@ export async function getPostBySlug(slug: string): Promise<PostWithTags | null> 
       'updated_at as updatedAt',
       'seo_title as metaTitle',
       'seo_description as metaDescription',
+      'canonical_url as canonicalUrl',
+      'og_image_url as ogImageUrl',
+      'noindex',
       'reading_time_minutes as readingTime'
     )
     .where('slug', slug)
@@ -227,6 +245,9 @@ export async function getPostsByTag(
       'posts.updated_at as updatedAt',
       'posts.seo_title as metaTitle',
       'posts.seo_description as metaDescription',
+      'posts.canonical_url as canonicalUrl',
+      'posts.og_image_url as ogImageUrl',
+      'posts.noindex as noindex',
       'posts.reading_time_minutes as readingTime'
     )
     .join('post_tags', 'posts.id', 'post_tags.post_id')
@@ -304,6 +325,17 @@ export async function getAllPostSlugs(): Promise<string[]> {
     .whereNotNull('published_at');
 
   return posts.map((post: { slug: string }) => post.slug);
+}
+
+/**
+ * Get published post URLs with timestamps for metadata routes.
+ */
+export async function getPublishedPostEntries(): Promise<PublishedPostEntry[]> {
+  return getDb()('posts')
+    .select('slug', 'published_at as publishedAt', 'updated_at as updatedAt')
+    .where('status', 'published')
+    .whereNotNull('published_at')
+    .orderBy('published_at', 'desc');
 }
 
 /**

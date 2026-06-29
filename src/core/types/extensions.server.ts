@@ -28,11 +28,45 @@ export interface ApiExtensionContext {
 
 export type ApiExtensionHandler = (
   request: NextRequest,
-  context: ApiExtensionContext,
+  context: ApiExtensionContext
 ) => Promise<Response> | Response;
 
 export interface ApiExtension {
   /** Route path, e.g. '/api/telemetry' */
   path: `/api/${string}`;
   handlers: Partial<Record<ApiExtensionMethod, ApiExtensionHandler>>;
+}
+
+export interface SitemapEntryExtension {
+  url: string;
+  lastModified?: Date | string;
+}
+
+export interface MetadataExtension {
+  /** Public route path, e.g. '/docs' */
+  path: `/${string}`;
+  getMetadata: (helpers: ExtensionHelpers) => Promise<Metadata> | Metadata;
+}
+
+export interface StructuredDataExtension {
+  /** Public route path, e.g. '/docs' */
+  path: `/${string}`;
+  getData: (
+    helpers: ExtensionHelpers
+  ) =>
+    | Promise<Record<string, unknown> | Record<string, unknown>[]>
+    | Record<string, unknown>
+    | Record<string, unknown>[];
+}
+
+export interface SitemapExtension {
+  id: string;
+  getEntries: (
+    helpers: ExtensionHelpers
+  ) => Promise<SitemapEntryExtension[]> | SitemapEntryExtension[];
+}
+
+export interface RobotsExtension {
+  id: string;
+  getRules: (helpers: ExtensionHelpers) => Promise<string[]> | string[];
 }

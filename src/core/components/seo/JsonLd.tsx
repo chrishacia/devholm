@@ -6,7 +6,15 @@
  * Supports Schema.org types: WebSite, Person, Organization, Article, BreadcrumbList
  */
 
-import { siteConfig } from '@/config';
+import type { SiteSettings } from '@/hooks/useSiteSettings';
+import {
+  buildArticleJsonLd,
+  buildBreadcrumbJsonLd,
+  buildFaqJsonLd,
+  buildPersonJsonLd,
+  buildSoftwareAppJsonLd,
+  buildWebsiteJsonLd,
+} from '@/lib/seo/schema';
 
 // =============================================================================
 // Types
@@ -28,85 +36,30 @@ export interface BreadcrumbItem {
   url: string;
 }
 
+interface JsonLdScriptProps {
+  data: Record<string, unknown>;
+}
+
+function JsonLdScript({ data }: JsonLdScriptProps) {
+  return (
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />
+  );
+}
+
 // =============================================================================
 // Website Schema (for homepage)
 // =============================================================================
 
-export function WebsiteJsonLd() {
-  const jsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'WebSite',
-    name: siteConfig.name,
-    description: `Personal website and blog of ${siteConfig.author.name}. Writing about web development, technology, and life.`,
-    url: siteConfig.url,
-    author: {
-      '@type': 'Person',
-      name: siteConfig.author.name,
-      url: siteConfig.author.url,
-    },
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: {
-        '@type': 'EntryPoint',
-        urlTemplate: `${siteConfig.url}/search?q={search_term_string}`,
-      },
-      'query-input': 'required name=search_term_string',
-    },
-    sameAs: [
-      `https://twitter.com/${siteConfig.social.twitter}`,
-      `https://github.com/${siteConfig.social.github}`,
-      `https://linkedin.com/in/${siteConfig.social.linkedin}`,
-    ],
-  };
-
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
-  );
+export function WebsiteJsonLd({ settings }: { settings: SiteSettings }) {
+  return <JsonLdScript data={buildWebsiteJsonLd(settings)} />;
 }
 
 // =============================================================================
 // Person Schema (for about page)
 // =============================================================================
 
-export function PersonJsonLd() {
-  const jsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'Person',
-    name: siteConfig.author.name,
-    url: siteConfig.author.url,
-    email: siteConfig.author.email,
-    jobTitle: 'Full Stack Developer',
-    worksFor: {
-      '@type': 'Organization',
-      name: 'Self-Employed',
-    },
-    sameAs: [
-      `https://twitter.com/${siteConfig.social.twitter}`,
-      `https://github.com/${siteConfig.social.github}`,
-      `https://linkedin.com/in/${siteConfig.social.linkedin}`,
-      `https://instagram.com/${siteConfig.social.instagram}`,
-    ],
-    knowsAbout: [
-      'Web Development',
-      'React',
-      'Next.js',
-      'TypeScript',
-      'Node.js',
-      'PostgreSQL',
-      'Docker',
-      'DevOps',
-    ],
-  };
-
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
-  );
+export function PersonJsonLd({ settings }: { settings: SiteSettings }) {
+  return <JsonLdScript data={buildPersonJsonLd(settings)} />;
 }
 
 // =============================================================================
@@ -114,49 +67,29 @@ export function PersonJsonLd() {
 // =============================================================================
 
 export function ArticleJsonLd({
+  settings,
   title,
   description,
   url,
   imageUrl,
   datePublished,
   dateModified,
-  authorName = siteConfig.author.name,
+  authorName,
   tags = [],
-}: ArticleJsonLdProps) {
-  const jsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'Article',
-    headline: title,
-    description,
-    url,
-    image: imageUrl || `${siteConfig.url}/og-image.png`,
-    datePublished,
-    dateModified: dateModified || datePublished,
-    author: {
-      '@type': 'Person',
-      name: authorName,
-      url: siteConfig.author.url,
-    },
-    publisher: {
-      '@type': 'Person',
-      name: siteConfig.author.name,
-      url: siteConfig.author.url,
-      logo: {
-        '@type': 'ImageObject',
-        url: `${siteConfig.url}/icon.svg`,
-      },
-    },
-    mainEntityOfPage: {
-      '@type': 'WebPage',
-      '@id': url,
-    },
-    keywords: tags.join(', '),
-  };
-
+}: ArticleJsonLdProps & { settings: SiteSettings }) {
   return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+    <JsonLdScript
+      data={buildArticleJsonLd({
+        settings,
+        title,
+        description,
+        url,
+        imageUrl,
+        datePublished,
+        dateModified,
+        authorName,
+        tags,
+      })}
     />
   );
 }
@@ -166,23 +99,7 @@ export function ArticleJsonLd({
 // =============================================================================
 
 export function BreadcrumbJsonLd({ items }: { items: BreadcrumbItem[] }) {
-  const jsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'BreadcrumbList',
-    itemListElement: items.map((item, index) => ({
-      '@type': 'ListItem',
-      position: index + 1,
-      name: item.name,
-      item: item.url,
-    })),
-  };
-
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
-  );
+  return <JsonLdScript data={buildBreadcrumbJsonLd(items)} />;
 }
 
 // =============================================================================
@@ -195,25 +112,7 @@ export interface FaqItem {
 }
 
 export function FaqJsonLd({ items }: { items: FaqItem[] }) {
-  const jsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'FAQPage',
-    mainEntity: items.map((item) => ({
-      '@type': 'Question',
-      name: item.question,
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: item.answer,
-      },
-    })),
-  };
-
-  return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-    />
-  );
+  return <JsonLdScript data={buildFaqJsonLd(items)} />;
 }
 
 // =============================================================================
@@ -233,39 +132,25 @@ export interface SoftwareAppJsonLdProps {
 }
 
 export function SoftwareAppJsonLd({
+  settings,
   name,
   description,
   url,
   applicationCategory = 'WebApplication',
   operatingSystem = 'Any',
   offers,
-}: SoftwareAppJsonLdProps) {
-  const jsonLd: Record<string, unknown> = {
-    '@context': 'https://schema.org',
-    '@type': 'SoftwareApplication',
-    name,
-    description,
-    url,
-    applicationCategory,
-    operatingSystem,
-    author: {
-      '@type': 'Person',
-      name: siteConfig.author.name,
-    },
-  };
-
-  if (offers) {
-    jsonLd.offers = {
-      '@type': 'Offer',
-      price: offers.price,
-      priceCurrency: offers.priceCurrency,
-    };
-  }
-
+}: SoftwareAppJsonLdProps & { settings: SiteSettings }) {
   return (
-    <script
-      type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+    <JsonLdScript
+      data={buildSoftwareAppJsonLd({
+        settings,
+        name,
+        description,
+        url,
+        applicationCategory,
+        operatingSystem,
+        offers,
+      })}
     />
   );
 }

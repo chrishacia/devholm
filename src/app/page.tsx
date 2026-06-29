@@ -22,8 +22,13 @@ export default async function HomePage() {
 
   return (
     <>
-      <WebsiteJsonLd />
-      <HomeView settings={settings} initialPosts={postsData.posts} initialTags={sortedTags} content={content} />
+      <WebsiteJsonLd settings={settings} />
+      <HomeView
+        settings={settings}
+        initialPosts={postsData.posts}
+        initialTags={sortedTags}
+        content={content}
+      />
     </>
   );
 }

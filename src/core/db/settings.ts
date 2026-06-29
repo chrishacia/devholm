@@ -49,7 +49,7 @@ function transformSetting(row: Record<string, unknown>): SiteSetting {
  */
 function parseValue(value: string | null, type: string): string | number | boolean | object | null {
   if (value === null || value === '') return null;
-  
+
   switch (type) {
     case 'number':
       return Number(value);
@@ -94,11 +94,11 @@ export async function getAllSettings(): Promise<SiteSetting[]> {
 export async function getSettingsMap(): Promise<SettingsMap> {
   const settings = await getAllSettings();
   const map: SettingsMap = {};
-  
+
   for (const setting of settings) {
     map[setting.key] = parseValue(setting.value, setting.type);
   }
-  
+
   return map;
 }
 
@@ -108,14 +108,14 @@ export async function getSettingsMap(): Promise<SettingsMap> {
 export async function getSettingsByCategory(): Promise<SettingsByCategory> {
   const settings = await getAllSettings();
   const byCategory: SettingsByCategory = {};
-  
+
   for (const setting of settings) {
     if (!byCategory[setting.category]) {
       byCategory[setting.category] = {};
     }
     byCategory[setting.category][setting.key] = parseValue(setting.value, setting.type);
   }
-  
+
   return byCategory;
 }
 
@@ -125,13 +125,13 @@ export async function getSettingsByCategory(): Promise<SettingsByCategory> {
 export async function getCategorySettings(category: string): Promise<SettingsMap> {
   const db = getDb();
   const settings = await db('site_settings').where('category', category).select('*');
-  
+
   const map: SettingsMap = {};
   for (const row of settings) {
     const setting = transformSetting(row);
     map[setting.key] = parseValue(setting.value, setting.type);
   }
-  
+
   return map;
 }
 
@@ -141,9 +141,9 @@ export async function getCategorySettings(category: string): Promise<SettingsMap
 export async function getSetting(key: string): Promise<unknown> {
   const db = getDb();
   const row = await db('site_settings').where('key', key).first();
-  
+
   if (!row) return null;
-  
+
   const setting = transformSetting(row);
   return parseValue(setting.value, setting.type);
 }
@@ -154,13 +154,13 @@ export async function getSetting(key: string): Promise<unknown> {
 export async function getSettings(keys: string[]): Promise<SettingsMap> {
   const db = getDb();
   const rows = await db('site_settings').whereIn('key', keys).select('*');
-  
+
   const map: SettingsMap = {};
   for (const row of rows) {
     const setting = transformSetting(row);
     map[setting.key] = parseValue(setting.value, setting.type);
   }
-  
+
   return map;
 }
 
@@ -173,14 +173,14 @@ export async function getSettings(keys: string[]): Promise<SettingsMap> {
  */
 export async function updateSetting(key: string, value: unknown): Promise<boolean> {
   const db = getDb();
-  
+
   const updated = await db('site_settings')
     .where('key', key)
     .update({
       value: stringifyValue(value),
       updated_at: new Date(),
     });
-  
+
   return updated > 0;
 }
 
@@ -190,7 +190,7 @@ export async function updateSetting(key: string, value: unknown): Promise<boolea
 export async function updateSettings(settings: Record<string, unknown>): Promise<number> {
   const db = getDb();
   let count = 0;
-  
+
   await db.transaction(async (trx) => {
     for (const [key, value] of Object.entries(settings)) {
       const updated = await trx('site_settings')
@@ -199,11 +199,11 @@ export async function updateSettings(settings: Record<string, unknown>): Promise
           value: stringifyValue(value),
           updated_at: new Date(),
         });
-      
+
       if (updated > 0) count++;
     }
   });
-  
+
   return count;
 }
 
@@ -218,7 +218,7 @@ export async function upsertSetting(
   description?: string
 ): Promise<void> {
   const db = getDb();
-  
+
   await db('site_settings')
     .insert({
       key,
@@ -271,6 +271,28 @@ export interface SeoConfig {
   defaultTitle: string;
   ogImage: string | null;
   twitterCard: string;
+  verification: VerificationConfig;
+  robots: RobotsConfig;
+  sitemap: SitemapConfig;
+}
+
+export interface VerificationConfig {
+  google: string | null;
+  bing: string | null;
+  yandex: string | null;
+}
+
+export interface RobotsConfig {
+  enabled: boolean;
+  disallowPaths: string[];
+  customRules: string;
+}
+
+export interface SitemapConfig {
+  enabled: boolean;
+  includePosts: boolean;
+  includeTags: boolean;
+  customPaths: string[];
 }
 
 /**
@@ -284,7 +306,7 @@ export async function getSiteInfo(): Promise<SiteInfo> {
     'site_logo_url',
     'site_favicon_url',
   ]);
-  
+
   return {
     name: (settings.site_name as string) || 'My Site',
     description: (settings.site_description as string) || '',
@@ -305,7 +327,7 @@ export async function getAuthorInfo(): Promise<AuthorInfo> {
     'author_tagline',
     'author_avatar_url',
   ]);
-  
+
   return {
     name: (settings.author_name as string) || 'Admin',
     email: (settings.author_email as string) || '',
@@ -329,7 +351,7 @@ export async function getSocialLinks(): Promise<SocialLinks> {
     'social_youtube',
     'social_discord',
   ]);
-  
+
   return {
     twitter: (settings.social_twitter as string) || null,
     github: (settings.social_github as string) || null,
@@ -351,13 +373,51 @@ export async function getSeoConfig(): Promise<SeoConfig> {
     'seo_default_title',
     'seo_og_image',
     'seo_twitter_card',
+    'seo_verification_google',
+    'seo_verification_bing',
+    'seo_verification_yandex',
+    'seo_robots_enabled',
+    'seo_robots_disallow_paths',
+    'seo_robots_custom_rules',
+    'seo_sitemap_enabled',
+    'seo_sitemap_include_posts',
+    'seo_sitemap_include_tags',
+    'seo_sitemap_custom_paths',
   ]);
-  
+
+  const disallowPaths = Array.isArray(settings.seo_robots_disallow_paths)
+    ? settings.seo_robots_disallow_paths.filter(
+        (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+      )
+    : [];
+
+  const customPaths = Array.isArray(settings.seo_sitemap_custom_paths)
+    ? settings.seo_sitemap_custom_paths.filter(
+        (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+      )
+    : [];
+
   return {
     titleTemplate: (settings.seo_title_template as string) || '%s',
     defaultTitle: (settings.seo_default_title as string) || 'My Site',
     ogImage: (settings.seo_og_image as string) || null,
     twitterCard: (settings.seo_twitter_card as string) || 'summary',
+    verification: {
+      google: (settings.seo_verification_google as string) || null,
+      bing: (settings.seo_verification_bing as string) || null,
+      yandex: (settings.seo_verification_yandex as string) || null,
+    },
+    robots: {
+      enabled: settings.seo_robots_enabled !== false,
+      disallowPaths,
+      customRules: (settings.seo_robots_custom_rules as string) || '',
+    },
+    sitemap: {
+      enabled: settings.seo_sitemap_enabled !== false,
+      includePosts: settings.seo_sitemap_include_posts !== false,
+      includeTags: settings.seo_sitemap_include_tags === true,
+      customPaths,
+    },
   };
 }
 

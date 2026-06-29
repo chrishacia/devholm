@@ -19,11 +19,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
   try {
     const db = getDb();
-    
+
     const post = await db('posts')
       .select(
         'posts.*',
-        db.raw('(SELECT json_agg(t.name) FROM tags t INNER JOIN post_tags pt ON pt.tag_id = t.id WHERE pt.post_id = posts.id) as tags')
+        db.raw(
+          '(SELECT json_agg(t.name) FROM tags t INNER JOIN post_tags pt ON pt.tag_id = t.id WHERE pt.post_id = posts.id) as tags'
+        )
       )
       .where('posts.id', id)
       .first();
@@ -45,6 +47,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       coverImage: post.featured_image_url,
       metaTitle: post.seo_title,
       metaDescription: post.seo_description,
+      canonicalUrl: post.canonical_url,
+      noindex: Boolean(post.noindex),
       tags: post.tags || [],
     });
   } catch (error) {
@@ -66,7 +70,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
   try {
     const db = getDb();
-    
+
     // Check if post exists
     const existingPost = await db('posts').where('id', id).first();
     if (!existingPost) {
@@ -85,14 +89,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       coverImage,
       metaTitle,
       metaDescription,
+      canonicalUrl,
+      noindex,
     } = body;
 
     // Validate required fields
     if (!title || !slug || !content) {
-      return NextResponse.json(
-        { error: 'Title, slug, and content are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Title, slug, and content are required' }, { status: 400 });
     }
 
     // Check if new slug is unique (if changed)
@@ -120,6 +123,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       featured_image_url: coverImage || null,
       seo_title: metaTitle || null,
       seo_description: metaDescription || null,
+      canonical_url: canonicalUrl || null,
+      noindex: noindex === true,
       updated_at: new Date(),
       reading_time_minutes: readingTime,
     };
@@ -165,7 +170,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const post = await db('posts')
       .select(
         'posts.*',
-        db.raw('(SELECT json_agg(t.name) FROM tags t INNER JOIN post_tags pt ON pt.tag_id = t.id WHERE pt.post_id = posts.id) as tags')
+        db.raw(
+          '(SELECT json_agg(t.name) FROM tags t INNER JOIN post_tags pt ON pt.tag_id = t.id WHERE pt.post_id = posts.id) as tags'
+        )
       )
       .where('posts.id', id)
       .first();
@@ -183,6 +190,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       coverImage: post.featured_image_url,
       metaTitle: post.seo_title,
       metaDescription: post.seo_description,
+      canonicalUrl: post.canonical_url,
+      noindex: Boolean(post.noindex),
       tags: post.tags || [],
     });
   } catch (error) {
@@ -204,7 +213,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
   try {
     const db = getDb();
-    
+
     // Check if post exists
     const existingPost = await db('posts').where('id', id).first();
     if (!existingPost) {

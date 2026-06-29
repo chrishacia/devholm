@@ -1,31 +1,28 @@
 import type { Metadata } from 'next';
 import ProjectsView from '@core/views/projects/ProjectsView';
-import { siteConfig } from '@/config';
 import { getAllProjects } from '@/db/projects';
+import SeoExtensionJsonLd from '@/components/seo/SeoExtensionJsonLd';
+import { buildExtendedPageMetadata, getSeoSiteSettings } from '@/lib/seo/metadata';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'Projects',
-  description:
-    "Explore my portfolio of web development projects. From full-stack applications to open-source contributions, see what I've been building.",
-  openGraph: {
-    title: `Projects | ${siteConfig.name}`,
-    description: 'Explore my portfolio of web development projects and open-source contributions.',
-    url: `${siteConfig.url}/projects`,
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: `Projects | ${siteConfig.name}`,
-    description: 'Explore my portfolio of web development projects.',
-  },
-  alternates: {
-    canonical: `${siteConfig.url}/projects`,
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await getSeoSiteSettings();
+  return buildExtendedPageMetadata(settings, {
+    title: 'Projects',
+    description:
+      "Explore my portfolio of web development projects. From full-stack applications to open-source contributions, see what I've been building.",
+    path: '/projects',
+  });
+}
 
 export default async function ProjectsPage() {
   const projects = await getAllProjects().catch(() => []);
 
-  return <ProjectsView projects={projects} />;
+  return (
+    <>
+      <SeoExtensionJsonLd path="/projects" />
+      <ProjectsView projects={projects} />
+    </>
+  );
 }

@@ -7,12 +7,7 @@
  */
 
 import type { SiteSettings } from '@/hooks/useSiteSettings';
-import {
-  getSiteInfo,
-  getAuthorInfo,
-  getSocialLinks,
-  getSeoConfig,
-} from '@/db/settings';
+import { getSiteInfo, getAuthorInfo, getSocialLinks, getSeoConfig } from '@/db/settings';
 
 // Default settings (fallback)
 const defaultSettings: SiteSettings = {
@@ -45,6 +40,22 @@ const defaultSettings: SiteSettings = {
     defaultTitle: 'My Site',
     ogImage: null,
     twitterCard: 'summary',
+    verification: {
+      google: null,
+      bing: null,
+      yandex: null,
+    },
+    robots: {
+      enabled: true,
+      disallowPaths: [],
+      customRules: '',
+    },
+    sitemap: {
+      enabled: true,
+      includePosts: true,
+      includeTags: false,
+      customPaths: [],
+    },
   },
 };
 
@@ -60,7 +71,7 @@ export async function fetchSiteSettings(): Promise<SiteSettings> {
       getSocialLinks(),
       getSeoConfig(),
     ]);
-    
+
     return { site, author, social, seo };
   } catch (error) {
     console.error('Error fetching site settings:', error);

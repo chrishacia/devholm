@@ -24,12 +24,10 @@ import { verifyAdmin } from '@/lib/auth-helpers';
 // Validation Schemas
 // =============================================================================
 
-const updateSettingsSchema = z.record(z.string(), z.union([
+const updateSettingsSchema = z.record(
   z.string(),
-  z.number(),
-  z.boolean(),
-  z.null(),
-]));
+  z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
+);
 
 // =============================================================================
 // GET /api/admin/settings - Get all settings
@@ -81,16 +79,10 @@ export async function GET(request: NextRequest) {
       data = { site, author, social, seo };
     }
 
-    return NextResponse.json(
-      { data },
-      { headers: rateLimitHeaders(rateLimit) }
-    );
+    return NextResponse.json({ data }, { headers: rateLimitHeaders(rateLimit) });
   } catch (error) {
     console.error('Settings GET error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch settings' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 });
   }
 }
 
@@ -154,9 +146,6 @@ export async function PATCH(request: NextRequest) {
     );
   } catch (error) {
     console.error('Settings PATCH error:', error);
-    return NextResponse.json(
-      { error: 'Failed to update settings' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 });
   }
 }

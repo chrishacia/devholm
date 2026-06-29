@@ -4,14 +4,22 @@
  *
  * React hook for accessing site settings from the database.
  * Provides cached settings with automatic refresh.
- * 
+ *
  * OPTIMIZATION: Uses module-level caching to prevent duplicate API calls
  * across component instances and React Strict Mode double-renders.
  */
 
 'use client';
 
-import { useState, useEffect, useCallback, createContext, useContext, ReactNode, useRef } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  createContext,
+  useContext,
+  ReactNode,
+  useRef,
+} from 'react';
 
 // =============================================================================
 // Module-level Cache (prevents duplicate fetches across instances)
@@ -58,6 +66,28 @@ export interface SeoConfig {
   defaultTitle: string;
   ogImage: string | null;
   twitterCard: string;
+  verification: VerificationConfig;
+  robots: RobotsConfig;
+  sitemap: SitemapConfig;
+}
+
+export interface VerificationConfig {
+  google: string | null;
+  bing: string | null;
+  yandex: string | null;
+}
+
+export interface RobotsConfig {
+  enabled: boolean;
+  disallowPaths: string[];
+  customRules: string;
+}
+
+export interface SitemapConfig {
+  enabled: boolean;
+  includePosts: boolean;
+  includeTags: boolean;
+  customPaths: string[];
 }
 
 export interface SiteSettings {
@@ -108,6 +138,22 @@ export const defaultSettings: SiteSettings = {
     defaultTitle: 'My Site',
     ogImage: null,
     twitterCard: 'summary',
+    verification: {
+      google: null,
+      bing: null,
+      yandex: null,
+    },
+    robots: {
+      enabled: true,
+      disallowPaths: [],
+      customRules: '',
+    },
+    sitemap: {
+      enabled: true,
+      includePosts: true,
+      includeTags: false,
+      customPaths: [],
+    },
   },
 };
 
@@ -132,7 +178,9 @@ interface SiteSettingsProviderProps {
 }
 
 export function SiteSettingsProvider({ children, initialSettings }: SiteSettingsProviderProps) {
-  const [settings, setSettings] = useState<SiteSettings | null>(initialSettings || cachedSettings || null);
+  const [settings, setSettings] = useState<SiteSettings | null>(
+    initialSettings || cachedSettings || null
+  );
   const [loading, setLoading] = useState(!initialSettings && !cachedSettings);
   const [error, setError] = useState<string | null>(null);
   const hasFetched = useRef(false);
@@ -140,7 +188,7 @@ export function SiteSettingsProvider({ children, initialSettings }: SiteSettings
   const fetchSettings = useCallback(async (force = false) => {
     // Use cached data if available and not expired (unless forced)
     const now = Date.now();
-    if (!force && cachedSettings && (now - lastFetchTime) < CACHE_TTL) {
+    if (!force && cachedSettings && now - lastFetchTime < CACHE_TTL) {
       setSettings(cachedSettings);
       setLoading(false);
       return cachedSettings;
@@ -162,11 +210,11 @@ export function SiteSettingsProvider({ children, initialSettings }: SiteSettings
     fetchPromise = (async () => {
       try {
         const response = await fetch('/api/site-settings');
-        
+
         if (!response.ok) {
           throw new Error('Failed to fetch site settings');
         }
-        
+
         const result = await response.json();
         cachedSettings = result.data;
         lastFetchTime = Date.now();
@@ -199,7 +247,7 @@ export function SiteSettingsProvider({ children, initialSettings }: SiteSettings
     if (initialSettings || hasFetched.current) {
       return;
     }
-    
+
     hasFetched.current = true;
     fetchSettings();
   }, [initialSettings, fetchSettings]);
@@ -222,10 +270,10 @@ export function SiteSettingsProvider({ children, initialSettings }: SiteSettings
 
 export function useSiteSettings() {
   const context = useContext(SiteSettingsContext);
-  
+
   if (!context) {
     throw new Error('useSiteSettings must be used within a SiteSettingsProvider');
   }
-  
+
   return context;
 }

@@ -28,6 +28,8 @@ import {
   Tab,
   Skeleton,
   CircularProgress,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -74,6 +76,8 @@ interface PostForm {
   coverImage: string | null;
   metaTitle: string;
   metaDescription: string;
+  canonicalUrl: string;
+  noindex: boolean;
 }
 
 interface ToolbarButtonProps {
@@ -157,6 +161,8 @@ export default function EditPostPage() {
     coverImage: null,
     metaTitle: '',
     metaDescription: '',
+    canonicalUrl: '',
+    noindex: false,
   });
 
   useEffect(() => {
@@ -181,6 +187,8 @@ export default function EditPostPage() {
           coverImage: post.coverImage || null,
           metaTitle: post.metaTitle || '',
           metaDescription: post.metaDescription || '',
+          canonicalUrl: post.canonicalUrl || '',
+          noindex: Boolean(post.noindex),
         });
       } catch (error) {
         console.error('Error fetching post:', error);
@@ -253,6 +261,8 @@ export default function EditPostPage() {
           coverImage: form.coverImage,
           metaTitle: form.metaTitle,
           metaDescription: form.metaDescription,
+          canonicalUrl: form.canonicalUrl,
+          noindex: form.noindex,
         }),
       });
 
@@ -677,6 +687,16 @@ export default function EditPostPage() {
                   SEO Settings
                 </Typography>
 
+                {(!form.metaTitle || !form.metaDescription || form.title.length > 60) && (
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    {!form.metaTitle && 'Add a meta title to improve search result headings. '}
+                    {!form.metaDescription &&
+                      'Add a meta description to improve search result snippets. '}
+                    {form.title.length > 60 &&
+                      'The post title is over 60 characters, so search engines may truncate it. '}
+                  </Alert>
+                )}
+
                 <TextField
                   fullWidth
                   label="Meta Title"
@@ -700,7 +720,36 @@ export default function EditPostPage() {
                   rows={3}
                   helperText={`${form.metaDescription.length}/160`}
                   slotProps={{ inputLabel: { shrink: true } }}
+                  sx={{ mb: 2 }}
                 />
+
+                <TextField
+                  fullWidth
+                  label="Canonical URL"
+                  placeholder="https://example.com/original-article"
+                  value={form.canonicalUrl}
+                  onChange={(e) => setForm((prev) => ({ ...prev, canonicalUrl: e.target.value }))}
+                  helperText="Optional. Use when this post should point search engines to a different canonical URL."
+                  slotProps={{ inputLabel: { shrink: true } }}
+                  sx={{ mb: 1 }}
+                />
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={form.noindex}
+                      onChange={(e) => setForm((prev) => ({ ...prev, noindex: e.target.checked }))}
+                    />
+                  }
+                  label="Noindex this post"
+                />
+
+                {form.noindex && (
+                  <Alert severity="warning" sx={{ mt: 2 }}>
+                    This post will remain crawlable through links, but search engines will be asked
+                    not to index it directly.
+                  </Alert>
+                )}
               </CardContent>
             </Card>
           </Grid>
