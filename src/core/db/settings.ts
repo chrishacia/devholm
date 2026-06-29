@@ -7,6 +7,11 @@
  */
 
 import { getDb } from './index';
+import { listCmsNavigationLinks, listDevPageNavigationLinks } from './pages';
+import { listCalendarPublicNavigation } from './calendar';
+import { listGalleryPublicNavigation } from './gallery';
+import { mainNavigation, footerNavigation } from '@/config';
+import { devPageDefinitions } from '@user/extensions/pages';
 
 // =============================================================================
 // Types
@@ -266,6 +271,12 @@ export interface SocialLinks {
   discord: string | null;
 }
 
+export interface NavigationConfig {
+  main: Array<{ label: string; href: string }>;
+  footerMain: Array<{ label: string; href: string }>;
+  footerResources: Array<{ label: string; href: string }>;
+}
+
 export interface SeoConfig {
   titleTemplate: string;
   defaultTitle: string;
@@ -418,6 +429,58 @@ export async function getSeoConfig(): Promise<SeoConfig> {
       includeTags: settings.seo_sitemap_include_tags === true,
       customPaths,
     },
+  };
+}
+
+/**
+ * Get runtime navigation that merges default links with user-managed pages.
+ */
+export async function getNavigationConfig(): Promise<NavigationConfig> {
+  const [cmsLinks, devLinks, calendarLinks, galleryLinks] = await Promise.all([
+    listCmsNavigationLinks().catch(() => ({ main: [], footerMain: [], footerResources: [] })),
+    listDevPageNavigationLinks(devPageDefinitions).catch(() => ({
+      main: [],
+      footerMain: [],
+      footerResources: [],
+    })),
+    listCalendarPublicNavigation().catch(() => ({
+      main: [],
+      footerMain: [],
+      footerResources: [],
+    })),
+    listGalleryPublicNavigation().catch(() => ({
+      main: [],
+      footerMain: [],
+      footerResources: [],
+    })),
+  ]);
+
+  const main = [
+    ...mainNavigation,
+    ...cmsLinks.main,
+    ...devLinks.main,
+    ...calendarLinks.main,
+    ...galleryLinks.main,
+  ];
+  const footerMain = [
+    ...footerNavigation.main,
+    ...cmsLinks.footerMain,
+    ...devLinks.footerMain,
+    ...calendarLinks.footerMain,
+    ...galleryLinks.footerMain,
+  ];
+  const footerResources = [
+    ...footerNavigation.resources,
+    ...cmsLinks.footerResources,
+    ...devLinks.footerResources,
+    ...calendarLinks.footerResources,
+    ...galleryLinks.footerResources,
+  ];
+
+  return {
+    main: Array.from(new Map(main.map((item) => [item.href, item])).values()),
+    footerMain: Array.from(new Map(footerMain.map((item) => [item.href, item])).values()),
+    footerResources: Array.from(new Map(footerResources.map((item) => [item.href, item])).values()),
   };
 }
 

@@ -7,7 +7,14 @@
  */
 
 import type { SiteSettings } from '@/hooks/useSiteSettings';
-import { getSiteInfo, getAuthorInfo, getSocialLinks, getSeoConfig } from '@/db/settings';
+import {
+  getSiteInfo,
+  getAuthorInfo,
+  getSocialLinks,
+  getSeoConfig,
+  getNavigationConfig,
+} from '@/db/settings';
+import { mainNavigation, footerNavigation } from '@/config';
 
 // Default settings (fallback)
 const defaultSettings: SiteSettings = {
@@ -57,6 +64,11 @@ const defaultSettings: SiteSettings = {
       customPaths: [],
     },
   },
+  navigation: {
+    main: mainNavigation,
+    footerMain: footerNavigation.main,
+    footerResources: footerNavigation.resources,
+  },
 };
 
 /**
@@ -65,14 +77,15 @@ const defaultSettings: SiteSettings = {
  */
 export async function fetchSiteSettings(): Promise<SiteSettings> {
   try {
-    const [site, author, social, seo] = await Promise.all([
+    const [site, author, social, seo, navigation] = await Promise.all([
       getSiteInfo(),
       getAuthorInfo(),
       getSocialLinks(),
       getSeoConfig(),
+      getNavigationConfig(),
     ]);
 
-    return { site, author, social, seo };
+    return { site, author, social, seo, navigation };
   } catch (error) {
     console.error('Error fetching site settings:', error);
     return defaultSettings;

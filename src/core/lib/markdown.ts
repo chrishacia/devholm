@@ -45,6 +45,8 @@ marked.setOptions({
 // Sanitize HTML options
 const sanitizeOptions: sanitizeHtml.IOptions = {
   allowedTags: [
+    'section',
+    'header',
     'h1',
     'h2',
     'h3',
@@ -81,11 +83,17 @@ const sanitizeOptions: sanitizeHtml.IOptions = {
     'del',
     'sup',
     'sub',
+    'video',
+    'source',
+    'iframe',
   ],
   allowedAttributes: {
     a: ['href', 'name', 'target', 'rel', 'title'],
+    iframe: ['src', 'loading', 'allowfullscreen', 'referrerpolicy', 'title'],
+    video: ['controls', 'preload', 'src', 'poster'],
+    source: ['src', 'type'],
     img: ['src', 'alt', 'title', 'loading', 'width', 'height'],
-    '*': ['class', 'id', 'aria-label'],
+    '*': ['class', 'id', 'aria-label', 'data-calendar', 'data-gallery', 'data-layout'],
     code: ['class'],
     pre: ['class'],
     span: ['class'],
@@ -94,7 +102,18 @@ const sanitizeOptions: sanitizeHtml.IOptions = {
   allowedClasses: {
     code: ['language-*', 'hljs'],
     pre: ['language-*', 'hljs'],
-    '*': ['heading-anchor', 'image-figure'],
+    '*': [
+      'heading-anchor',
+      'image-figure',
+      'devholm-embed',
+      'devholm-calendar-embed',
+      'devholm-gallery-embed',
+      'calendar-booking-list',
+      'calendar-display-list',
+      'gallery-grid',
+      'embed-error',
+      'tiktok-embed',
+    ],
   },
   allowedSchemes: ['http', 'https', 'mailto', 'tel'],
   selfClosing: ['img', 'br', 'hr'],

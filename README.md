@@ -83,25 +83,26 @@ See [docs/cli.md](docs/cli.md).
 
 ## Documentation
 
-| Doc                                                                    | Description                                            |
-| ---------------------------------------------------------------------- | ------------------------------------------------------ |
-| [Getting Started](docs/getting-started.md)                             | Installation and first setup                           |
-| [Developer Guide](docs/developer-guide.md)                             | Local workflow, boundaries, seeds, and extension rules |
-| [Architecture](docs/architecture.md)                                   | Layer model, directory structure, aliases              |
-| [Configuration](docs/configuration.md)                                 | Full `devholm.config.ts` reference                     |
-| [Automation Agent API](docs/automation-agent.md)                       | Secure bot/AI endpoints for posts and inbox moderation |
-| [Extensions](docs/extensions.md)                                       | Slots, admin extensions, view overrides, migrations    |
-| [CLI](docs/cli.md)                                                     | All CLI commands                                       |
-| [Upgrading](docs/upgrading.md)                                         | How to update DevHolm safely                           |
-| [Documentation Wiki](docs/wiki.md)                                     | Wiki-style navigation for all docs tracks              |
-| [First-Time Setup Path](docs/first-time-setup-path.md)                 | Local setup through production readiness               |
-| [CI and Secrets Runbook](docs/ci-secrets-runbook.md)                   | CI/CD and repository secrets setup workflow            |
-| [Docs Information Architecture](docs/docs-information-architecture.md) | Future in-app docs rendering structure                 |
-| [Downstream Boundaries](docs/downstream-boundaries.md)                 | Upgrade-safe customization boundaries                  |
-| [Admin Update Strategy](docs/admin-triggered-updates-strategy.md)      | Future admin-triggered update architecture             |
-| [Packaging Roadmap](docs/framework-packaging-roadmap.md)               | Optional package-first hardening plan                  |
-| [Deployment](DEPLOYMENT.md)                                            | Server setup and production deployment                 |
-| [GitHub Secrets](GITHUB_SECRETS.md)                                    | Required repository secrets for CI/CD deploys          |
+| Doc                                                                    | Description                                             |
+| ---------------------------------------------------------------------- | ------------------------------------------------------- |
+| [Getting Started](docs/getting-started.md)                             | Installation and first setup                            |
+| [Developer Guide](docs/developer-guide.md)                             | Local workflow, boundaries, seeds, and extension rules  |
+| [Architecture](docs/architecture.md)                                   | Layer model, directory structure, aliases               |
+| [Configuration](docs/configuration.md)                                 | Full `devholm.config.ts` reference                      |
+| [Automation Agent API](docs/automation-agent.md)                       | Secure bot/AI endpoints for posts and inbox moderation  |
+| [Extensions](docs/extensions.md)                                       | Slots, admin extensions, view overrides, migrations     |
+| [Plugin Development Guide](docs/plugin-development.md)                 | Build custom plugins with Hello World and Todo examples |
+| [CLI](docs/cli.md)                                                     | All CLI commands                                        |
+| [Upgrading](docs/upgrading.md)                                         | How to update DevHolm safely                            |
+| [Documentation Wiki](docs/wiki.md)                                     | Wiki-style navigation for all docs tracks               |
+| [First-Time Setup Path](docs/first-time-setup-path.md)                 | Local setup through production readiness                |
+| [CI and Secrets Runbook](docs/ci-secrets-runbook.md)                   | CI/CD and repository secrets setup workflow             |
+| [Docs Information Architecture](docs/docs-information-architecture.md) | Future in-app docs rendering structure                  |
+| [Downstream Boundaries](docs/downstream-boundaries.md)                 | Upgrade-safe customization boundaries                   |
+| [Admin Update Strategy](docs/admin-triggered-updates-strategy.md)      | Future admin-triggered update architecture              |
+| [Packaging Roadmap](docs/framework-packaging-roadmap.md)               | Optional package-first hardening plan                   |
+| [Deployment](DEPLOYMENT.md)                                            | Server setup and production deployment                  |
+| [GitHub Secrets](GITHUB_SECRETS.md)                                    | Required repository secrets for CI/CD deploys           |
 
 ---
 

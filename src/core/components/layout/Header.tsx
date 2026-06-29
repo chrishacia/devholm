@@ -22,7 +22,8 @@ import Link from '@/components/common/Link';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { Logo, ThemeToggle, NotificationBell, AvatarMenu } from '@/components/common';
-import { mainNavigation } from '@/config';
+import { useSiteSettings } from '@/hooks/useSiteSettings';
+import { mainNavigation as defaultMainNavigation } from '@/config';
 
 interface HeaderProps {
   isLoggedIn?: boolean;
@@ -39,6 +40,8 @@ export function Header({ isLoggedIn = false, user = null, unreadCount = 0 }: Hea
   const pathname = usePathname();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { settings } = useSiteSettings();
+  const mainNavigation = settings?.navigation.main ?? defaultMainNavigation;
 
   const toggleMobileMenu = () => {
     setMobileMenuOpen(!mobileMenuOpen);
@@ -143,16 +146,18 @@ export function Header({ isLoggedIn = false, user = null, unreadCount = 0 }: Hea
               <IconButton
                 onClick={() => {
                   // Dispatch a keyboard event to trigger the search dialog
-                  window.dispatchEvent(new KeyboardEvent('keydown', {
-                    key: 'k',
-                    metaKey: true,
-                    bubbles: true,
-                  }));
+                  window.dispatchEvent(
+                    new KeyboardEvent('keydown', {
+                      key: 'k',
+                      metaKey: true,
+                      bubbles: true,
+                    })
+                  );
                 }}
                 color="inherit"
                 aria-label="Search"
-                sx={{ 
-                  width: 40, 
+                sx={{
+                  width: 40,
                   height: 40,
                   '& .MuiSvgIcon-root': { fontSize: '1.25rem' },
                 }}

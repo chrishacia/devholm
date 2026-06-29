@@ -8,8 +8,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSiteInfo, getAuthorInfo, getSocialLinks, getSeoConfig } from '@/db/settings';
+import {
+  getSiteInfo,
+  getAuthorInfo,
+  getSocialLinks,
+  getSeoConfig,
+  getNavigationConfig,
+} from '@/db/settings';
 import { checkRateLimit, getClientIp, rateLimitHeaders, RateLimits } from '@/lib/rate-limiter';
+import { mainNavigation, footerNavigation } from '@/config';
 
 // Cache the settings for 1 minute to reduce database load
 let cachedSettings: Record<string, unknown> | null = null;
@@ -24,14 +31,15 @@ async function getCachedSettings() {
   }
 
   try {
-    const [site, author, social, seo] = await Promise.all([
+    const [site, author, social, seo, navigation] = await Promise.all([
       getSiteInfo(),
       getAuthorInfo(),
       getSocialLinks(),
       getSeoConfig(),
+      getNavigationConfig(),
     ]);
 
-    cachedSettings = { site, author, social, seo };
+    cachedSettings = { site, author, social, seo, navigation };
     cacheTimestamp = now;
 
     return cachedSettings;
@@ -128,6 +136,11 @@ export async function GET(request: NextRequest) {
               includeTags: false,
               customPaths: [],
             },
+          },
+          navigation: {
+            main: mainNavigation,
+            footerMain: footerNavigation.main,
+            footerResources: footerNavigation.resources,
           },
         },
       },

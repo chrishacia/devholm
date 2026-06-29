@@ -14,8 +14,8 @@ import { useState, useEffect } from 'react';
 import Link from '@/components/common/Link';
 import { GitHub, LinkedIn, RssFeed, Facebook, Instagram, YouTube } from '@mui/icons-material';
 import { Logo } from '@/components/common';
-import { footerNavigation } from '@/config';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
+import { footerNavigation } from '@/config';
 
 // Custom icons for platforms not in MUI
 function TikTokIcon(props: React.ComponentProps<typeof SvgIcon>) {
@@ -65,6 +65,9 @@ type SocialLink = {
 export function Footer() {
   const theme = useTheme();
   const { settings } = useSiteSettings();
+  const footerMainNavigation = settings?.navigation.footerMain ?? footerNavigation.main;
+  const footerResourcesNavigation =
+    settings?.navigation.footerResources ?? footerNavigation.resources;
   // Use fixed year for SSR to prevent hydration mismatch
   const [currentYear, setCurrentYear] = useState(2026);
   const [mounted, setMounted] = useState(false);
@@ -151,7 +154,7 @@ export function Footer() {
               Pages
             </Typography>
             <Box component="nav" aria-label="Footer navigation - Pages">
-              {footerNavigation.main.map((item) => (
+              {footerMainNavigation.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -175,7 +178,7 @@ export function Footer() {
               Resources
             </Typography>
             <Box component="nav" aria-label="Footer navigation - Resources">
-              {footerNavigation.resources.map((item) => (
+              {footerResourcesNavigation.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}

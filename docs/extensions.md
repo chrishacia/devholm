@@ -2,6 +2,8 @@
 
 DevHolm has three extension points that let you customize behavior without modifying core files.
 
+If you want a full build-from-scratch guide for site-owned plugins (with Hello World and Todo examples), see [Plugin Development Guide](./plugin-development.md).
+
 ---
 
 ## 1. Extension Slots

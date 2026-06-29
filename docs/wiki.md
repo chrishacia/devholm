@@ -26,8 +26,9 @@ Choose one of these tracks:
 1. [Architecture](./architecture.md)
 2. [Configuration](./configuration.md)
 3. [Extensions](./extensions.md)
-4. [CLI](./cli.md)
-5. [Downstream Boundaries](./downstream-boundaries.md)
+4. [Plugin Development Guide](./plugin-development.md)
+5. [CLI](./cli.md)
+6. [Downstream Boundaries](./downstream-boundaries.md)
 
 ## Track 3: Platform Operations
 

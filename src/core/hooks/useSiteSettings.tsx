@@ -20,6 +20,7 @@ import {
   ReactNode,
   useRef,
 } from 'react';
+import { mainNavigation, footerNavigation } from '@/config';
 
 // =============================================================================
 // Module-level Cache (prevents duplicate fetches across instances)
@@ -95,6 +96,11 @@ export interface SiteSettings {
   author: AuthorInfo;
   social: SocialLinks;
   seo: SeoConfig;
+  navigation: {
+    main: Array<{ label: string; href: string }>;
+    footerMain: Array<{ label: string; href: string }>;
+    footerResources: Array<{ label: string; href: string }>;
+  };
 }
 
 interface SiteSettingsContextValue {
@@ -154,6 +160,11 @@ export const defaultSettings: SiteSettings = {
       includeTags: false,
       customPaths: [],
     },
+  },
+  navigation: {
+    main: mainNavigation,
+    footerMain: footerNavigation.main,
+    footerResources: footerNavigation.resources,
   },
 };
 

@@ -53,6 +53,14 @@ const settings = {
       customPaths: [],
     },
   },
+  navigation: {
+    main: [
+      { label: 'Home', href: '/' },
+      { label: 'Blog', href: '/blog' },
+    ],
+    footerMain: [{ label: 'Home', href: '/' }],
+    footerResources: [{ label: 'Resume', href: '/resume' }],
+  },
 };
 
 describe('seo schema builders', () => {

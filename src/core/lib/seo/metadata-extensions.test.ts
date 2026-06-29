@@ -55,6 +55,14 @@ const settings = {
       customPaths: [],
     },
   },
+  navigation: {
+    main: [
+      { label: 'Home', href: '/' },
+      { label: 'Docs', href: '/docs' },
+    ],
+    footerMain: [{ label: 'Home', href: '/' }],
+    footerResources: [{ label: 'Resume', href: '/resume' }],
+  },
 };
 
 describe('extended page metadata', () => {

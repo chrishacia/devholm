@@ -13,19 +13,17 @@ import {
   Button,
   Paper,
 } from '@mui/material';
-import {
-  AccessTime,
-  CalendarToday,
-  ArrowBack,
-  Twitter,
-  LinkedIn,
-} from '@mui/icons-material';
+import { AccessTime, CalendarToday, ArrowBack, Twitter, LinkedIn } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { AuthAwareMainLayout, ThreeColumnLayout, SidebarWidget } from '@/components';
 import Link from '@/components/common/Link';
 import { MarkdownRenderer, SafeImage } from '@/components/common';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
 import type { PostWithTags } from '@/db/posts';
+
+interface PostWithRenderHtml extends PostWithTags {
+  renderedHtml?: string;
+}
 
 function TableOfContents({ content }: { content: string }) {
   // Extract headings from markdown content
@@ -34,7 +32,10 @@ function TableOfContents({ content }: { content: string }) {
     .filter((line) => line.startsWith('## '))
     .map((line) => {
       const text = line.replace('## ', '');
-      const id = text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '');
+      const id = text
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^\w-]/g, '');
       return { text, id };
     });
 
@@ -96,20 +97,10 @@ function ShareButtons({ url, title }: { url: string; title: string }) {
 
   return (
     <Box sx={{ display: 'flex', gap: 1 }}>
-      <Button
-        size="small"
-        variant="outlined"
-        startIcon={<Twitter />}
-        onClick={shareOnTwitter}
-      >
+      <Button size="small" variant="outlined" startIcon={<Twitter />} onClick={shareOnTwitter}>
         Share
       </Button>
-      <Button
-        size="small"
-        variant="outlined"
-        startIcon={<LinkedIn />}
-        onClick={shareOnLinkedIn}
-      >
+      <Button size="small" variant="outlined" startIcon={<LinkedIn />} onClick={shareOnLinkedIn}>
         Share
       </Button>
     </Box>
@@ -120,20 +111,20 @@ export default function BlogPostPage() {
   const params = useParams();
   const slug = params.slug as string;
   const { settings } = useSiteSettings();
-  const [post, setPost] = useState<PostWithTags | null>(null);
+  const [post, setPost] = useState<PostWithRenderHtml | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchPost = async () => {
       if (!slug) return;
-      
+
       setLoading(true);
       setError(null);
-      
+
       try {
         const response = await fetch(`/api/posts/${slug}`);
-        
+
         if (!response.ok) {
           if (response.status === 404) {
             setPost(null);
@@ -213,12 +204,7 @@ export default function BlogPostPage() {
     <AuthAwareMainLayout>
       <Container maxWidth="lg" sx={{ py: 6 }}>
         {/* Back Link */}
-        <Button
-          component={Link}
-          href="/blog"
-          startIcon={<ArrowBack />}
-          sx={{ mb: 4 }}
-        >
+        <Button component={Link} href="/blog" startIcon={<ArrowBack />} sx={{ mb: 4 }}>
           Back to Blog
         </Button>
 
@@ -274,9 +260,7 @@ export default function BlogPostPage() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   <CalendarToday sx={{ fontSize: 16 }} />
                   <Typography variant="body2" color="text.secondary">
-                    {post.publishedAt
-                      ? format(post.publishedAt, 'MMMM d, yyyy')
-                      : 'Draft'}
+                    {post.publishedAt ? format(post.publishedAt, 'MMMM d, yyyy') : 'Draft'}
                   </Typography>
                 </Box>
                 {post.readingTime && (
@@ -311,7 +295,32 @@ export default function BlogPostPage() {
                 p: { xs: 2, md: 3 },
               }}
             >
-              <MarkdownRenderer content={post.contentMarkdown} />
+              {post.renderedHtml ? (
+                <Box
+                  sx={{
+                    '& h1, & h2, & h3, & h4': { mt: 3, mb: 1.5 },
+                    '& p': { mb: 2, lineHeight: 1.8 },
+                    '& ul, & ol': { mb: 2, pl: 2.5, ml: 0 },
+                    '& li': { mb: 0.5 },
+                    '& img, & video, & iframe': { maxWidth: '100%', borderRadius: 1 },
+                    '& .devholm-embed': {
+                      border: 1,
+                      borderColor: 'divider',
+                      borderRadius: 1,
+                      p: 2,
+                      mb: 2,
+                    },
+                    '& .gallery-grid': {
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+                      gap: 2,
+                    },
+                  }}
+                  dangerouslySetInnerHTML={{ __html: post.renderedHtml }}
+                />
+              ) : (
+                <MarkdownRenderer content={post.contentMarkdown} />
+              )}
             </Paper>
 
             {/* Share Section */}

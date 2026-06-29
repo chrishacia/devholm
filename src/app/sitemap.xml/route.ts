@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getAllTags, getPublishedPostEntries } from '@/db/posts';
 import { getSeoConfig, getSiteInfo } from '@/db/settings';
+import { listCmsSitemapPaths, listDevPageSitemapPaths } from '@/db/pages';
+import { listCalendarSitemapEntries } from '@/db/calendar';
+import { listGallerySitemapEntries } from '@/db/gallery';
 import { getSitemapExtensionEntries } from '@core/lib/extensions.server';
+import { devPageDefinitions } from '@user/extensions/pages';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,11 +47,16 @@ function escapeXml(value: string) {
 }
 
 export async function GET() {
-  const [site, seo, extensionEntries] = await Promise.all([
-    getSiteInfo(),
-    getSeoConfig(),
-    getSitemapExtensionEntries().catch(() => []),
-  ]);
+  const [site, seo, extensionEntries, cmsPages, devPages, calendarPages, galleryPages] =
+    await Promise.all([
+      getSiteInfo(),
+      getSeoConfig(),
+      getSitemapExtensionEntries().catch(() => []),
+      listCmsSitemapPaths().catch(() => []),
+      listDevPageSitemapPaths(devPageDefinitions).catch(() => []),
+      listCalendarSitemapEntries().catch(() => []),
+      listGallerySitemapEntries().catch(() => []),
+    ]);
 
   if (!seo.sitemap.enabled) {
     return new NextResponse('Not Found', { status: 404 });
@@ -81,6 +90,46 @@ export async function GET() {
     const url = toAbsoluteUrl(origin, customPath.startsWith('/') ? customPath : customPath);
     if (url) {
       entries.push({ url });
+    }
+  }
+
+  for (const entry of cmsPages) {
+    const url = toAbsoluteUrl(origin, entry.path);
+    if (url) {
+      entries.push({
+        url,
+        lastModified: entry.lastModified,
+      });
+    }
+  }
+
+  for (const entry of devPages) {
+    const url = toAbsoluteUrl(origin, entry.path);
+    if (url) {
+      entries.push({
+        url,
+        lastModified: entry.lastModified,
+      });
+    }
+  }
+
+  for (const entry of calendarPages) {
+    const url = toAbsoluteUrl(origin, entry.path);
+    if (url) {
+      entries.push({
+        url,
+        lastModified: entry.lastModified,
+      });
+    }
+  }
+
+  for (const entry of galleryPages) {
+    const url = toAbsoluteUrl(origin, entry.path);
+    if (url) {
+      entries.push({
+        url,
+        lastModified: entry.lastModified,
+      });
     }
   }
 
