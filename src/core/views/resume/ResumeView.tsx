@@ -77,6 +77,10 @@ function formatDateRange(startDate: string, endDate: string | null): string {
   return `${start} – ${end}`;
 }
 
+function normalizeResumeSection<T>(section: T[] | undefined | null): T[] {
+  return Array.isArray(section) ? section : [];
+}
+
 // Category display names
 const categoryNames: Record<string, string> = {
   frontend: 'Frontend',
@@ -96,6 +100,11 @@ export default function ResumePage({ resume, settings }: ResumePageClientProps) 
   const authorEmail = settings?.author?.email || '';
   const linkedIn = settings?.social?.linkedin || '';
   const github = settings?.social?.github || '';
+  const skills = resume?.skills ?? {};
+  const experiences = normalizeResumeSection(resume?.experiences);
+  const education = normalizeResumeSection(resume?.education);
+  const certifications = normalizeResumeSection(resume?.certifications);
+  const resumeFile = resume?.resumeFile ?? null;
 
   return (
     <AuthAwareMainLayout>
@@ -109,13 +118,8 @@ export default function ResumePage({ resume, settings }: ResumePageClientProps) 
             {authorName} • Full-Stack Developer
           </Typography>
           <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap', mb: 3 }}>
-            {resume?.resumeFile && (
-              <Button
-                variant="contained"
-                startIcon={<Download />}
-                href={resume.resumeFile.url}
-                download
-              >
+            {resumeFile && (
+              <Button variant="contained" startIcon={<Download />} href={resumeFile.url} download>
                 Download PDF
               </Button>
             )}
@@ -166,11 +170,8 @@ export default function ResumePage({ resume, settings }: ResumePageClientProps) 
             Skills
           </Typography>
           <Paper sx={{ p: 3 }}>
-            {Object.entries(resume.skills).map(([category, skills], index) => (
-              <Box
-                key={category}
-                sx={{ mb: index < Object.keys(resume.skills).length - 1 ? 3 : 0 }}
-              >
+            {Object.entries(skills).map(([category, categorySkills], index) => (
+              <Box key={category} sx={{ mb: index < Object.keys(skills).length - 1 ? 3 : 0 }}>
                 <Typography
                   variant="subtitle2"
                   color="text.secondary"
@@ -184,7 +185,7 @@ export default function ResumePage({ resume, settings }: ResumePageClientProps) 
                   {categoryNames[category] || category}
                 </Typography>
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {skills.map((skill) => (
+                  {categorySkills.map((skill) => (
                     <Chip key={skill.id} label={skill.name} size="small" variant="outlined" />
                   ))}
                 </Box>
@@ -199,7 +200,7 @@ export default function ResumePage({ resume, settings }: ResumePageClientProps) 
             Experience
           </Typography>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {resume.experiences.map((exp) => (
+            {experiences.map((exp) => (
               <Paper
                 key={exp.id}
                 sx={{
@@ -270,12 +271,12 @@ export default function ResumePage({ resume, settings }: ResumePageClientProps) 
         </Box>
 
         {/* Education Section */}
-        {resume.education.length > 0 && (
+        {education.length > 0 && (
           <Box sx={{ mb: 6 }}>
             <Typography variant="h4" component="h2" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
               Education
             </Typography>
-            {resume.education.map((edu) => (
+            {education.map((edu) => (
               <Paper key={edu.id} sx={{ p: 3 }}>
                 <Box
                   sx={{
@@ -313,7 +314,7 @@ export default function ResumePage({ resume, settings }: ResumePageClientProps) 
         )}
 
         {/* Certifications */}
-        {resume.certifications.length > 0 && (
+        {certifications.length > 0 && (
           <Box>
             <Typography variant="h4" component="h2" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>
               Certifications & Awareness Training
@@ -329,7 +330,7 @@ export default function ResumePage({ resume, settings }: ResumePageClientProps) 
               }}
             >
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
-                {resume.certifications.map((cert) => (
+                {certifications.map((cert) => (
                   <Chip
                     key={cert.id}
                     label={cert.issuer ? `${cert.name} (${cert.issuer})` : cert.name}

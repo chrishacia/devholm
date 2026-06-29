@@ -19,6 +19,15 @@ async function getResumeFileInfo(): Promise<{ url: string; filename: string } | 
   return null;
 }
 
+function toIsoString(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function toRequiredIsoString(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -49,18 +58,18 @@ export default async function ResumePage() {
 
   // Serialize Date objects to strings for the client component
   const serializedResume = {
-    skills: resumeData.skills,
-    experiences: resumeData.experiences.map((exp) => ({
+    skills: resumeData.skills ?? {},
+    experiences: (resumeData.experiences ?? []).map((exp) => ({
       ...exp,
-      start_date: exp.start_date.toISOString(),
-      end_date: exp.end_date ? exp.end_date.toISOString() : null,
+      start_date: toRequiredIsoString(exp.start_date),
+      end_date: toIsoString(exp.end_date),
     })),
-    education: resumeData.education.map((edu) => ({
+    education: (resumeData.education ?? []).map((edu) => ({
       ...edu,
-      start_date: edu.start_date ? edu.start_date.toISOString() : null,
-      end_date: edu.end_date ? edu.end_date.toISOString() : null,
+      start_date: toIsoString(edu.start_date),
+      end_date: toIsoString(edu.end_date),
     })),
-    certifications: resumeData.certifications,
+    certifications: resumeData.certifications ?? [],
     resumeFile,
   };
 

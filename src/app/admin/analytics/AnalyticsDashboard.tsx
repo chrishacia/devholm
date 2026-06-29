@@ -147,6 +147,8 @@ interface PaginatedData<T> {
   totalPages: number;
 }
 
+type DrillDownRow = Record<string, unknown>;
+
 // =============================================================================
 // Helpers
 // =============================================================================
@@ -440,6 +442,10 @@ export default function AnalyticsDashboard() {
   const [drillDownPage, setDrillDownPage] = useState(1);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [currentContext, setCurrentContext] = useState<string | null>(null);
+
+  const drillDownRows = Array.isArray(drillDownData?.data)
+    ? (drillDownData.data as DrillDownRow[])
+    : [];
 
   const fetchAnalytics = useCallback(async () => {
     setLoading(true);
@@ -1403,7 +1409,7 @@ export default function AnalyticsDashboard() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {(drillDownData.data as Array<Record<string, unknown>>).map((item, index) => (
+                    {drillDownRows.map((item, index) => (
                       <TableRow key={index} hover>
                         {drillDownView === 'pages' && (
                           <>
@@ -1531,7 +1537,7 @@ export default function AnalyticsDashboard() {
                   </TableBody>
                 </Table>
               </TableContainer>
-              {drillDownData.totalPages > 1 && (
+              {drillDownData.totalPages > 1 && drillDownRows.length > 0 && (
                 <TablePagination
                   component="div"
                   count={drillDownData.total}
