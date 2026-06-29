@@ -11,7 +11,7 @@
   "private": false,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --webpack",
+    "build": "NODE_ENV=production next build --webpack",
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
