@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { SessionProvider } from 'next-auth/react';
 import { auth } from '@/auth';
+import { listPluginStates } from '@/db/plugins';
 import AdminLayoutClient from './AdminLayoutClient';
 
 export const metadata = {
@@ -18,6 +19,7 @@ interface AdminLayoutProps {
 
 export default async function AdminLayout({ children }: AdminLayoutProps) {
   let session = null;
+  let pluginEnabledMap: Record<string, boolean> = {};
   try {
     session = await auth();
   } catch {
@@ -43,9 +45,16 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
     redirect('/');
   }
 
+  try {
+    const plugins = await listPluginStates();
+    pluginEnabledMap = Object.fromEntries(plugins.map((plugin) => [plugin.id, plugin.isEnabled]));
+  } catch {
+    pluginEnabledMap = {};
+  }
+
   return (
     <SessionProvider session={session}>
-      <AdminLayoutClient>{children}</AdminLayoutClient>
+      <AdminLayoutClient pluginEnabledMap={pluginEnabledMap}>{children}</AdminLayoutClient>
     </SessionProvider>
   );
 }

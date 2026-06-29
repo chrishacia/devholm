@@ -69,6 +69,7 @@ export interface AdminNavItem {
 }
 
 export interface AdminExtension {
+  pluginId?: string;
   navItem: AdminNavItem;
 }
 
@@ -101,5 +102,6 @@ export type ViewName =
  *   blog: () => import('./src/user/views/blog/BlogView'),
  * }
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ViewOverride = Partial<Record<ViewName, () => Promise<{ default: React.ComponentType<any> }>>>;
+export type ViewOverride = Partial<
+  Record<ViewName, () => Promise<{ default: React.ComponentType }>>
+>;

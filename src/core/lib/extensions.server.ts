@@ -22,6 +22,7 @@ import {
   sitemapExtensions,
   structuredDataExtensions,
 } from '@user/extensions/seo';
+import { isPluginEnabled } from '@/db/plugins';
 
 function normalizePath(pathname: string): string {
   const segments = pathname.split('/').filter(Boolean);
@@ -53,6 +54,14 @@ export function getExtensionHelpers(): ExtensionHelpers {
   };
 }
 
+async function isExtensionEnabled(pluginId?: string): Promise<boolean> {
+  if (!pluginId) {
+    return true;
+  }
+
+  return isPluginEnabled(pluginId);
+}
+
 export function resolveAdminPageExtension(slug: string[]): AdminPageExtension | undefined {
   return resolveByPath(adminPageExtensions, `/admin/${slug.join('/')}`);
 }
@@ -81,8 +90,20 @@ export function resolveMetadataExtensions(path: string): MetadataExtension[] {
 
 export async function getMetadataExtensionData(path: string): Promise<Metadata[]> {
   const helpers = getExtensionHelpers();
+  const extensions = await Promise.all(
+    resolveMetadataExtensions(path).map(async (extension) => {
+      if (!(await isExtensionEnabled(extension.pluginId))) {
+        return null;
+      }
+
+      return extension;
+    })
+  );
+
   return Promise.all(
-    resolveMetadataExtensions(path).map((extension) => extension.getMetadata(helpers))
+    extensions
+      .filter((extension): extension is MetadataExtension => extension !== null)
+      .map((extension) => extension.getMetadata(helpers))
   );
 }
 
@@ -97,24 +118,57 @@ export async function getStructuredDataExtensionData(
   path: string
 ): Promise<Record<string, unknown>[]> {
   const helpers = getExtensionHelpers();
+  const extensions = await Promise.all(
+    resolveStructuredDataExtensions(path).map(async (extension) => {
+      if (!(await isExtensionEnabled(extension.pluginId))) {
+        return null;
+      }
+
+      return extension;
+    })
+  );
   const resolved = await Promise.all(
-    resolveStructuredDataExtensions(path).map((extension) => extension.getData(helpers))
+    extensions
+      .filter((extension): extension is StructuredDataExtension => extension !== null)
+      .map((extension) => extension.getData(helpers))
   );
   return resolved.flatMap((entry) => (Array.isArray(entry) ? entry : [entry]));
 }
 
 export async function getSitemapExtensionEntries() {
   const helpers = getExtensionHelpers();
+  const enabledExtensions = await Promise.all(
+    sitemapExtensions.map(async (extension: SitemapExtension) => {
+      if (!(await isExtensionEnabled(extension.pluginId))) {
+        return null;
+      }
+
+      return extension;
+    })
+  );
   const resolved = await Promise.all(
-    sitemapExtensions.map((extension: SitemapExtension) => extension.getEntries(helpers))
+    enabledExtensions
+      .filter((extension): extension is SitemapExtension => extension !== null)
+      .map((extension) => extension.getEntries(helpers))
   );
   return resolved.flat();
 }
 
 export async function getRobotsExtensionRules() {
   const helpers = getExtensionHelpers();
+  const enabledExtensions = await Promise.all(
+    robotsExtensions.map(async (extension: RobotsExtension) => {
+      if (!(await isExtensionEnabled(extension.pluginId))) {
+        return null;
+      }
+
+      return extension;
+    })
+  );
   const resolved = await Promise.all(
-    robotsExtensions.map((extension: RobotsExtension) => extension.getRules(helpers))
+    enabledExtensions
+      .filter((extension): extension is RobotsExtension => extension !== null)
+      .map((extension) => extension.getRules(helpers))
   );
   return resolved.flat();
 }
@@ -130,6 +184,10 @@ export async function runApiExtension(
 ): Promise<Response | null> {
   const extension = resolveApiExtension(path);
   if (!extension) {
+    return null;
+  }
+
+  if (!(await isExtensionEnabled(extension.pluginId))) {
     return null;
   }
 

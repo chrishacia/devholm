@@ -6,6 +6,7 @@ import {
   listCalendarBlocks,
   listCalendarEventTypes,
 } from '@/db/calendar';
+import { isPluginEnabled } from '@/db/plugins';
 import BookingClient from './BookingClient';
 
 type Props = {
@@ -23,6 +24,10 @@ function fmt(value: Date | string) {
 }
 
 export default async function CalendarPublicPage({ params }: Props) {
+  if (!(await isPluginEnabled('calendar').catch(() => false))) {
+    notFound();
+  }
+
   const { slug } = await params;
   const calendar = await getCalendarCollectionBySlug(slug, false);
 

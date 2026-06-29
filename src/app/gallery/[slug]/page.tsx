@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { Box, Container, Typography } from '@mui/material';
 import { AuthAwareMainLayout } from '@/components';
 import { getGalleryCollectionBySlug, listGalleryItems } from '@/db/gallery';
+import { isPluginEnabled } from '@/db/plugins';
 import GalleryClient from './GalleryClient';
 
 type Props = {
@@ -9,6 +10,10 @@ type Props = {
 };
 
 export default async function GalleryPublicPage({ params }: Props) {
+  if (!(await isPluginEnabled('gallery').catch(() => false))) {
+    notFound();
+  }
+
   const { slug } = await params;
   const gallery = await getGalleryCollectionBySlug(slug, false);
 

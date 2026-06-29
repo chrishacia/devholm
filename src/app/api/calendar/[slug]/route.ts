@@ -4,12 +4,17 @@ import {
   listCalendarBlocks,
   listCalendarEventTypes,
 } from '@/db/calendar';
+import { isPluginEnabled } from '@/db/plugins';
 
 interface RouteParams {
   params: Promise<{ slug: string }>;
 }
 
 export async function GET(_request: NextRequest, { params }: RouteParams) {
+  if (!(await isPluginEnabled('calendar').catch(() => false))) {
+    return NextResponse.json({ error: 'Calendar plugin is disabled' }, { status: 404 });
+  }
+
   const { slug } = await params;
 
   try {

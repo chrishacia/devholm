@@ -4,6 +4,7 @@ import { getSeoConfig, getSiteInfo } from '@/db/settings';
 import { listCmsSitemapPaths, listDevPageSitemapPaths } from '@/db/pages';
 import { listCalendarSitemapEntries } from '@/db/calendar';
 import { listGallerySitemapEntries } from '@/db/gallery';
+import { isPluginEnabled } from '@/db/plugins';
 import { getSitemapExtensionEntries } from '@core/lib/extensions.server';
 import { devPageDefinitions } from '@user/extensions/pages';
 
@@ -47,6 +48,11 @@ function escapeXml(value: string) {
 }
 
 export async function GET() {
+  const [calendarPluginEnabled, galleryPluginEnabled] = await Promise.all([
+    isPluginEnabled('calendar').catch(() => false),
+    isPluginEnabled('gallery').catch(() => false),
+  ]);
+
   const [site, seo, extensionEntries, cmsPages, devPages, calendarPages, galleryPages] =
     await Promise.all([
       getSiteInfo(),
@@ -54,8 +60,8 @@ export async function GET() {
       getSitemapExtensionEntries().catch(() => []),
       listCmsSitemapPaths().catch(() => []),
       listDevPageSitemapPaths(devPageDefinitions).catch(() => []),
-      listCalendarSitemapEntries().catch(() => []),
-      listGallerySitemapEntries().catch(() => []),
+      (calendarPluginEnabled ? listCalendarSitemapEntries() : Promise.resolve([])).catch(() => []),
+      (galleryPluginEnabled ? listGallerySitemapEntries() : Promise.resolve([])).catch(() => []),
     ]);
 
   if (!seo.sitemap.enabled) {

@@ -9,6 +9,7 @@ export interface ExtensionHelpers {
 }
 
 export interface AdminPageExtension {
+  pluginId?: string;
   /** Route href, e.g. '/admin/telemetry' */
   href: `/admin/${string}`;
   /** Dynamic import for the page component */
@@ -32,6 +33,7 @@ export type ApiExtensionHandler = (
 ) => Promise<Response> | Response;
 
 export interface ApiExtension {
+  pluginId?: string;
   /** Route path, e.g. '/api/telemetry' */
   path: `/api/${string}`;
   handlers: Partial<Record<ApiExtensionMethod, ApiExtensionHandler>>;
@@ -43,12 +45,14 @@ export interface SitemapEntryExtension {
 }
 
 export interface MetadataExtension {
+  pluginId?: string;
   /** Public route path, e.g. '/docs' */
   path: `/${string}`;
   getMetadata: (helpers: ExtensionHelpers) => Promise<Metadata> | Metadata;
 }
 
 export interface StructuredDataExtension {
+  pluginId?: string;
   /** Public route path, e.g. '/docs' */
   path: `/${string}`;
   getData: (
@@ -61,6 +65,7 @@ export interface StructuredDataExtension {
 
 export interface SitemapExtension {
   id: string;
+  pluginId?: string;
   getEntries: (
     helpers: ExtensionHelpers
   ) => Promise<SitemapEntryExtension[]> | SitemapEntryExtension[];
@@ -68,5 +73,6 @@ export interface SitemapExtension {
 
 export interface RobotsExtension {
   id: string;
+  pluginId?: string;
   getRules: (helpers: ExtensionHelpers) => Promise<string[]> | string[];
 }

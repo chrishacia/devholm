@@ -6,6 +6,7 @@ import {
   listCalendarBlocks,
   listCalendarEventTypes,
 } from '@/db/calendar';
+import { isPluginEnabled } from '@/db/plugins';
 import { getClientIp } from '@/lib/rate-limiter';
 
 interface RouteParams {
@@ -27,6 +28,10 @@ function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) {
 }
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
+  if (!(await isPluginEnabled('calendar').catch(() => false))) {
+    return NextResponse.json({ error: 'Calendar plugin is disabled' }, { status: 404 });
+  }
+
   const { slug } = await params;
 
   try {

@@ -5,6 +5,7 @@ import {
   listCalendarEventTypes,
 } from '@/db/calendar';
 import { getGalleryCollectionBySlug, listGalleryItems } from '@/db/gallery';
+import { isPluginEnabled } from '@/db/plugins';
 
 function escapeHtml(value: string) {
   return value
@@ -37,6 +38,10 @@ function formatDateTime(value: Date | string) {
 }
 
 async function renderCalendarEmbed(slug: string) {
+  if (!(await isPluginEnabled('calendar').catch(() => false))) {
+    return `<div class="embed-error">Calendar '${escapeHtml(slug)}' is unavailable.</div>`;
+  }
+
   const calendar = await getCalendarCollectionBySlug(slug, false);
   if (!calendar || !calendar.isEnabled || calendar.isPrivate) {
     return `<div class="embed-error">Calendar '${escapeHtml(slug)}' is unavailable.</div>`;
@@ -107,6 +112,10 @@ function renderGalleryExternalItem(url: string, provider: string | null) {
 }
 
 async function renderGalleryEmbed(slug: string) {
+  if (!(await isPluginEnabled('gallery').catch(() => false))) {
+    return `<div class="embed-error">Gallery '${escapeHtml(slug)}' is unavailable.</div>`;
+  }
+
   const gallery = await getGalleryCollectionBySlug(slug, false);
   if (!gallery || !gallery.isEnabled || gallery.isPrivate) {
     return `<div class="embed-error">Gallery '${escapeHtml(slug)}' is unavailable.</div>`;

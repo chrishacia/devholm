@@ -10,6 +10,7 @@ import { getDb } from './index';
 import { listCmsNavigationLinks, listDevPageNavigationLinks } from './pages';
 import { listCalendarPublicNavigation } from './calendar';
 import { listGalleryPublicNavigation } from './gallery';
+import { isPluginEnabled } from './plugins';
 import { mainNavigation, footerNavigation } from '@/config';
 import { devPageDefinitions } from '@user/extensions/pages';
 
@@ -436,6 +437,11 @@ export async function getSeoConfig(): Promise<SeoConfig> {
  * Get runtime navigation that merges default links with user-managed pages.
  */
 export async function getNavigationConfig(): Promise<NavigationConfig> {
+  const [calendarPluginEnabled, galleryPluginEnabled] = await Promise.all([
+    isPluginEnabled('calendar').catch(() => false),
+    isPluginEnabled('gallery').catch(() => false),
+  ]);
+
   const [cmsLinks, devLinks, calendarLinks, galleryLinks] = await Promise.all([
     listCmsNavigationLinks().catch(() => ({ main: [], footerMain: [], footerResources: [] })),
     listDevPageNavigationLinks(devPageDefinitions).catch(() => ({
@@ -443,12 +449,18 @@ export async function getNavigationConfig(): Promise<NavigationConfig> {
       footerMain: [],
       footerResources: [],
     })),
-    listCalendarPublicNavigation().catch(() => ({
+    (calendarPluginEnabled
+      ? listCalendarPublicNavigation()
+      : Promise.resolve({ main: [], footerMain: [], footerResources: [] })
+    ).catch(() => ({
       main: [],
       footerMain: [],
       footerResources: [],
     })),
-    listGalleryPublicNavigation().catch(() => ({
+    (galleryPluginEnabled
+      ? listGalleryPublicNavigation()
+      : Promise.resolve({ main: [], footerMain: [], footerResources: [] })
+    ).catch(() => ({
       main: [],
       footerMain: [],
       footerResources: [],

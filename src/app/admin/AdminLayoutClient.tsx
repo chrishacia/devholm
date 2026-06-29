@@ -45,6 +45,7 @@ import {
   Build,
   Group,
   SystemUpdateAlt,
+  Extension,
 } from '@mui/icons-material';
 import Link from '@/components/common/Link';
 import { useTheme as useAppTheme } from '@/theme/ThemeProvider';
@@ -70,6 +71,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: ReactNode;
+  pluginId?: string;
 }
 
 const CORE_NAV_ITEMS: NavItem[] = [
@@ -81,8 +83,9 @@ const CORE_NAV_ITEMS: NavItem[] = [
   { label: 'Uses', href: '/admin/uses', icon: <Build /> },
   { label: 'Messages', href: '/admin/inbox', icon: <Inbox /> },
   { label: 'Media', href: '/admin/media', icon: <ImageIcon /> },
-  { label: 'Calendar', href: '/admin/calendar', icon: <CalendarToday /> },
-  { label: 'Galleries', href: '/admin/gallery', icon: <ImageIcon /> },
+  { label: 'Plugins', href: '/admin/plugins', icon: <Extension /> },
+  { label: 'Calendar', href: '/admin/calendar', icon: <CalendarToday />, pluginId: 'calendar' },
+  { label: 'Galleries', href: '/admin/gallery', icon: <ImageIcon />, pluginId: 'gallery' },
   { label: 'Analytics', href: '/admin/analytics', icon: <Analytics /> },
   { label: 'Updates', href: '/admin/updates', icon: <SystemUpdateAlt /> },
   { label: 'Users', href: '/admin/users', icon: <Group /> },
@@ -93,13 +96,19 @@ const CORE_NAV_ITEMS: NavItem[] = [
  * Merge user-registered admin extension nav items into the core nav list.
  * Items with no position are appended before 'Settings'.
  */
-function buildNavItems(): NavItem[] {
+function buildNavItems(pluginEnabledMap: Record<string, boolean>): NavItem[] {
   const extensions = config.extensions?.admin ?? [];
-  if (!extensions.length) return CORE_NAV_ITEMS;
+  const items = CORE_NAV_ITEMS.filter(
+    (item) => !item.pluginId || pluginEnabledMap[item.pluginId] !== false
+  );
 
-  const items = [...CORE_NAV_ITEMS];
+  if (!extensions.length) return items;
 
   for (const ext of extensions) {
+    if (ext.pluginId && pluginEnabledMap[ext.pluginId] === false) {
+      continue;
+    }
+
     const { navItem } = ext;
     const position: AdminNavPosition | undefined = navItem.position;
 
@@ -126,13 +135,12 @@ function buildNavItems(): NavItem[] {
   return items;
 }
 
-const navItems = buildNavItems();
-
 interface AdminLayoutClientProps {
   children: ReactNode;
+  pluginEnabledMap: Record<string, boolean>;
 }
 
-export default function AdminLayoutClient({ children }: AdminLayoutClientProps) {
+export default function AdminLayoutClient({ children, pluginEnabledMap }: AdminLayoutClientProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -179,6 +187,8 @@ export default function AdminLayoutClient({ children }: AdminLayoutClientProps) 
   if (isLoginPage) {
     return <>{children}</>;
   }
+
+  const navItems = buildNavItems(pluginEnabledMap);
 
   const handleDrawerToggle = () => {
     if (isMobile) {

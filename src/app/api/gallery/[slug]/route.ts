@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGalleryCollectionBySlug, listGalleryItems } from '@/db/gallery';
+import { isPluginEnabled } from '@/db/plugins';
 
 interface RouteParams {
   params: Promise<{ slug: string }>;
 }
 
 export async function GET(_request: NextRequest, { params }: RouteParams) {
+  if (!(await isPluginEnabled('gallery').catch(() => false))) {
+    return NextResponse.json({ error: 'Gallery plugin is disabled' }, { status: 404 });
+  }
+
   const { slug } = await params;
 
   try {
