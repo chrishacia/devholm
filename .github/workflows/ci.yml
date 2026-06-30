@@ -570,9 +570,29 @@ jobs:
             echo "Existing install detected; preserving prior wiring."
           fi
 
+      - name: Resolve framework version
+        id: framework_version
+        run: |
+          TEMPLATE_REPO="chrishacia/devholm"
+
+          release_tag=$(curl -fsSL "https://api.github.com/repos/${TEMPLATE_REPO}/releases/latest" | jq -r '.tag_name // empty' || true)
+          if [ -z "$release_tag" ]; then
+            release_tag=$(curl -fsSL "https://api.github.com/repos/${TEMPLATE_REPO}/tags?per_page=1" | jq -r '.[0].name // empty' || true)
+          fi
+
+          framework_version="${release_tag#v}"
+          if [ -z "$framework_version" ]; then
+            framework_version="unknown"
+          fi
+
+          echo "source_repo=$TEMPLATE_REPO" >> "$GITHUB_OUTPUT"
+          echo "version=$framework_version" >> "$GITHUB_OUTPUT"
+          echo "Resolved framework version: $framework_version (source: $TEMPLATE_REPO)"
+
       - name: Generate docker-compose.override.yml
         run: |
           APP_PORT_VALUE='${{ steps.port.outputs.app_port }}'
+          FRAMEWORK_VERSION_VALUE='${{ steps.framework_version.outputs.version }}'
 
           # Generate override file with environment variables baked in
           # This file persists on the server and survives restarts
@@ -607,6 +627,7 @@ jobs:
                 - ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
                 - ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
                 - DEVHOLM_TEMPLATE_GITHUB_TOKEN=${{ secrets.DEVHOLM_TEMPLATE_GITHUB_TOKEN }}
+                - DEVHOLM_FRAMEWORK_VERSION=${FRAMEWORK_VERSION_VALUE}
               volumes:
                 - ${{ secrets.PROJECT_NAME }}-uploads:/app/public/uploads
               extra_hosts:

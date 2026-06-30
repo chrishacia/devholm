@@ -153,7 +153,7 @@ export default function AdminLayoutClient({ children, pluginEnabledMap }: AdminL
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
-  const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0-dev';
+  const frameworkVersion = process.env.NEXT_PUBLIC_FRAMEWORK_VERSION || 'unknown';
   const buildSha = process.env.NEXT_PUBLIC_BUILD_SHA || '';
 
   // Track when initial session check is complete to prevent flash on navigation
@@ -339,7 +339,7 @@ export default function AdminLayoutClient({ children, pluginEnabledMap }: AdminL
             variant="caption"
             sx={{ display: 'block', mt: 1.5, textAlign: 'center', color: 'text.disabled' }}
           >
-            v{appVersion}
+            DevHolm {frameworkVersion === 'unknown' ? 'unknown' : `v${frameworkVersion}`}
             {buildSha ? ` (${buildSha.slice(0, 7)})` : ''}
           </Typography>
         )}

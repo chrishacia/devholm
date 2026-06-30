@@ -6,6 +6,7 @@ const uploadMaxSizeMb = parseInt(process.env.UPLOAD_MAX_SIZE_MB || '50', 10);
 const commitSha = process.env.GITHUB_SHA || process.env.COMMIT_SHA || '';
 const shortSha = commitSha ? commitSha.slice(0, 7) : '';
 const baseVersion = process.env.npm_package_version || version;
+const frameworkVersion = process.env.DEVHOLM_FRAMEWORK_VERSION || 'unknown';
 const repoSlug = process.env.GITHUB_REPOSITORY || process.env.REPO_SLUG || '';
 const isDevholmFrameworkRepo = repoSlug === 'chrishacia/devholm';
 const displayVersion =
@@ -15,6 +16,7 @@ const nextConfig: NextConfig = {
   // Bake the package.json version into the client bundle
   env: {
     NEXT_PUBLIC_APP_VERSION: displayVersion,
+    NEXT_PUBLIC_FRAMEWORK_VERSION: frameworkVersion,
     NEXT_PUBLIC_BUILD_SHA: commitSha,
   },
 
