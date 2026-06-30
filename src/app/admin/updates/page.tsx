@@ -32,6 +32,30 @@ type UpdateStatus = {
   } | null;
   updateAvailable: boolean | null;
   warning?: string;
+  automation?: {
+    siteRepo: string;
+    workflowFile: string;
+    workflowRef: string;
+    repoPrivate: boolean | null;
+    canTriggerUpdate: boolean;
+    warning?: string;
+  };
+};
+
+type WorkflowRunStatus = {
+  run: {
+    id: number;
+    status: string;
+    conclusion: string | null;
+    htmlUrl: string;
+    title: string;
+    updatedAt: string;
+  };
+  summary: {
+    activeJob: string | null;
+    failedJob: string | null;
+    completed: boolean;
+  };
 };
 
 function StatusChip({ value }: { value: boolean | null }) {
@@ -49,6 +73,8 @@ function StatusChip({ value }: { value: boolean | null }) {
 export default function UpdatesPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [triggering, setTriggering] = useState(false);
+  const [runStatus, setRunStatus] = useState<WorkflowRunStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<UpdateStatus | null>(null);
 
@@ -80,6 +106,59 @@ export default function UpdatesPage() {
   useEffect(() => {
     fetchStatus();
   }, []);
+
+  useEffect(() => {
+    if (!runStatus || runStatus.summary.completed) {
+      return;
+    }
+
+    const timer = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/admin/updates/run/${runStatus.run.id}`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        setRunStatus(payload.data as WorkflowRunStatus);
+      } catch {
+        // no-op
+      }
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [runStatus]);
+
+  const triggerUpdate = async () => {
+    setTriggering(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/admin/updates', {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error || 'Failed to trigger update workflow');
+      }
+
+      const payload = (await response.json()) as {
+        data: { runId: number | null; runUrl: string | null };
+      };
+
+      if (payload.data.runId) {
+        const runResponse = await fetch(`/api/admin/updates/run/${payload.data.runId}`);
+        if (runResponse.ok) {
+          const runPayload = await runResponse.json();
+          setRunStatus(runPayload.data as WorkflowRunStatus);
+        }
+      }
+
+      await fetchStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to trigger update workflow');
+    } finally {
+      setTriggering(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -130,6 +209,49 @@ export default function UpdatesPage() {
       </Box>
 
       {status.warning ? <Alert severity="warning">{status.warning}</Alert> : null}
+      {status.automation?.warning ? (
+        <Alert severity="info">{status.automation.warning}</Alert>
+      ) : null}
+      {status.automation?.repoPrivate ? (
+        <Alert severity="info">
+          This repository is private. Running an update may consume GitHub Actions minutes based on
+          your plan.
+        </Alert>
+      ) : null}
+
+      {runStatus ? (
+        <Alert severity={runStatus.run.conclusion === 'failure' ? 'error' : 'info'}>
+          <Stack spacing={0.5}>
+            <Typography variant="body2" fontWeight={600}>
+              Update Run: {runStatus.run.title}
+            </Typography>
+            <Typography variant="body2">
+              Status: {runStatus.run.status}
+              {runStatus.run.conclusion ? ` (${runStatus.run.conclusion})` : ''}
+            </Typography>
+            {runStatus.summary.activeJob ? (
+              <Typography variant="body2">Active step: {runStatus.summary.activeJob}</Typography>
+            ) : null}
+            {runStatus.summary.failedJob ? (
+              <Typography variant="body2">Failed step: {runStatus.summary.failedJob}</Typography>
+            ) : null}
+            {runStatus.run.htmlUrl ? (
+              <Box>
+                <Button
+                  size="small"
+                  variant="text"
+                  href={runStatus.run.htmlUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  startIcon={<OpenInNew />}
+                >
+                  Open Workflow Logs
+                </Button>
+              </Box>
+            ) : null}
+          </Stack>
+        </Alert>
+      ) : null}
 
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 6 }}>
@@ -187,19 +309,31 @@ export default function UpdatesPage() {
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
+                    gap: 1,
                     pt: 0.5,
+                    flexWrap: 'wrap',
                   }}
                 >
                   <StatusChip value={status.updateAvailable} />
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<Sync />}
-                    onClick={() => fetchStatus(true)}
-                    disabled={refreshing}
-                  >
-                    {refreshing ? 'Refreshing...' : 'Refresh'}
-                  </Button>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<Sync />}
+                      onClick={() => fetchStatus(true)}
+                      disabled={refreshing}
+                    >
+                      {refreshing ? 'Refreshing...' : 'Refresh'}
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={triggerUpdate}
+                      disabled={triggering || !status.automation?.canTriggerUpdate}
+                    >
+                      {triggering ? 'Starting...' : 'Run Update'}
+                    </Button>
+                  </Box>
                 </Box>
               </Stack>
             </CardContent>

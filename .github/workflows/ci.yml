@@ -628,6 +628,7 @@ jobs:
                 - ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
                 - DEVHOLM_TEMPLATE_GITHUB_TOKEN=${{ secrets.DEVHOLM_TEMPLATE_GITHUB_TOKEN }}
                 - DEVHOLM_FRAMEWORK_VERSION=${FRAMEWORK_VERSION_VALUE}
+                - DEVHOLM_SITE_REPO=${{ github.repository }}
               volumes:
                 - ${{ secrets.PROJECT_NAME }}-uploads:/app/public/uploads
               extra_hosts:
