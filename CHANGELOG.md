@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.1.3](https://github.com/chrishacia/devholm/compare/v3.1.2...v3.1.3) (2026-06-30)
+
+### Bug Fixes
+
+- **admin:** surface framework version in deploy + footer ([ef5037f](https://github.com/chrishacia/devholm/commit/ef5037f68f21a3e1412034ea3664a1ed9b5bbdaf))
+
 ## [3.1.2](https://github.com/chrishacia/devholm/compare/v3.1.1...v3.1.2) (2026-06-30)
 
 ### Bug Fixes
