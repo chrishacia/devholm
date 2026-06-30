@@ -22,12 +22,14 @@
     "commitMessage": "chore(release): v${version}",
     "tagName": "v${version}",
     "tagAnnotation": "Release v${version}",
+    "requireBranch": "main",
+    "requireCommits": true,
     "requireCleanWorkingDir": false,
     "requireUpstream": false,
     "pushArgs": ["--follow-tags"]
   },
   "github": {
-    "release": false
+    "release": true
   },
   "npm": {
     "publish": false

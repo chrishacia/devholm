@@ -44,6 +44,33 @@ describe('update-status', () => {
     });
   });
 
+  it('sends GitHub authorization when a template token is configured', async () => {
+    vi.stubEnv('DEVHOLM_TEMPLATE_GITHUB_TOKEN', 'token-123');
+
+    const fakeFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        tag_name: 'v3.4.5',
+        name: 'DevHolm 3.4.5',
+        html_url: 'https://github.com/chrishacia/devholm/releases/tag/v3.4.5',
+        published_at: '2026-06-01T00:00:00.000Z',
+      }),
+    });
+
+    await fetchLatestRelease('chrishacia/devholm', fakeFetch);
+
+    expect(fakeFetch).toHaveBeenCalledWith(
+      'https://api.github.com/repos/chrishacia/devholm/releases/latest',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer token-123',
+        }),
+      })
+    );
+
+    vi.unstubAllEnvs();
+  });
+
   it('falls back to the latest tag when no release exists', async () => {
     const fakeFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -99,5 +126,13 @@ describe('update-status', () => {
     expect(status.updateAvailable).toBe(true);
 
     vi.unstubAllEnvs();
+  });
+
+  it('returns a clear warning when repo metadata is unavailable without a token', async () => {
+    const fakeFetch = vi.fn().mockResolvedValue({ ok: false });
+
+    const status = await getUpdateStatus('chrishacia/devholm', fakeFetch);
+
+    expect(status.warning).toContain('DEVHOLM_TEMPLATE_GITHUB_TOKEN');
   });
 });

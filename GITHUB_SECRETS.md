@@ -123,11 +123,12 @@ ADMIN_PASSWORD=MySecureP@ssw0rd!2024
 
 These are optional and have sensible defaults:
 
-| Name                 | Description                    | Default                                |
-| -------------------- | ------------------------------ | -------------------------------------- |
-| `CSRF_SECRET`        | CSRF protection secret         | Not currently wired into deploy output |
-| `DOCKERHUB_USERNAME` | For Docker Hub instead of GHCR | Uses GHCR                              |
-| `DOCKERHUB_TOKEN`    | Docker Hub access token        | Uses GHCR                              |
+| Name                            | Description                                                                          | Default                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `CSRF_SECRET`                   | CSRF protection secret                                                               | Not currently wired into deploy output                              |
+| `DOCKERHUB_USERNAME`            | For Docker Hub instead of GHCR                                                       | Uses GHCR                                                           |
+| `DOCKERHUB_TOKEN`               | Docker Hub access token                                                              | Uses GHCR                                                           |
+| `DEVHOLM_TEMPLATE_GITHUB_TOKEN` | GitHub token for private template repo release/tag lookups in the admin Updates page | Required only when `DEVHOLM_TEMPLATE_REPO` points at a private repo |
 
 Important:
 
@@ -137,6 +138,8 @@ Important:
 - First-install reverse-proxy templates are generated at:
   - `DEPLOY_PATH/.devholm/templates/nginx-<PROJECT_NAME>.conf`
   - `DEPLOY_PATH/.devholm/templates/apache-<PROJECT_NAME>.conf`
+- If the admin Updates page should inspect a private source/template repository, add `DEVHOLM_TEMPLATE_GITHUB_TOKEN` with read access to repository metadata.
+- Automated semantic releases use the built-in `GITHUB_TOKEN`; no extra secret is needed, but repository Actions workflow permissions must allow read/write for contents.
 
 ---
 

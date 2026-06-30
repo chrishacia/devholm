@@ -58,7 +58,7 @@ on:
       - '.vscode/**'
       - '.idea/**'
       - '*.txt'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch: # Allow manual trigger
 
 env:
   NODE_VERSION: '22'
@@ -603,6 +603,7 @@ jobs:
                 - AUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
                 - ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
                 - ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
+                - DEVHOLM_TEMPLATE_GITHUB_TOKEN=${{ secrets.DEVHOLM_TEMPLATE_GITHUB_TOKEN }}
               volumes:
                 - ${{ secrets.PROJECT_NAME }}-uploads:/app/public/uploads
               extra_hosts:

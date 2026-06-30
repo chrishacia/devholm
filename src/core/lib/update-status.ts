@@ -22,6 +22,25 @@ export interface UpdateStatus {
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+function getGithubApiToken(): string {
+  return (
+    process.env.DEVHOLM_TEMPLATE_GITHUB_TOKEN ||
+    process.env.GITHUB_TOKEN ||
+    process.env.GH_TOKEN ||
+    ''
+  ).trim();
+}
+
+function buildGithubHeaders(): HeadersInit {
+  const token = getGithubApiToken();
+
+  return {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'devholm-update-checker',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 function cleanVersionPart(part: string): number {
   const match = part.match(/^(\d+)/);
   return match ? Number.parseInt(match[1], 10) : 0;
@@ -71,10 +90,7 @@ export async function fetchLatestRelease(
 ): Promise<LatestReleaseInfo | null> {
   const endpoint = `https://api.github.com/repos/${repo}/releases/latest`;
   const response = await fetchImpl(endpoint, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'devholm-update-checker',
-    },
+    headers: buildGithubHeaders(),
     cache: 'no-store',
   });
 
@@ -108,10 +124,7 @@ export async function fetchLatestTag(
 ): Promise<LatestReleaseInfo | null> {
   const endpoint = `https://api.github.com/repos/${repo}/tags?per_page=1`;
   const response = await fetchImpl(endpoint, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'devholm-update-checker',
-    },
+    headers: buildGithubHeaders(),
     cache: 'no-store',
   });
 
@@ -142,6 +155,7 @@ export async function getUpdateStatus(
   fetchImpl: FetchLike = fetch
 ): Promise<UpdateStatus> {
   const current = getCurrentBuildInfo();
+  const hasGithubToken = Boolean(getGithubApiToken());
 
   try {
     const latest =
@@ -155,7 +169,11 @@ export async function getUpdateStatus(
       updateAvailable: latest ? compareVersions(current.version, latest.version) < 0 : null,
       ...(latest
         ? {}
-        : { warning: 'Unable to determine latest release or tag metadata for source repository.' }),
+        : {
+            warning: hasGithubToken
+              ? 'Unable to determine latest release or tag metadata for source repository.'
+              : 'Source repository metadata is unavailable. If the template repo is private, configure DEVHOLM_TEMPLATE_GITHUB_TOKEN for the deployed app to read releases and tags.',
+          }),
     };
   } catch (error) {
     return {

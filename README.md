@@ -131,6 +131,7 @@ See [docs/cli.md](docs/cli.md).
 
 - **Docker Ready** — Production-ready Dockerfile and compose setup
 - **CI/CD Pipeline** — GitHub Actions for testing, building, and deployment
+- **Automated Releases** — Semantic version bump, tag, changelog, and GitHub release on successful `main` CI runs
 - **E2E Testing** — Playwright test suite included
 - **Hot Reload** — Fast refresh during development
 
