@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.2.0](https://github.com/chrishacia/devholm/compare/v3.1.3...v3.2.0) (2026-06-30)
+
+### Features
+
+- **admin:** simplify updates dashboard UX ([1d8a7a0](https://github.com/chrishacia/devholm/commit/1d8a7a0ffaf46ff35e7d0bf3ac03a794075cfedf))
+
 ## [3.1.3](https://github.com/chrishacia/devholm/compare/v3.1.2...v3.1.3) (2026-06-30)
 
 ### Bug Fixes
