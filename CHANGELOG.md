@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.4.1](https://github.com/chrishacia/devholm/compare/v3.4.0...v3.4.1) (2026-06-30)
+
+### Code Refactoring
+
+- **admin:** improve updates UI messaging and token UX ([f6a36d7](https://github.com/chrishacia/devholm/commit/f6a36d726e5a82848ad211acf3f75d0312fb4f9a))
+
 ## [3.4.0](https://github.com/chrishacia/devholm/compare/v3.3.0...v3.4.0) (2026-06-30)
 
 ### Features
