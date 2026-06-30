@@ -1,0 +1,39 @@
+name: Recover Admin Access
+
+on:
+  workflow_dispatch:
+    inputs:
+      admin_email:
+        description: Admin email to reset
+        required: true
+        default: chris@hacia.net
+      admin_password:
+        description: Temporary admin password
+        required: true
+        type: string
+
+jobs:
+  reset-admin-password:
+    name: Reset admin password on production
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install SSH client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-client
+
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Reset admin password
+        env:
+          ADMIN_EMAIL: ${{ inputs.admin_email }}
+          ADMIN_PASSWORD: ${{ inputs.admin_password }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "docker exec -e ADMIN_EMAIL='${ADMIN_EMAIL}' -e ADMIN_PASSWORD='${ADMIN_PASSWORD}' -e FORCE_ADMIN_PASSWORD_RESET='true' ${{ secrets.PROJECT_NAME }}-app node /app/seed-admin.js"

@@ -1,0 +1,52 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/components": ["./src/core/components/index"],
+      "@/components/*": ["./src/core/components/*"],
+      "@/lib": ["./src/core/lib/index"],
+      "@/lib/*": ["./src/core/lib/*"],
+      "@/hooks": ["./src/core/hooks/index"],
+      "@/hooks/*": ["./src/core/hooks/*"],
+      "@/db": ["./src/core/db/index"],
+      "@/db/*": ["./src/core/db/*"],
+      "@/config": ["./src/core/config/index"],
+      "@/config/*": ["./src/core/config/*"],
+      "@/theme": ["./src/core/theme/index"],
+      "@/theme/*": ["./src/core/theme/*"],
+      "@/types": ["./src/core/types_app/index"],
+      "@/types/*": ["./src/core/types_app/*"],
+      "@/*": ["./src/*"],
+      "@core/*": ["./src/core/*"],
+      "@user/*": ["./src/user/*"],
+      "@config": ["./devholm.config"]
+    },
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules", "e2e"]
+}

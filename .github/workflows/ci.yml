@@ -1,0 +1,812 @@
+# =============================================================================
+# GitHub Actions CI/CD Pipeline
+# =============================================================================
+#
+# Required GitHub Secrets:
+# -------------------------
+# PROJECT_NAME         - Unique project identifier (e.g., mysite)
+#                        Used for Docker container/volume names to avoid collisions
+# SITE_URL             - Production URL (e.g., https://yoursite.com)
+# SITE_NAME            - Display name for the site (e.g., My Site)
+#
+# DEPLOY_HOST          - Server hostname or IP (e.g., yoursite.com)
+# DEPLOY_USER          - SSH username for deployment
+# DEPLOY_KEY           - Private SSH key for authentication
+# DEPLOY_PATH          - Path on server (e.g., /var/www/yoursite.com)
+#
+# POSTGRES_USER        - PostgreSQL username
+# POSTGRES_PASSWORD    - PostgreSQL password
+# POSTGRES_DB          - PostgreSQL database name
+#
+# NEXTAUTH_SECRET      - Secret for NextAuth.js session encryption
+# ADMIN_EMAIL          - Initial admin email address
+# ADMIN_PASSWORD       - Initial admin password (will be hashed)
+#
+# Additional Required Secret:
+# ---------------------------
+# APP_PORT             - Host port for this site (must be unique per site on shared VPS)
+#                        Example: site-a=3000, site-b=3001, site-c=3002
+#
+# Optional Secrets:
+# -----------------
+# CSRF_SECRET          - CSRF protection secret
+# DOCKERHUB_USERNAME   - For pushing to Docker Hub instead of GHCR
+# DOCKERHUB_TOKEN      - Docker Hub access token
+#
+# =============================================================================
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+      - '.vscode/**'
+      - '.idea/**'
+      - '*.txt'
+  pull_request:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+      - '.vscode/**'
+      - '.idea/**'
+      - '*.txt'
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ===========================================================================
+  # Lint & Type Check
+  # ===========================================================================
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        run: pnpm lint
+
+      - name: Run TypeScript type check
+        run: pnpm type-check
+
+  # ===========================================================================
+  # Unit Tests
+  # ===========================================================================
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit tests
+        run: pnpm test:coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+  # ===========================================================================
+  # Build
+  # ===========================================================================
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: [lint, unit-tests]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm build
+        env:
+          # Dummy env vars for build (not used at runtime)
+          DATABASE_URL: 'postgresql://user:pass@localhost:5432/db'
+          NEXTAUTH_URL: 'http://localhost:3000'
+          NEXTAUTH_SECRET: 'build-secret-not-for-production'
+
+      - name: Remove build cache before upload
+        run: rm -rf .next/cache
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-output
+          path: .next/
+          retention-days: 1
+          if-no-files-found: error
+          include-hidden-files: true
+
+  # ===========================================================================
+  # E2E Tests (Optional - requires test database)
+  # ===========================================================================
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: build-output
+          path: .next/
+
+      - name: Run E2E tests
+        run: pnpm test:e2e --project=chromium
+        env:
+          DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
+          NEXTAUTH_URL: 'http://localhost:3000'
+          NEXTAUTH_SECRET: 'test-secret'
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  # ===========================================================================
+  # Docker Build & Push (main branch only)
+  # ===========================================================================
+  docker:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Normalize image slug
+        id: image
+        run: |
+          echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          build-args: |
+            COMMIT_SHA=${{ github.sha }}
+            REPO_SLUG=${{ github.repository }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ===========================================================================
+  # Deploy (main branch only, manual trigger available)
+  # ===========================================================================
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    concurrency:
+      group: production-deploy-${{ github.repository }}
+      cancel-in-progress: false
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Normalize image slug
+        id: image
+        run: |
+          echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Normalize deploy inputs
+        id: deploy_inputs
+        run: |
+          SITE_URL_RAW='${{ secrets.SITE_URL }}'
+          SITE_URL_CLEAN="$(printf '%s' "$SITE_URL_RAW" | tr -d '\r\n' | sed -E 's#/*$##')"
+
+          if [ -z "$SITE_URL_CLEAN" ]; then
+            echo "SITE_URL is empty after normalization"
+            exit 1
+          fi
+
+          echo "site_url=$SITE_URL_CLEAN" >> "$GITHUB_OUTPUT"
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_KEY }}
+
+      - name: Add host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Resolve deploy port and first-install manifests
+        id: port
+        env:
+          APP_PORT_SECRET: ${{ secrets.APP_PORT }}
+        run: |
+          REQUESTED_PORT="${APP_PORT_SECRET}"
+          TARGET_CONTAINER='${{ secrets.PROJECT_NAME }}-app'
+          PROJECT_NAME='${{ secrets.PROJECT_NAME }}'
+          SITE_URL='${{ steps.deploy_inputs.outputs.site_url }}'
+          DEPLOY_PATH='${{ secrets.DEPLOY_PATH }}'
+
+          REMOTE_OUT=$(ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "REQUESTED_PORT='${REQUESTED_PORT}' TARGET_CONTAINER='${TARGET_CONTAINER}' PROJECT_NAME='${PROJECT_NAME}' SITE_URL='${SITE_URL}' DEPLOY_PATH='${DEPLOY_PATH}' bash -s" << 'ENDSSH'
+            set -euo pipefail
+
+            state_dir="$DEPLOY_PATH/.devholm"
+            state_file="$state_dir/deploy-state.env"
+            template_dir="$state_dir/templates"
+
+            mkdir -p "$state_dir" "$template_dir"
+
+            is_numeric() {
+              case "$1" in
+                ''|*[!0-9]*) return 1 ;;
+                *) return 0 ;;
+              esac
+            }
+
+            is_valid_port() {
+              is_numeric "$1" && [ "$1" -ge 1024 ] && [ "$1" -le 65535 ]
+            }
+
+            get_container_port() {
+              docker ps --format '{{.Names}} {{.Ports}}' | awk -v name="$TARGET_CONTAINER" '
+                $1 == name {
+                  if (match($0, /:([0-9]+)->3000\/tcp/, a)) {
+                    print a[1];
+                    exit;
+                  }
+                }
+              '
+            }
+
+            docker_port_owner() {
+              docker ps --format '{{.Names}} {{.Ports}}' | awk -v p=":$1->" 'index($0, p) { print $1; exit }'
+            }
+
+            host_listener_exists() {
+              ss -ltn "( sport = :$1 )" 2>/dev/null | awk 'NR > 1 { found = 1; exit } END { exit found ? 0 : 1 }'
+            }
+
+            is_port_usable() {
+              local p="$1"
+              local owner
+
+              owner="$(docker_port_owner "$p" || true)"
+              if [ -n "$owner" ] && [ "$owner" != "$TARGET_CONTAINER" ]; then
+                return 1
+              fi
+
+              if host_listener_exists "$p"; then
+                if [ -n "$owner" ] && [ "$owner" = "$TARGET_CONTAINER" ]; then
+                  return 0
+                fi
+                return 1
+              fi
+
+              return 0
+            }
+
+            choose_free_port() {
+              local p
+              for p in $(seq 3000 3999); do
+                if is_port_usable "$p"; then
+                  echo "$p"
+                  return 0
+                fi
+              done
+              return 1
+            }
+
+            existing_port="$(get_container_port || true)"
+            chosen_port=""
+            first_install="0"
+
+            if [ -f "$state_file" ]; then
+              # shellcheck disable=SC1090
+              . "$state_file"
+              if is_valid_port "${APP_PORT:-}"; then
+                chosen_port="$APP_PORT"
+                echo "Using persisted APP_PORT=$chosen_port from $state_file" >&2
+              fi
+            fi
+
+            if [ -n "$chosen_port" ] && [ -n "$existing_port" ] && [ "$chosen_port" != "$existing_port" ]; then
+              echo "Detected APP_PORT drift (state=$chosen_port, running=$existing_port). Using running container port for stability." >&2
+              chosen_port="$existing_port"
+            fi
+
+            if [ -z "$chosen_port" ] && [ -n "$existing_port" ]; then
+              chosen_port="$existing_port"
+              first_install="1"
+              echo "Backfilling install state using running container port $chosen_port" >&2
+            fi
+
+            if [ -z "$chosen_port" ]; then
+              first_install="1"
+
+              if is_valid_port "$REQUESTED_PORT" && is_port_usable "$REQUESTED_PORT"; then
+                chosen_port="$REQUESTED_PORT"
+                echo "Using requested APP_PORT=$chosen_port for first install" >&2
+              else
+                chosen_port="$(choose_free_port || true)"
+                if [ -z "$chosen_port" ]; then
+                  echo "Could not find a free host port in 3000-3999. Set APP_PORT explicitly to an available port." >&2
+                  exit 1
+                fi
+
+                if is_valid_port "$REQUESTED_PORT"; then
+                  owner="$(docker_port_owner "$REQUESTED_PORT" || true)"
+                  if [ -n "$owner" ]; then
+                    echo "Requested APP_PORT=$REQUESTED_PORT is already owned by container '$owner'; auto-selected $chosen_port" >&2
+                  else
+                    echo "Requested APP_PORT=$REQUESTED_PORT has an active host listener; auto-selected $chosen_port" >&2
+                  fi
+                else
+                  echo "No valid APP_PORT provided; auto-selected $chosen_port" >&2
+                fi
+              fi
+            fi
+
+            if ! is_valid_port "$chosen_port"; then
+              echo "Resolved APP_PORT is invalid: '$chosen_port'" >&2
+              exit 1
+            fi
+
+            site_domain="$(printf '%s' "$SITE_URL" | sed -E 's#^[a-zA-Z]+://##; s#/.*$##')"
+
+            {
+              echo "PROJECT_NAME=$PROJECT_NAME"
+              echo "SITE_URL=$SITE_URL"
+              echo "SITE_DOMAIN=$site_domain"
+              echo "TARGET_CONTAINER=$TARGET_CONTAINER"
+              echo "APP_PORT=$chosen_port"
+              if [ -f "$state_file" ]; then
+                grep -q '^FIRST_INSTALL_AT=' "$state_file" || echo "FIRST_INSTALL_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              else
+                echo "FIRST_INSTALL_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              fi
+              echo "UPDATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            } > "$state_file"
+            chmod 600 "$state_file"
+
+            {
+              printf '%s\n' 'server {'
+              printf '%s\n' '    listen 80;'
+              printf '%s\n' '    listen [::]:80;'
+              printf '    server_name %s www.%s;\n' "$site_domain" "$site_domain"
+              printf '%s\n' ''
+              printf '%s\n' '    location / {'
+              printf '%s\n' '        return 301 https://$host$request_uri;'
+              printf '%s\n' '    }'
+              printf '%s\n' '}'
+              printf '%s\n' ''
+              printf '%s\n' 'server {'
+              printf '%s\n' '    listen 443 ssl http2;'
+              printf '%s\n' '    listen [::]:443 ssl http2;'
+              printf '    server_name %s www.%s;\n' "$site_domain" "$site_domain"
+              printf '%s\n' ''
+              printf '%s\n' '    # Update certificate paths for your host.'
+              printf '    ssl_certificate /etc/letsencrypt/live/%s/fullchain.pem;\n' "$site_domain"
+              printf '    ssl_certificate_key /etc/letsencrypt/live/%s/privkey.pem;\n' "$site_domain"
+              printf '%s\n' ''
+              printf '%s\n' '    location / {'
+              printf '        proxy_pass http://127.0.0.1:%s;\n' "$chosen_port"
+              printf '%s\n' '        proxy_http_version 1.1;'
+              printf '%s\n' '        proxy_set_header Upgrade $http_upgrade;'
+              printf '%s\n' '        proxy_set_header Connection "upgrade";'
+              printf '%s\n' '        proxy_set_header Host $host;'
+              printf '%s\n' '        proxy_set_header X-Real-IP $remote_addr;'
+              printf '%s\n' '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;'
+              printf '%s\n' '        proxy_set_header X-Forwarded-Proto $scheme;'
+              printf '%s\n' '        proxy_read_timeout 86400;'
+              printf '%s\n' '    }'
+              printf '%s\n' '}'
+            } > "$template_dir/nginx-${PROJECT_NAME}.conf"
+
+            {
+              printf '%s\n' '<VirtualHost *:80>'
+              printf '    ServerName %s\n' "$site_domain"
+              printf '    ServerAlias www.%s\n' "$site_domain"
+              printf '    Redirect permanent / https://%s/\n' "$site_domain"
+              printf '%s\n' '</VirtualHost>'
+              printf '%s\n' ''
+              printf '%s\n' '<IfModule mod_ssl.c>'
+              printf '%s\n' '<VirtualHost *:443>'
+              printf '    ServerName %s\n' "$site_domain"
+              printf '    ServerAlias www.%s\n' "$site_domain"
+              printf '%s\n' ''
+              printf '%s\n' '    # Update certificate paths for your host.'
+              printf '%s\n' '    SSLEngine on'
+              printf '    SSLCertificateFile /etc/letsencrypt/live/%s/fullchain.pem\n' "$site_domain"
+              printf '    SSLCertificateKeyFile /etc/letsencrypt/live/%s/privkey.pem\n' "$site_domain"
+              printf '%s\n' ''
+              printf '%s\n' '    ProxyPreserveHost On'
+              printf '    ProxyPass / http://127.0.0.1:%s/\n' "$chosen_port"
+              printf '    ProxyPassReverse / http://127.0.0.1:%s/\n' "$chosen_port"
+              printf '%s\n' ''
+              printf '%s\n' '    RequestHeader set X-Forwarded-Proto "https"'
+              printf '%s\n' '    RequestHeader set X-Forwarded-Port "443"'
+              printf '%s\n' '</VirtualHost>'
+              printf '%s\n' '</IfModule>'
+            } > "$template_dir/apache-${PROJECT_NAME}.conf"
+
+            chmod 644 "$template_dir/nginx-${PROJECT_NAME}.conf" "$template_dir/apache-${PROJECT_NAME}.conf"
+
+            printf 'APP_PORT=%s\n' "$chosen_port"
+            printf 'FIRST_INSTALL=%s\n' "$first_install"
+            printf 'STATE_FILE=%s\n' "$state_file"
+            printf 'TEMPLATE_DIR=%s\n' "$template_dir"
+          ENDSSH
+          )
+
+          APP_PORT_VALUE="$(printf '%s\n' "$REMOTE_OUT" | awk -F= '/^APP_PORT=/{print $2; exit}')"
+          FIRST_INSTALL_VALUE="$(printf '%s\n' "$REMOTE_OUT" | awk -F= '/^FIRST_INSTALL=/{print $2; exit}')"
+          STATE_FILE_VALUE="$(printf '%s\n' "$REMOTE_OUT" | awk -F= '/^STATE_FILE=/{print $2; exit}')"
+          TEMPLATE_DIR_VALUE="$(printf '%s\n' "$REMOTE_OUT" | awk -F= '/^TEMPLATE_DIR=/{print $2; exit}')"
+
+          if [ -z "$APP_PORT_VALUE" ]; then
+            echo "❌ Could not resolve APP_PORT from remote provisioning step."
+            echo "$REMOTE_OUT"
+            exit 1
+          fi
+
+          echo "app_port=$APP_PORT_VALUE" >> "$GITHUB_OUTPUT"
+          echo "first_install=$FIRST_INSTALL_VALUE" >> "$GITHUB_OUTPUT"
+          echo "state_file=$STATE_FILE_VALUE" >> "$GITHUB_OUTPUT"
+          echo "template_dir=$TEMPLATE_DIR_VALUE" >> "$GITHUB_OUTPUT"
+
+          echo "Resolved APP_PORT=$APP_PORT_VALUE"
+          if [ "$FIRST_INSTALL_VALUE" = "1" ]; then
+            echo "First-install provisioning completed."
+          else
+            echo "Existing install detected; preserving prior wiring."
+          fi
+
+      - name: Resolve framework version
+        id: framework_version
+        run: |
+          TEMPLATE_REPO="chrishacia/devholm"
+
+          release_tag=$(curl -fsSL "https://api.github.com/repos/${TEMPLATE_REPO}/releases/latest" | jq -r '.tag_name // empty' || true)
+          if [ -z "$release_tag" ]; then
+            release_tag=$(curl -fsSL "https://api.github.com/repos/${TEMPLATE_REPO}/tags?per_page=1" | jq -r '.[0].name // empty' || true)
+          fi
+
+          framework_version="${release_tag#v}"
+          if [ -z "$framework_version" ]; then
+            framework_version="unknown"
+          fi
+
+          echo "source_repo=$TEMPLATE_REPO" >> "$GITHUB_OUTPUT"
+          echo "version=$framework_version" >> "$GITHUB_OUTPUT"
+          echo "Resolved framework version: $framework_version (source: $TEMPLATE_REPO)"
+
+      - name: Generate docker-compose.override.yml
+        run: |
+          APP_PORT_VALUE='${{ steps.port.outputs.app_port }}'
+          FRAMEWORK_VERSION_VALUE='${{ steps.framework_version.outputs.version }}'
+
+          # Generate override file with environment variables baked in
+          # This file persists on the server and survives restarts
+          # Uses native PostgreSQL on host instead of Docker PostgreSQL
+          cat > docker-compose.override.yml << EOF
+          # =============================================================================
+          # Production Environment Override
+          # Auto-generated by GitHub Actions - DO NOT EDIT MANUALLY
+          # Uses native PostgreSQL on host machine
+          # =============================================================================
+
+          services:
+            app:
+              container_name: ${{ secrets.PROJECT_NAME }}-app
+              image: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:latest
+              restart: unless-stopped
+              ports:
+                - "${APP_PORT_VALUE}:3000"
+              environment:
+                - NODE_ENV=production
+                - NEXT_PUBLIC_APP_URL=${{ steps.deploy_inputs.outputs.site_url }}
+                - NEXT_PUBLIC_SITE_NAME=${{ secrets.SITE_NAME }}
+                - DATABASE_URL=postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@host.docker.internal:5432/${{ secrets.POSTGRES_DB }}
+                - DATABASE_HOST=host.docker.internal
+                - DATABASE_PORT=5432
+                - DATABASE_NAME=${{ secrets.POSTGRES_DB }}
+                - DATABASE_USER=${{ secrets.POSTGRES_USER }}
+                - DATABASE_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+                - NEXTAUTH_URL=${{ steps.deploy_inputs.outputs.site_url }}
+                - NEXTAUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
+                - AUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
+                - ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
+                - ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
+                - DEVHOLM_TEMPLATE_GITHUB_TOKEN=${{ secrets.DEVHOLM_TEMPLATE_GITHUB_TOKEN }}
+                - DEVHOLM_FRAMEWORK_VERSION=${FRAMEWORK_VERSION_VALUE}
+                - DEVHOLM_SITE_REPO=${{ github.repository }}
+              volumes:
+                - ${{ secrets.PROJECT_NAME }}-uploads:/app/public/uploads
+              extra_hosts:
+                - "host.docker.internal:host-gateway"
+              depends_on: []
+
+            # Disable Docker PostgreSQL (using native PostgreSQL on host)
+            postgres:
+              profiles:
+                - disabled
+
+            # Disable built-in nginx (using external nginx on server)
+            nginx:
+              profiles:
+                - disabled
+
+          volumes:
+            ${{ secrets.PROJECT_NAME }}-uploads:
+              name: ${{ secrets.PROJECT_NAME }}-uploads
+          EOF
+
+      - name: Deploy to server
+        run: |
+          echo "🚀 Starting deployment to ${{ secrets.DEPLOY_HOST }}"
+          echo "Resolved APP_PORT: ${{ steps.port.outputs.app_port }}"
+          echo "Install state file: ${{ steps.port.outputs.state_file }}"
+          echo "Generated vhost templates: ${{ steps.port.outputs.template_dir }}"
+
+          # Copy docker-compose files to server
+          scp -o StrictHostKeyChecking=no docker-compose.yml ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/
+          scp -o StrictHostKeyChecking=no docker-compose.override.yml ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/
+
+          # Deploy on server
+          ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'ENDSSH'
+            set -e  # Exit on any error
+            cd ${{ secrets.DEPLOY_PATH }}
+
+            # Secure the override file (contains secrets)
+            chmod 600 docker-compose.override.yml
+
+            # Keep installer state private for future deploy stability
+            if [ -f .devholm/deploy-state.env ]; then
+              chmod 600 .devholm/deploy-state.env
+            fi
+
+            echo "🧹 Reclaiming Docker disk space before image pull..."
+            docker image prune -af || true
+            docker builder prune -af || true
+            docker container prune -f || true
+
+            echo "📥 Pulling latest Docker image..."
+            docker compose pull app
+
+            echo "🔄 Starting services..."
+            # Docker Compose automatically reads both docker-compose.yml AND docker-compose.override.yml
+            docker compose up -d --remove-orphans
+
+            echo "⏳ Waiting for health check (45s)..."
+            sleep 45
+
+            echo "🔍 Checking service status..."
+            docker compose ps
+
+            # Verify container is actually running
+            CONTAINER_STATUS=$(docker compose ps --format json | grep -o '"State":"[^"]*"' | head -1 | cut -d'"' -f4)
+            if [ "$CONTAINER_STATUS" != "running" ]; then
+              echo "❌ Container failed to start! Status: $CONTAINER_STATUS"
+              docker compose logs --tail 50
+              exit 1
+            fi
+            echo "✅ Container is running"
+
+            echo "🧹 Cleaning up old images..."
+            docker image prune -f
+
+            echo "✅ Deployment complete!"
+          ENDSSH
+
+      - name: Verify deployment
+        run: |
+          echo "🔍 Verifying deployment..."
+          MAX_ATTEMPTS=10
+          ATTEMPT=0
+          HEALTH_URL="${{ steps.deploy_inputs.outputs.site_url }}/api/health"
+          until [ $ATTEMPT -ge $MAX_ATTEMPTS ]; do
+            HTTP_STATUS=$(curl -sS --max-time 10 -o /tmp/health-body.txt -w "%{http_code}" "$HEALTH_URL" || true)
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ Deployment verification complete"
+              cat /tmp/health-body.txt
+              exit 0
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "⏳ Attempt $ATTEMPT/$MAX_ATTEMPTS failed (HTTP $HTTP_STATUS), retrying in 10s..."
+            echo "Response body preview:"
+            head -c 500 /tmp/health-body.txt || true
+            if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+              break
+            fi
+            sleep 10
+          done
+
+          echo "❌ Health check failed after $MAX_ATTEMPTS attempts!"
+          exit 1
+
+      - name: Collect deploy diagnostics on failure
+        if: failure()
+        run: |
+          echo "🩺 Collecting post-failure diagnostics..."
+
+          echo "External health endpoint response:"
+          curl -sS -i --max-time 10 "${{ steps.deploy_inputs.outputs.site_url }}/api/health" | head -n 80 || true
+
+          APP_PORT_VALUE='${{ steps.port.outputs.app_port }}'
+          TARGET_CONTAINER='${{ secrets.PROJECT_NAME }}-app'
+
+          ssh -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << ENDSSH
+            set +e
+            APP_PORT_VALUE="$APP_PORT_VALUE"
+            TARGET_CONTAINER="$TARGET_CONTAINER"
+
+            run_root() {
+              if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+                sudo -n "$@"
+              else
+                "$@"
+              fi
+            }
+
+            echo "\n=== docker compose ps ==="
+            cd ${{ secrets.DEPLOY_PATH }} && docker compose ps
+
+            echo "\n=== container logs (tail 120) ==="
+            docker logs --tail 120 "$TARGET_CONTAINER" 2>&1 || true
+
+            echo "\n=== local health check via app port ==="
+            curl -sS -i --max-time 10 "http://127.0.0.1:${APP_PORT_VALUE}/api/health" | head -n 80 || true
+
+            echo "\n=== nginx active config excerpt ==="
+            run_root nginx -T 2>/dev/null | grep -E "server_name|proxy_pass|upstream|listen" -n | head -n 120 || true
+
+            echo "\n=== nginx error log tail ==="
+            run_root tail -n 120 /var/log/nginx/error.log || true
+          ENDSSH
+
+  # ===========================================================================
+  # Security Scanning
+  # ===========================================================================
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run npm audit
+        run: pnpm audit --audit-level=high || true
+        continue-on-error: true
+
+      - name: Run Dependency Review
+        uses: actions/dependency-review-action@v4
+        if: github.event_name == 'pull_request'
+        continue-on-error: true

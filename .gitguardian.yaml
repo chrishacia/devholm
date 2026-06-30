@@ -1,0 +1,22 @@
+# GitGuardian Configuration
+# https://docs.gitguardian.com/ggshield-docs/reference/gitguardian-yaml
+
+# Paths to ignore (glob patterns)
+paths-ignore:
+  - .env.example
+  - "**/seeds/**"
+  - "**/migrations/**"
+
+# Specific matches to ignore
+matches-ignore:
+  # CI/CD dummy secrets for build-time only (never used at runtime)
+  - name: "CI build dummy secret"
+    match: "build-secret-not-for-production"
+  - name: "CI test dummy secret"
+    match: "test-secret"
+  - name: "Docker compose dev fallback"
+    match: "dev-secret-change-me"
+  - name: "Env config dev fallback"
+    match: "dev-secret-change-in-production"
+  - name: "CSRF dev placeholder"
+    match: "csrf-dev-secret"
