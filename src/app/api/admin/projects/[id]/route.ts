@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/auth-helpers';
 import { getDb } from '@/db';
+import { moveProjectToSortOrder } from '@/core/db/projects';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -112,10 +113,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (liveUrl !== undefined) updateData.live_url = liveUrl || null;
     if (isFeatured !== undefined) updateData.is_featured = isFeatured;
     if (isPrivate !== undefined) updateData.is_private = isPrivate;
-    if (sortOrder !== undefined) updateData.sort_order = sortOrder;
 
     // Update project
     const [project] = await db('projects').where('id', id).update(updateData).returning('*');
+
+    if (sortOrder !== undefined) {
+      await moveProjectToSortOrder(id, sortOrder);
+    }
 
     // Update technologies if provided
     if (technologies !== undefined) {
@@ -148,7 +152,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         liveUrl: project.live_url,
         isFeatured: project.is_featured,
         isPrivate: project.is_private,
-        sortOrder: project.sort_order,
+        sortOrder: sortOrder !== undefined ? sortOrder : project.sort_order,
         createdAt: project.created_at,
         updatedAt: project.updated_at,
         technologies: techs.map((t: { technology: string }) => t.technology),

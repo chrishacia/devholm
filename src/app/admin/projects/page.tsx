@@ -22,7 +22,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  TablePagination,
   Skeleton,
   Alert,
   Snackbar,
@@ -30,8 +29,10 @@ import {
   Switch,
   FormControlLabel,
 } from '@mui/material';
+import type { DragEvent as ReactDragEvent } from 'react';
 import {
   Add,
+  DragIndicator,
   Search,
   Edit,
   Delete,
@@ -100,13 +101,27 @@ function LoadingSkeleton() {
   );
 }
 
+function normalizeProjectOrder(projects: Project[]): Project[] {
+  return projects
+    .slice()
+    .sort((left, right) => {
+      if (left.sortOrder !== right.sortOrder) {
+        return left.sortOrder - right.sortOrder;
+      }
+
+      return left.title.localeCompare(right.title);
+    })
+    .map((project, index) => ({
+      ...project,
+      sortOrder: index,
+    }));
+}
+
 export default function ProjectsListPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [totalProjects, setTotalProjects] = useState(0);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -114,6 +129,8 @@ export default function ProjectsListPage() {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [imageBrowserOpen, setImageBrowserOpen] = useState(false);
+  const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [isReordering, setIsReordering] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
@@ -138,7 +155,6 @@ export default function ProjectsListPage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(search);
-      setPage(0);
     }, 300);
     return () => clearTimeout(timer);
   }, [search]);
@@ -147,8 +163,8 @@ export default function ProjectsListPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        page: String(page + 1),
-        limit: String(rowsPerPage),
+        page: '1',
+        limit: '1000',
         ...(debouncedSearch && { search: debouncedSearch }),
       });
 
@@ -156,7 +172,7 @@ export default function ProjectsListPage() {
       if (!response.ok) throw new Error('Failed to fetch projects');
 
       const data: ProjectsResponse = await response.json();
-      setProjects(data.projects);
+      setProjects(normalizeProjectOrder(data.projects));
       setTotalProjects(data.pagination.total);
     } catch (error) {
       console.error('Error fetching projects:', error);
@@ -168,7 +184,7 @@ export default function ProjectsListPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, rowsPerPage, debouncedSearch]);
+  }, [debouncedSearch]);
 
   useEffect(() => {
     fetchProjects();
@@ -325,6 +341,78 @@ export default function ProjectsListPage() {
     }
   };
 
+  const syncProjectOrder = async (nextProjects: Project[]) => {
+    const normalizedProjects = normalizeProjectOrder(nextProjects);
+    setProjects(normalizedProjects);
+    setIsReordering(true);
+
+    try {
+      const response = await fetch('/api/admin/projects', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderedIds: normalizedProjects.map((project) => project.id) }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to reorder projects');
+      }
+
+      await fetchProjects();
+    } catch (error) {
+      console.error('Error reordering projects:', error);
+      setSnackbar({
+        open: true,
+        message: 'Failed to save project order',
+        severity: 'error',
+      });
+      await fetchProjects();
+    } finally {
+      setIsReordering(false);
+    }
+  };
+
+  const handleManualSortOrderChange = async (projectId: string, nextSortOrder: number) => {
+    const currentIndex = projects.findIndex((project) => project.id === projectId);
+    if (currentIndex === -1) return;
+
+    const nextProjects = projects.slice();
+    const [movedProject] = nextProjects.splice(currentIndex, 1);
+    const targetIndex = Math.max(0, Math.min(nextSortOrder, nextProjects.length));
+    nextProjects.splice(targetIndex, 0, movedProject);
+
+    await syncProjectOrder(nextProjects);
+  };
+
+  const handleDragStart = (projectId: string) => {
+    setDraggedProjectId(projectId);
+  };
+
+  const handleDragOver = (event: ReactDragEvent<HTMLTableRowElement>) => {
+    event.preventDefault();
+  };
+
+  const handleDrop = async (targetProjectId: string) => {
+    if (!draggedProjectId || draggedProjectId === targetProjectId) {
+      setDraggedProjectId(null);
+      return;
+    }
+
+    const nextProjects = projects.slice();
+    const draggedIndex = nextProjects.findIndex((project) => project.id === draggedProjectId);
+    const targetIndex = nextProjects.findIndex((project) => project.id === targetProjectId);
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedProjectId(null);
+      return;
+    }
+
+    const [draggedProject] = nextProjects.splice(draggedIndex, 1);
+    nextProjects.splice(targetIndex, 0, draggedProject);
+
+    setDraggedProjectId(null);
+    await syncProjectOrder(nextProjects);
+  };
+
   const generateSlug = (title: string) => {
     return title
       .toLowerCase()
@@ -376,6 +464,10 @@ export default function ProjectsListPage() {
             }}
             sx={{ width: 300 }}
           />
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+            {totalProjects} total projects. Drag rows to reorder or edit Sort Order to renumber the
+            full list.
+          </Typography>
         </Box>
 
         {/* Table */}
@@ -424,14 +516,30 @@ export default function ProjectsListPage() {
                   <TableRow
                     key={project.id}
                     hover
+                    draggable
+                    onDragStart={() => handleDragStart(project.id)}
+                    onDragOver={handleDragOver}
+                    onDrop={() => handleDrop(project.id)}
                     sx={{
                       '&:hover': {
                         bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
                       },
+                      opacity: draggedProjectId === project.id ? 0.5 : 1,
+                      cursor: 'grab',
                     }}
                   >
                     <TableCell>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            color: 'text.disabled',
+                            userSelect: 'none',
+                          }}
+                        >
+                          <DragIndicator fontSize="small" />
+                        </Box>
                         {project.imageUrl && (
                           <SafeImage
                             src={project.imageUrl}
@@ -532,20 +640,6 @@ export default function ProjectsListPage() {
             )}
           </Table>
         </TableContainer>
-
-        {/* Pagination */}
-        <TablePagination
-          component="div"
-          count={totalProjects}
-          page={page}
-          onPageChange={(_, newPage) => setPage(newPage)}
-          rowsPerPage={rowsPerPage}
-          onRowsPerPageChange={(e) => {
-            setRowsPerPage(parseInt(e.target.value, 10));
-            setPage(0);
-          }}
-          rowsPerPageOptions={[5, 10, 20, 50]}
-        />
       </Card>
 
       {/* Actions Menu */}
@@ -730,6 +824,11 @@ export default function ProjectsListPage() {
                   sortOrder: parseInt(e.target.value) || 0,
                 })
               }
+              onBlur={async () => {
+                if (!editingProject) return;
+                await handleManualSortOrderChange(editingProject.id, projectForm.sortOrder);
+              }}
+              helperText="Move one project and the rest will renumber automatically."
             />
             <FormControlLabel
               control={
@@ -814,6 +913,12 @@ export default function ProjectsListPage() {
         selectedUrl={projectForm.imageUrl || null}
         acceptedTypes="images"
       />
+
+      {isReordering && (
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+          Saving project order...
+        </Typography>
+      )}
     </Box>
   );
 }

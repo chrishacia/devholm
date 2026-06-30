@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdmin } from '@/lib/auth-helpers';
 import { getDb } from '@/db';
+import { moveProjectToSortOrder, reorderProjectsByIds } from '@/core/db/projects';
 
 /**
  * GET /api/admin/projects - List all projects (including private ones for admin)
@@ -145,6 +146,10 @@ export async function POST(request: NextRequest) {
       })
       .returning('*');
 
+    await moveProjectToSortOrder(project.id, sortOrder);
+
+    const orderedProject = await db('projects').where('id', project.id).first();
+
     // Insert technologies
     if (technologies.length > 0) {
       await db('project_technologies').insert(
@@ -168,9 +173,9 @@ export async function POST(request: NextRequest) {
           liveUrl: project.live_url,
           isFeatured: project.is_featured,
           isPrivate: project.is_private,
-          sortOrder: project.sort_order,
-          createdAt: project.created_at,
-          updatedAt: project.updated_at,
+          sortOrder: orderedProject?.sort_order ?? project.sort_order,
+          createdAt: orderedProject?.created_at ?? project.created_at,
+          updatedAt: orderedProject?.updated_at ?? project.updated_at,
           technologies,
         },
       },
@@ -179,5 +184,32 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error creating project:', error);
     return NextResponse.json({ error: 'Failed to create project' }, { status: 500 });
+  }
+}
+
+/**
+ * PATCH /api/admin/projects - Reorder projects
+ */
+export async function PATCH(request: NextRequest) {
+  const token = await verifyAdmin(request);
+
+  if (!token) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const orderedIds = Array.isArray(body?.orderedIds) ? body.orderedIds : null;
+
+    if (!orderedIds || !orderedIds.every((id: unknown) => typeof id === 'string')) {
+      return NextResponse.json({ error: 'orderedIds must be a string array' }, { status: 400 });
+    }
+
+    await reorderProjectsByIds(orderedIds);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error reordering projects:', error);
+    return NextResponse.json({ error: 'Failed to reorder projects' }, { status: 500 });
   }
 }
