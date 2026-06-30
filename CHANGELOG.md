@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.1.0](https://github.com/chrishacia/devholm/compare/v3.0.1...v3.1.0) (2026-06-30)
+
+### Features
+
+- **admin:** add project reordering ([17880d2](https://github.com/chrishacia/devholm/commit/17880d27c507a69e9714e39cf3be9de464b33648))
+
 ## [3.0.1](https://github.com/chrishacia/devholm/compare/v3.0.0...v3.0.1) (2026-06-30)
 
 ### Bug Fixes
