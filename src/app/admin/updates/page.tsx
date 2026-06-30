@@ -18,7 +18,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { OpenInNew, Sync } from '@mui/icons-material';
+import { CheckCircleOutline, OpenInNew, RadioButtonUnchecked, Sync } from '@mui/icons-material';
 import { formatDistanceToNow } from 'date-fns';
 
 type UpdateStatus = {
@@ -67,6 +67,56 @@ type WorkflowRunStatus = {
     completed: boolean;
   };
 };
+
+function getFriendlyRunMessage(runStatus: WorkflowRunStatus): string {
+  const { status, conclusion } = runStatus.run;
+
+  if (status === 'queued') {
+    return 'Queued and waiting to start.';
+  }
+
+  if (status === 'in_progress') {
+    return 'Update is running now.';
+  }
+
+  if (status === 'completed') {
+    if (conclusion === 'success') {
+      return 'Update finished successfully.';
+    }
+
+    if (conclusion === 'failure') {
+      return 'Update failed. Check the workflow logs for details.';
+    }
+
+    if (conclusion === 'cancelled') {
+      return 'Update was cancelled.';
+    }
+
+    if (conclusion === 'timed_out') {
+      return 'Update timed out.';
+    }
+
+    return 'Update finished.';
+  }
+
+  return 'Update status changed.';
+}
+
+function getFriendlyAutomationWarning(warning: string): string {
+  if (warning.includes('token is not configured')) {
+    return 'Add update access to enable one-click updates.';
+  }
+
+  if (warning.includes('Site repository is not configured')) {
+    return 'One-click updates are not fully set up for this site yet.';
+  }
+
+  if (warning.includes('Unable to load site repository metadata')) {
+    return 'Could not connect to repository details right now. Try again shortly.';
+  }
+
+  return warning;
+}
 
 function StatusChip({ value }: { value: boolean | null }) {
   if (value === true) {
@@ -228,6 +278,9 @@ export default function UpdatesPage() {
   const currentVersionNotesUrl = currentVersionTag
     ? `https://github.com/${status.sourceRepo}/releases/tag/${encodeURIComponent(currentVersionTag)}`
     : null;
+  const tokenConfigured = Boolean(status.automation?.token?.tokenConfigured);
+  const accessButtonLabel = tokenConfigured ? 'Update Access' : 'Set Up Update Access';
+  const runMessage = runStatus ? getFriendlyRunMessage(runStatus) : null;
 
   return (
     <Stack spacing={3}>
@@ -243,11 +296,16 @@ export default function UpdatesPage() {
         <Typography variant="h4" fontWeight={700} gutterBottom>
           Updates
         </Typography>
-        {status.latest?.url ? (
-          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            <Button variant="outlined" onClick={() => setPatModalOpen(true)}>
-              {status.automation?.token?.tokenConfigured ? 'Change GitHub PAT' : 'Set GitHub PAT'}
-            </Button>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          <Button
+            variant="outlined"
+            onClick={() => setPatModalOpen(true)}
+            startIcon={tokenConfigured ? <CheckCircleOutline /> : <RadioButtonUnchecked />}
+            color={tokenConfigured ? 'success' : 'primary'}
+          >
+            {accessButtonLabel}
+          </Button>
+          {status.latest?.url ? (
             <Button
               variant="outlined"
               href={status.latest.url}
@@ -257,13 +315,13 @@ export default function UpdatesPage() {
             >
               Latest Version Notes
             </Button>
-          </Box>
-        ) : null}
+          ) : null}
+        </Box>
       </Box>
 
       {status.warning ? <Alert severity="warning">{status.warning}</Alert> : null}
       {status.automation?.warning ? (
-        <Alert severity="info">{status.automation.warning}</Alert>
+        <Alert severity="info">{getFriendlyAutomationWarning(status.automation.warning)}</Alert>
       ) : null}
       {status.automation?.repoPrivate ? (
         <Alert severity="info">
@@ -271,10 +329,11 @@ export default function UpdatesPage() {
           your plan.
         </Alert>
       ) : null}
-      <Alert severity={status.automation?.token?.tokenConfigured ? 'success' : 'info'}>
-        GitHub PAT: {status.automation?.token?.tokenConfigured ? 'Configured' : 'Not configured'}
-        {status.automation?.token?.tokenHint ? ` (${status.automation.token.tokenHint})` : ''}
-      </Alert>
+      {!tokenConfigured ? (
+        <Alert severity="info">
+          Add update access once and this site can run one-click updates from here.
+        </Alert>
+      ) : null}
 
       {runStatus ? (
         <Alert severity={runStatus.run.conclusion === 'failure' ? 'error' : 'info'}>
@@ -282,15 +341,16 @@ export default function UpdatesPage() {
             <Typography variant="body2" fontWeight={600}>
               Update Run: {runStatus.run.title}
             </Typography>
-            <Typography variant="body2">
-              Status: {runStatus.run.status}
-              {runStatus.run.conclusion ? ` (${runStatus.run.conclusion})` : ''}
-            </Typography>
+            <Typography variant="body2">{runMessage}</Typography>
             {runStatus.summary.activeJob ? (
-              <Typography variant="body2">Active step: {runStatus.summary.activeJob}</Typography>
+              <Typography variant="body2">
+                Currently running: {runStatus.summary.activeJob}
+              </Typography>
             ) : null}
             {runStatus.summary.failedJob ? (
-              <Typography variant="body2">Failed step: {runStatus.summary.failedJob}</Typography>
+              <Typography variant="body2">
+                Needs attention: {runStatus.summary.failedJob}
+              </Typography>
             ) : null}
             {runStatus.run.htmlUrl ? (
               <Box>
@@ -399,30 +459,25 @@ export default function UpdatesPage() {
       </Grid>
 
       <Dialog open={patModalOpen} onClose={() => setPatModalOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>
-          {status.automation?.token?.tokenConfigured ? 'Change GitHub PAT' : 'Set GitHub PAT'}
-        </DialogTitle>
+        <DialogTitle>{tokenConfigured ? 'Update Access' : 'Set Up Update Access'}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
             <Typography variant="body2" color="text.secondary">
-              Use a GitHub Personal Access Token with repository access (read contents) and Actions
-              permissions (read + write) for the site repository.
+              Add a GitHub personal access token so this site can run update workflows for you.
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              For public repos this may be low/no cost; private repos can consume Actions minutes.
+              Required permissions: Actions (read and write), Contents (read-only).
             </Typography>
             <TextField
-              label="GitHub Personal Access Token"
+              label="Personal access token"
               type="password"
               value={patValue}
               onChange={(e) => setPatValue(e.target.value)}
               fullWidth
               autoComplete="off"
-              placeholder="ghp_..."
+              helperText="Stored encrypted. The token is never shown again after saving."
+              InputLabelProps={{ shrink: true }}
             />
-            <Typography variant="caption" color="text.secondary">
-              Token values are encrypted at rest and never shown again after saving.
-            </Typography>
           </Stack>
         </DialogContent>
         <DialogActions>
