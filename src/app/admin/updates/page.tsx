@@ -48,11 +48,17 @@ function StatusChip({ value }: { value: boolean | null }) {
 
 export default function UpdatesPage() {
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<UpdateStatus | null>(null);
 
-  const fetchStatus = async () => {
-    setLoading(true);
+  const fetchStatus = async (isManualRefresh = false) => {
+    if (isManualRefresh) {
+      setRefreshing(true);
+    } else if (!status) {
+      setLoading(true);
+    }
+
     setError(null);
 
     try {
@@ -67,6 +73,7 @@ export default function UpdatesPage() {
       setError(err instanceof Error ? err.message : 'Unexpected update status error');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -89,16 +96,37 @@ export default function UpdatesPage() {
   const latestPublished = status.latest?.publishedAt
     ? formatDistanceToNow(new Date(status.latest.publishedAt), { addSuffix: true })
     : null;
+  const currentVersionTag =
+    status.current.version !== 'unknown' ? `v${status.current.version}` : null;
+  const currentVersionNotesUrl = currentVersionTag
+    ? `https://github.com/${status.sourceRepo}/releases/tag/${encodeURIComponent(currentVersionTag)}`
+    : null;
 
   return (
     <Stack spacing={3}>
-      <Box>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: { xs: 'flex-start', md: 'center' },
+          justifyContent: 'space-between',
+          gap: 2,
+          flexDirection: { xs: 'column', md: 'row' },
+        }}
+      >
         <Typography variant="h4" fontWeight={700} gutterBottom>
           Updates
         </Typography>
-        <Typography color="text.secondary">
-          Monitor framework release status before running upstream sync workflows.
-        </Typography>
+        {status.latest?.url ? (
+          <Button
+            variant="outlined"
+            href={status.latest.url}
+            target="_blank"
+            rel="noreferrer"
+            startIcon={<OpenInNew />}
+          >
+            Latest Version Notes
+          </Button>
+        ) : null}
       </Box>
 
       {status.warning ? <Alert severity="warning">{status.warning}</Alert> : null}
@@ -117,9 +145,20 @@ export default function UpdatesPage() {
                 <Typography variant="body2" color="text.secondary">
                   Build SHA: {status.current.buildSha ? status.current.buildSha.slice(0, 7) : 'n/a'}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  This value is sourced only from DEVHOLM_FRAMEWORK_VERSION.
-                </Typography>
+                <Box sx={{ pt: 0.5 }}>
+                  {currentVersionNotesUrl ? (
+                    <Button
+                      size="small"
+                      variant="text"
+                      href={currentVersionNotesUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      startIcon={<OpenInNew />}
+                    >
+                      Installed Version Notes
+                    </Button>
+                  ) : null}
+                </Box>
               </Stack>
             </CardContent>
           </Card>
@@ -138,60 +177,35 @@ export default function UpdatesPage() {
                 <Typography variant="body2" color="text.secondary">
                   Source: {status.sourceRepo}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Falls back to the newest Git tag when no GitHub Release exists.
-                </Typography>
                 {latestPublished ? (
                   <Typography variant="body2" color="text.secondary">
                     Published {latestPublished}
                   </Typography>
                 ) : null}
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    pt: 0.5,
+                  }}
+                >
+                  <StatusChip value={status.updateAvailable} />
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<Sync />}
+                    onClick={() => fetchStatus(true)}
+                    disabled={refreshing}
+                  >
+                    {refreshing ? 'Refreshing...' : 'Refresh'}
+                  </Button>
+                </Box>
               </Stack>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
-
-      <Card>
-        <CardContent>
-          <Stack spacing={2}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6">Update Status</Typography>
-              <StatusChip value={status.updateAvailable} />
-            </Box>
-
-            <Typography color="text.secondary">
-              Use <strong>pnpm devholm sync:check --against template/main</strong> before pulling
-              framework updates. If your repository uses an upstream remote name, use{' '}
-              <strong>--against upstream/main</strong>.
-            </Typography>
-
-            <Typography color="text.secondary">
-              Conventional commits do not bump versions by themselves. The semver number advances
-              when <strong>pnpm release</strong> runs <strong>release-it</strong> and creates the
-              next tag.
-            </Typography>
-
-            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
-              <Button variant="outlined" startIcon={<Sync />} onClick={fetchStatus}>
-                Refresh Status
-              </Button>
-              {status.latest?.url ? (
-                <Button
-                  variant="contained"
-                  color="primary"
-                  href={status.latest.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  startIcon={<OpenInNew />}
-                >
-                  View Release Notes
-                </Button>
-              ) : null}
-            </Box>
-          </Stack>
-        </CardContent>
-      </Card>
     </Stack>
   );
 }
