@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.3.0](https://github.com/chrishacia/devholm/compare/v3.2.0...v3.3.0) (2026-06-30)
+
+### Features
+
+- **admin:** add one-click update trigger and run monitor ([d4e946d](https://github.com/chrishacia/devholm/commit/d4e946dd73843091bde6f207bb0152a42f9d6097))
+
 ## [3.2.0](https://github.com/chrishacia/devholm/compare/v3.1.3...v3.2.0) (2026-06-30)
 
 ### Features
