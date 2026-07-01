@@ -65,14 +65,154 @@ env:
   PNPM_VERSION: '10'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  TEMPLATE_REPO: chrishacia/devholm
 
 jobs:
+  # ===========================================================================
+  # Sync Framework Update (manual update flow)
+  # ===========================================================================
+  sync-framework:
+    name: Sync DevHolm Framework
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      target_sha: ${{ steps.sync.outputs.target_sha }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Sync framework-owned files from upstream
+        id: sync
+        run: |
+          set -euo pipefail
+
+          echo "target_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] || [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "Not a manual update run on main; skipping framework sync."
+            exit 0
+          fi
+
+          if [ "${{ github.repository }}" = "${{ env.TEMPLATE_REPO }}" ]; then
+            echo "Repository is template source; no upstream sync needed."
+            echo "target_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream "https://github.com/${{ env.TEMPLATE_REPO }}.git"
+          git fetch upstream main --depth=1
+
+          SAFE_PREFIXES=("src/user/" ".github/" "nginx/")
+          SAFE_EXACT=(
+            "devholm.config.ts"
+            "Dockerfile"
+            "docker-compose.yml"
+            "docker-entrypoint.sh"
+            "README.md"
+            "DEPLOYMENT.md"
+            "GITHUB_SECRETS.md"
+          )
+
+          ALLOWLIST=()
+          if [ -f .devholm/sync-allowlist.txt ]; then
+            while IFS= read -r line; do
+              trimmed="$(printf '%s' "$line" | sed 's/^\s*//;s/\s*$//')"
+              if [ -z "$trimmed" ] || [ "${trimmed#\#}" != "$trimmed" ]; then
+                continue
+              fi
+              ALLOWLIST+=("$trimmed")
+            done < .devholm/sync-allowlist.txt
+          fi
+
+          is_safe_path() {
+            local file="$1"
+            for exact in "${SAFE_EXACT[@]}"; do
+              if [ "$file" = "$exact" ]; then
+                return 0
+              fi
+            done
+            for prefix in "${SAFE_PREFIXES[@]}"; do
+              if [[ "$file" == "$prefix"* ]]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          is_allowlisted() {
+            local file="$1"
+            local pattern prefix
+
+            for pattern in "${ALLOWLIST[@]}"; do
+              if [[ "$pattern" == */** ]]; then
+                prefix="${pattern%/**}"
+                if [ "$file" = "$prefix" ] || [[ "$file" == "$prefix/"* ]]; then
+                  return 0
+                fi
+                continue
+              fi
+
+              if [[ "$pattern" == *\* ]]; then
+                prefix="${pattern%\*}"
+                if [[ "$file" == "$prefix"* ]]; then
+                  return 0
+                fi
+                continue
+              fi
+
+              if [ "$file" = "$pattern" ]; then
+                return 0
+              fi
+            done
+
+            return 1
+          }
+
+          git ls-tree -r --name-only upstream/main > /tmp/upstream-files.txt
+
+          while IFS= read -r file; do
+            if is_safe_path "$file" || is_allowlisted "$file"; then
+              continue
+            fi
+            git checkout upstream/main -- "$file"
+          done < /tmp/upstream-files.txt
+
+          git ls-files > /tmp/local-files.txt
+          while IFS= read -r file; do
+            if is_safe_path "$file" || is_allowlisted "$file"; then
+              continue
+            fi
+            if ! grep -Fxq "$file" /tmp/upstream-files.txt; then
+              git rm -f -- "$file"
+            fi
+          done < /tmp/local-files.txt
+
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No framework sync changes detected."
+            echo "target_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git add -A
+          git commit -m "chore(sync): pull devholm framework update [skip ci]"
+          git push origin HEAD:main
+          echo "target_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   # ===========================================================================
   # Change Scope Guard
   # ===========================================================================
   changes:
     name: Detect Non-Docs Changes
     runs-on: ubuntu-latest
+    needs: sync-framework
     outputs:
       docs_only: ${{ steps.filter.outputs.docs_only }}
     steps:
@@ -80,6 +220,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ needs.sync-framework.outputs.target_sha }}
 
       - name: Detect docs-only changes
         id: filter
@@ -132,11 +273,13 @@ jobs:
   lint:
     name: Lint & Type Check
     runs-on: ubuntu-latest
-    needs: changes
+    needs: [sync-framework, changes]
     if: needs.changes.outputs.docs_only != 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync-framework.outputs.target_sha }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -164,10 +307,12 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [sync-framework, lint]
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync-framework.outputs.target_sha }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -199,10 +344,12 @@ jobs:
   build:
     name: Build Application
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests]
+    needs: [sync-framework, lint, unit-tests]
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync-framework.outputs.target_sha }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -244,11 +391,13 @@ jobs:
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-latest
-    needs: build
+    needs: [sync-framework, build]
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync-framework.outputs.target_sha }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -294,7 +443,7 @@ jobs:
   docker:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    needs: build
+    needs: [sync-framework, build]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     permissions:
       contents: read
@@ -302,6 +451,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync-framework.outputs.target_sha }}
 
       - name: Normalize image slug
         id: image
@@ -335,7 +486,7 @@ jobs:
           push: true
           platforms: linux/amd64
           build-args: |
-            COMMIT_SHA=${{ github.sha }}
+            COMMIT_SHA=${{ needs.sync-framework.outputs.target_sha }}
             REPO_SLUG=${{ github.repository }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -348,7 +499,7 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: docker
+    needs: [sync-framework, docker]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     concurrency:
       group: production-deploy-${{ github.repository }}
@@ -357,6 +508,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync-framework.outputs.target_sha }}
 
       - name: Normalize image slug
         id: image
@@ -634,7 +787,7 @@ jobs:
       - name: Resolve framework version
         id: framework_version
         run: |
-          TEMPLATE_REPO="chrishacia/devholm"
+          TEMPLATE_REPO='${{ env.TEMPLATE_REPO }}'
 
           release_tag=$(curl -fsSL "https://api.github.com/repos/${TEMPLATE_REPO}/releases/latest" | jq -r '.tag_name // empty' || true)
           if [ -z "$release_tag" ]; then
@@ -687,7 +840,6 @@ jobs:
                 - AUTH_SECRET=${{ secrets.NEXTAUTH_SECRET }}
                 - ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }}
                 - ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
-                - DEVHOLM_TEMPLATE_GITHUB_TOKEN=${{ secrets.DEVHOLM_TEMPLATE_GITHUB_TOKEN }}
                 - DEVHOLM_FRAMEWORK_VERSION=${FRAMEWORK_VERSION_VALUE}
                 - DEVHOLM_SITE_REPO=${{ github.repository }}
               volumes:
@@ -841,13 +993,15 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [sync-framework, lint]
     permissions:
       contents: read
       security-events: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync-framework.outputs.target_sha }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6

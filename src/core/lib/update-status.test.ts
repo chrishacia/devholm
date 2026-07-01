@@ -173,7 +173,7 @@ describe('update-status', () => {
     vi.unstubAllEnvs();
   });
 
-  it('returns a clear warning when repo metadata is unavailable without a token', async () => {
+  it('returns a clear warning when repo metadata is unavailable without a configured admin token', async () => {
     vi.stubEnv('DEVHOLM_TEMPLATE_GITHUB_TOKEN', '');
     vi.stubEnv('GITHUB_TOKEN', '');
     vi.stubEnv('GH_TOKEN', '');
@@ -182,7 +182,7 @@ describe('update-status', () => {
 
     const status = await getUpdateStatus('chrishacia/devholm', fakeFetch);
 
-    expect(status.warning).toContain('DEVHOLM_TEMPLATE_GITHUB_TOKEN');
+    expect(status.warning).toContain('Admin -> Updates');
 
     vi.unstubAllEnvs();
   });

@@ -6,6 +6,13 @@ This policy defines which paths a downstream site should edit directly, and whic
 
 Keep downstream upgrades from DevHolm low-conflict and predictable.
 
+## Source of truth
+
+DevHolm is authoritative for framework core and CI/CD behavior.
+Downstream repos should keep only site-specific customization and personalization.
+
+If downstream work stays inside the supported customization boundary, future framework updates should remain conceptually straightforward: sync from DevHolm, validate, deploy.
+
 ## Downstream-safe paths
 
 These are safe for site-specific customization:

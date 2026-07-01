@@ -180,7 +180,7 @@ export async function getUpdateStatus(
       warnings.push(
         hasGithubToken
           ? 'Unable to determine latest release or tag metadata for source repository.'
-          : 'Source repository metadata is unavailable. If the template repo is private, configure DEVHOLM_TEMPLATE_GITHUB_TOKEN for the deployed app to read releases and tags.'
+          : 'Source repository metadata is unavailable. If the template repo is private, configure the GitHub token in Admin -> Updates so the backend can read releases and tags.'
       );
     }
 

@@ -6,6 +6,17 @@ This document outlines a future path to trigger framework updates from an admin 
 
 DevHolm is not a runtime PHP-like app. Updates require source control operations, CI build, image publish, and deployment.
 
+## Source-of-truth contract
+
+DevHolm is the single source of truth for all framework core:
+
+- Core code and architecture (`src/core/**`, framework-owned `src/app/**`)
+- CI/CD workflow behavior and deployment model
+- Framework migration and upgrade paths
+
+Downstream repositories should contain only site customizations/personalization that follow supported extension seams.
+When this contract is followed, downstream sites should remain updateable over time by syncing from DevHolm and re-running CI/deploy.
+
 ## Near-term posture
 
 Use admin UI for visibility and orchestration, not direct mutation of running code.
