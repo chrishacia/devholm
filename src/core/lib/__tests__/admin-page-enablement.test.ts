@@ -160,101 +160,138 @@ describe('Admin Page Enablement Helpers', () => {
   });
 
   describe('Production resolver delegation', () => {
-    it('should prove that disabled plugins do not call loadPage through resolver', async () => {
-      // This test verifies that the production code path (getAdminPageComponent)
-      // properly delegates through loadEnabledAdminPageComponent without calling
-      // loadPage for disabled plugins. We verify this by creating an extension
-      // directly and calling the helper with a spy on isPluginEnabled.
+    async function importResolverWithMocks(
+      extension: AdminPageExtension,
+      enabled: boolean
+    ): Promise<{
+      getAdminPageComponent: (
+        slug: string[]
+      ) => Promise<(() => string) | null | React.ComponentType>;
+      getAdminPageMetadata: (slug: string[]) => Promise<{ title: string } | undefined>;
+      isPluginEnabledSpy: ReturnType<typeof vi.fn>;
+    }> {
+      vi.resetModules();
 
-      const loadPageSpy = vi.fn(async () => ({ default: () => 'Component' }));
-      const extension: AdminPageExtension = {
-        href: '/admin/test',
-        pluginId: 'disabled-plugin',
-        loadPage: loadPageSpy,
+      const isPluginEnabledSpy = vi.fn(async () => enabled);
+
+      vi.doMock('@user/extensions/admin/pages', () => ({
+        adminPageExtensions: [extension],
+      }));
+      vi.doMock('@user/extensions/api', () => ({
+        apiExtensions: [],
+      }));
+      vi.doMock('@user/extensions/seo', () => ({
+        metadataExtensions: [],
+        robotsExtensions: [],
+        sitemapExtensions: [],
+        structuredDataExtensions: [],
+      }));
+      vi.doMock('@/db/plugins', () => ({
+        isPluginEnabled: isPluginEnabledSpy,
+      }));
+      vi.doMock('@core/lib/extension-helpers.server', () => ({
+        getExtensionHelpers: vi.fn(() => ({
+          auth: vi.fn(),
+          getDb: vi.fn(),
+          verifyAdmin: vi.fn(),
+        })),
+      }));
+
+      const { getAdminPageComponent, getAdminPageMetadata } = await import(
+        '@core/lib/extensions.server'
+      );
+
+      return {
+        getAdminPageComponent,
+        getAdminPageMetadata,
+        isPluginEnabledSpy,
       };
+    }
 
-      const isPluginEnabledSpy = vi.fn(async () => false);
+    it('should not call loadPage for a disabled plugin via production resolver', async () => {
+      const loadPage = vi.fn(async () => ({ default: () => 'Component' }));
+      const getMetadata = vi.fn(async () => ({ title: 'Test' }));
 
-      // Call the helper function used by the production resolver
-      const result = await loadEnabledAdminPageComponent(extension, isPluginEnabledSpy);
+      const { getAdminPageComponent, isPluginEnabledSpy } = await importResolverWithMocks(
+        {
+          href: '/admin/test',
+          pluginId: 'disabled-plugin',
+          loadPage,
+          getMetadata,
+        },
+        false
+      );
 
-      // Verify disabled plugin path: no loadPage call, returns null
-      expect(result).toBeNull();
-      expect(loadPageSpy).not.toHaveBeenCalled();
+      const component = await getAdminPageComponent(['test']);
+
+      expect(component).toBeNull();
       expect(isPluginEnabledSpy).toHaveBeenCalledWith('disabled-plugin');
+      expect(loadPage).not.toHaveBeenCalled();
     });
 
-    it('should prove that enabled plugins call loadPage through resolver', async () => {
-      // This test verifies that the production code path (getAdminPageComponent)
-      // properly delegates through loadEnabledAdminPageComponent and does call
-      // loadPage for enabled plugins.
+    it('should not call getMetadata for a disabled plugin via production resolver', async () => {
+      const loadPage = vi.fn(async () => ({ default: () => 'Component' }));
+      const getMetadata = vi.fn(async () => ({ title: 'Test' }));
 
-      const mockComponent = () => 'Component';
-      const loadPageSpy = vi.fn(async () => ({ default: mockComponent }));
-      const extension: AdminPageExtension = {
-        href: '/admin/test',
-        pluginId: 'enabled-plugin',
-        loadPage: loadPageSpy,
-      };
+      const { getAdminPageMetadata, isPluginEnabledSpy } = await importResolverWithMocks(
+        {
+          href: '/admin/test',
+          pluginId: 'disabled-plugin',
+          loadPage,
+          getMetadata,
+        },
+        false
+      );
 
-      const isPluginEnabledSpy = vi.fn(async () => true);
+      const metadata = await getAdminPageMetadata(['test']);
 
-      // Call the helper function used by the production resolver
-      const result = await loadEnabledAdminPageComponent(extension, isPluginEnabledSpy);
-
-      // Verify enabled plugin path: loadPage called, returns component
-      expect(result).toBe(mockComponent);
-      expect(loadPageSpy).toHaveBeenCalled();
-      expect(isPluginEnabledSpy).toHaveBeenCalledWith('enabled-plugin');
-    });
-
-    it('should prove that disabled plugins do not call getMetadata through resolver', async () => {
-      // This test verifies that the production code path (getAdminPageMetadata)
-      // properly delegates through loadEnabledAdminPageMetadata without calling
-      // getMetadata for disabled plugins.
-
-      const getMetadataSpy = vi.fn(async () => ({ title: 'Test' }));
-      const extension: AdminPageExtension = {
-        href: '/admin/test',
-        pluginId: 'disabled-plugin',
-        loadPage: async () => ({ default: () => 'Component' }),
-        getMetadata: getMetadataSpy,
-      };
-
-      const isPluginEnabledSpy = vi.fn(async () => false);
-
-      // Call the helper function used by the production resolver
-      const result = await loadEnabledAdminPageMetadata(extension, isPluginEnabledSpy);
-
-      // Verify disabled plugin path: no getMetadata call, returns undefined
-      expect(result).toBeUndefined();
-      expect(getMetadataSpy).not.toHaveBeenCalled();
+      expect(metadata).toBeUndefined();
       expect(isPluginEnabledSpy).toHaveBeenCalledWith('disabled-plugin');
+      expect(getMetadata).not.toHaveBeenCalled();
     });
 
-    it('should prove that enabled plugins call getMetadata through resolver', async () => {
-      // This test verifies that the production code path (getAdminPageMetadata)
-      // properly delegates through loadEnabledAdminPageMetadata and does call
-      // getMetadata for enabled plugins.
+    it('should call loadPage and return component for an enabled plugin via production resolver', async () => {
+      const component = () => 'Component';
+      const loadPage = vi.fn(async () => ({ default: component }));
+      const getMetadata = vi.fn(async () => ({ title: 'Test' }));
 
-      const mockMetadata = { title: 'Test Page' };
-      const getMetadataSpy = vi.fn(async () => mockMetadata);
-      const extension: AdminPageExtension = {
-        href: '/admin/test',
-        pluginId: 'enabled-plugin',
-        loadPage: async () => ({ default: () => 'Component' }),
-        getMetadata: getMetadataSpy,
-      };
+      const { getAdminPageComponent, isPluginEnabledSpy } = await importResolverWithMocks(
+        {
+          href: '/admin/test',
+          pluginId: 'enabled-plugin',
+          loadPage,
+          getMetadata,
+        },
+        true
+      );
 
-      const isPluginEnabledSpy = vi.fn(async () => true);
+      const resolvedComponent = await getAdminPageComponent(['test']);
 
-      // Call the helper function used by the production resolver
-      const result = await loadEnabledAdminPageMetadata(extension, isPluginEnabledSpy);
-
-      // Verify enabled plugin path: getMetadata called, returns metadata
-      expect(result).toBe(mockMetadata);
-      expect(getMetadataSpy).toHaveBeenCalled();
+      expect(resolvedComponent).toBe(component);
       expect(isPluginEnabledSpy).toHaveBeenCalledWith('enabled-plugin');
+      expect(loadPage).toHaveBeenCalledTimes(1);
+    });
+
+    it('should call getMetadata and return metadata for an enabled plugin via production resolver', async () => {
+      const expectedMetadata = { title: 'Enabled Test' };
+      const loadPage = vi.fn(async () => ({ default: () => 'Component' }));
+      const getMetadata = vi.fn(async () => expectedMetadata);
+
+      const { getAdminPageMetadata, isPluginEnabledSpy } = await importResolverWithMocks(
+        {
+          href: '/admin/test',
+          pluginId: 'enabled-plugin',
+          loadPage,
+          getMetadata,
+        },
+        true
+      );
+
+      const metadata = await getAdminPageMetadata(['test']);
+
+      expect(metadata).toEqual(expectedMetadata);
+      expect(isPluginEnabledSpy).toHaveBeenCalledWith('enabled-plugin');
+      expect(getMetadata).toHaveBeenCalledTimes(1);
     });
   });
 });
