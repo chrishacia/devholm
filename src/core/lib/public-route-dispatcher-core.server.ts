@@ -21,6 +21,11 @@ export interface PublicRouteDispatcherDependencies {
   isPluginEnabled: (pluginId: string | undefined) => Promise<boolean>;
   getReservedRoutes: () => Set<string>;
   getHelpers: () => ExtensionHelpers;
+  /** Optional: pre-created match context for testing */
+  createMatchContext?: (
+    reservedRoutes: ReadonlySet<string>,
+    helpers: ExtensionHelpers
+  ) => PublicRouteMatchContext;
 }
 
 export type PublicRouteResolution =
@@ -70,35 +75,26 @@ export async function dispatchPublicRoute(
   request: NextRequest,
   dependencies: PublicRouteDispatcherDependencies
 ): Promise<PublicRouteResolution> {
+  // Early exit: no extensions registered
+  if (dependencies.extensions.length === 0) {
+    return { type: 'no-match' };
+  }
+
   // Check if reserved route
   const reservedRoutes = dependencies.getReservedRoutes();
   const isReserved = isReservedRoute(pathname, reservedRoutes);
-
   if (isReserved) {
-    return {
-      type: 'no-match',
-    };
+    return { type: 'no-match' };
   }
 
   // Only handle GET and HEAD requests for plugin routes
   if (request.method !== 'GET' && request.method !== 'HEAD') {
-    return {
-      type: 'no-match',
-    };
+    return { type: 'no-match' };
   }
 
-  const helpers = dependencies.getHelpers();
-
-  // Create read-only accessors from helpers
-  // These provide limited, read-only interfaces to prevent accidental writes during match phase
-  const db = helpers.getDb() as unknown as ReadOnlyDatabaseAccessor;
-  const settings = {} as unknown as ReadOnlySettingsAccessor;
-
-  const matchContext: PublicRouteMatchContext = {
-    reservedRoutes: reservedRoutes as ReadonlySet<string>,
-    db,
-    settings,
-  };
+  // Lazy initialization: only get helpers when first matcher needs it
+  let helpers: ExtensionHelpers | null = null;
+  let matchContext: PublicRouteMatchContext | null = null;
 
   // Phase 1: Collect all matches (side-effect free matching)
   const collectedMatches: Array<{
@@ -113,6 +109,24 @@ export async function dispatchPublicRoute(
     }
 
     try {
+      // Lazy-initialize match context only when we have a potential matcher
+      if (matchContext === null) {
+        helpers = dependencies.getHelpers();
+
+        if (dependencies.createMatchContext) {
+          // For testing: use injected context factory
+          matchContext = dependencies.createMatchContext(
+            reservedRoutes as ReadonlySet<string>,
+            helpers
+          );
+        } else {
+          // For production: throw and let wrapper handle it
+          throw new Error(
+            'createMatchContext not provided - use production wrapper or inject in tests'
+          );
+        }
+      }
+
       // Call match() - must be side-effect-free
       const matchResult = await extension.match(pathname, request, matchContext);
 
@@ -163,7 +177,10 @@ export async function dispatchPublicRoute(
     const { extension, match } = collectedMatches[0];
 
     try {
-      // Phase 2: Call handle() - side effects allowed here
+      // Phase 3: Call handle() - side effects allowed here
+      if (helpers === null) {
+        helpers = dependencies.getHelpers();
+      }
       const response = await extension.handle(match, request, helpers);
 
       return {

@@ -3,20 +3,23 @@
  * Prevents write operations during side-effect-free matching
  */
 export interface ReadOnlyDatabaseAccessor {
-  /** Execute read-only queries only */
+  /** Execute read-only SELECT queries only */
   query(sql: string, params?: unknown[]): Promise<unknown[]>;
-  /** Select builder - read-only operations only */
-  selectFrom(table: string): unknown;
+  /** Select builder - read-only operations only on whitelisted tables */
+  selectFrom(table: string): {
+    where: (criteria: Record<string, unknown>) => { first: () => Promise<unknown> };
+  };
 }
 
 /**
  * Read-only settings accessor for match phase
+ * Only reads from site_settings via DB layer
  */
 export interface ReadOnlySettingsAccessor {
-  /** Get a site setting by key */
-  get(key: string): Promise<string | null>;
-  /** Get all site settings */
-  getAll(): Promise<Record<string, string>>;
+  /** Get a single site setting by key */
+  get(key: string): Promise<unknown>;
+  /** Get multiple site settings by keys */
+  getMany(keys: readonly string[]): Promise<Record<string, unknown>>;
 }
 
 /**
