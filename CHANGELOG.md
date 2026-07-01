@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.5.0](https://github.com/chrishacia/devholm/compare/v3.4.2...v3.5.0) (2026-07-01)
+
+### Features
+
+- **ci:** skip pipeline on docs-only changes ([8670035](https://github.com/chrishacia/devholm/commit/8670035c6480be459c7941c26ec00a4262ab551e))
+
+### Bug Fixes
+
+- **core:** correct README logo asset path ([9fc9f4d](https://github.com/chrishacia/devholm/commit/9fc9f4dfc8864b8c811f35cfc7cba294bd2ea6a8))
+
 ## 3.4.2 (2026-07-01)
 
 ### Bug Fixes
