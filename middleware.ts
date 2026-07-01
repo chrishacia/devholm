@@ -3,6 +3,9 @@ import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { auth as authConfig } from '@/config/env';
 import { resolvePublicRouteExtension } from '@core/lib/public-route-dispatcher.server';
+import { responseForPublicRouteResolution } from '@core/lib/public-route-resolution-response.server';
+import { shouldResolvePublicRoute } from '@core/lib/request-eligibility.server';
+import { isAdminPath } from '@core/lib/path-boundaries.server';
 
 // Cookie name must match auth.ts configuration
 const COOKIE_NAME =
@@ -18,12 +21,13 @@ const COOKIE_NAME =
  *    - API routes (handled by /api/[...path]/route.ts)
  *
  * 2. MIDDLEWARE execution (this function):
- *    A. Public route extension check (if path is NOT /admin, /api, /static)
- *       - Async plugins can claim path with Response
- *       - If claimed, response returned immediately
- *       - If not claimed, continue to step 2B
- *       - If error (conflict, exception), log and continue
- *    B. Admin route protection (if path starts with /admin)
+ *    A. Public route extension check
+ *       - If eligible (see shouldResolvePublicRoute), ask plugins to claim path
+ *       - If a plugin claims it, return the plugin's response (200)
+ *       - If conflict (multiple plugins claim), return conflict (409)
+ *       - If dispatcher error, return error (503)
+ *       - If no plugin claims, continue to step 2B
+ *    B. Admin route protection (if path is within /admin)
  *       - Auth check
  *       - Role check
  *       - Setup completion check
@@ -31,20 +35,27 @@ const COOKIE_NAME =
  * 3. AFTER middleware:
  *    - Next.js App Router evaluates routes
  *    - Exact dev pages (higher specificity)
- *    - Catch-all [...]slug] for CMS pages
+ *    - Catch-all [...slug] for CMS pages
  *    - 404 if no match
  *
  * IMPORTANT: Public route extensions run at middleware level, which is
  * BEFORE the App Router. This means:
- * - Extensions can claim any path (except /admin, /api, /static)
+ * - Extensions can claim any eligible path (GET/HEAD, not reserved, not prefetch)
  * - Dev pages and CMS pages only run if no extension claims the path
- * - Exceptions in extensions don't break page rendering (logged and skipped)
- * - Multiple extensions claiming same path = conflict (error logged, no response)
+ * - Exceptions in extensions return 503 to client
+ * - Multiple extensions claiming same path return 409 conflict
+ *
+ * Requests that skip plugin resolution:
+ * - POST/PUT/DELETE/etc (only GET/HEAD eligible)
+ * - /api/*, /admin/*, /static/* (reserved paths)
+ * - RSC internal requests (rsc=1, next-action headers)
+ * - Router prefetch requests (purpose=prefetch, next-router-prefetch)
+ * - Public asset files (.svg, .png, .woff2, .webmanifest, etc.)
  *
  * Database Availability:
- * - If extension calls helpers.getDb() and database is down, exception is caught
- * - Middleware continues with NextResponse.next()
- * - App Router proceeds normally, dev pages load without plugin data
+ * - If extension calls helpers.getDb() and database is down, dispatcher catches it
+ * - Returns error resolution (503 to client)
+ * - App Router proceeds normally if response not needed
  * - Core DevHolm functionality is not blocked by plugin errors
  */
 
@@ -52,77 +63,36 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   /**
-   * Phase 1: Check public route extensions
+   * Phase 1: Check public route extensions (if eligible)
    *
-   * Only check paths that are NOT admin/api/static.
-   * These paths would normally go to App Router (dev pages or CMS).
-   * Extensions get a chance to claim them first.
-   *
-   * Possible outcomes:
-   * - match: Extension claimed the path, return its response
-   * - no-match: No extension claimed, continue to App Router
-   * - conflict: Multiple extensions claimed same path, fail closed (no response, App Router 404s)
-   * - error: Extension error during matching, continue to App Router
-   * - reserved-route: Path is protected from plugins, continue to App Router
+   * Uses shouldResolvePublicRoute to determine eligibility
    */
-  if (
-    !pathname.startsWith('/admin') &&
-    !pathname.startsWith('/api') &&
-    !pathname.startsWith('/static')
-  ) {
+  if (shouldResolvePublicRoute(request)) {
     try {
       const resolution = await resolvePublicRouteExtension(pathname, request);
 
-      switch (resolution.type) {
-        case 'match':
-          // Extension claimed the path successfully
-          return resolution.response;
+      // Handle the resolution using the production response builder
+      const response = responseForPublicRouteResolution(pathname, resolution);
 
-        case 'conflict':
-          // Multiple extensions claimed same path - fail closed with explicit error
-          // This is a server configuration error, not a 404
-          // Return 409 Conflict response
+      if (response !== null) {
+        // Log errors and conflicts for debugging
+        if (resolution.type === 'conflict') {
           console.error('Public route conflict detected:', {
             pathname,
             conflictingExtensions: resolution.conflictingExtensions,
             error: resolution.error.message,
           });
-          return new NextResponse(
-            JSON.stringify({
-              error: 'Route Configuration Conflict',
-              message: `Multiple plugin routes claimed the same path: ${pathname}. This is a server configuration error.`,
-              conflictingExtensions: resolution.conflictingExtensions,
-            }),
-            {
-              status: 409,
-              headers: { 'Content-Type': 'application/json' },
-            }
-          );
-
-        case 'error':
-          // Dispatcher encountered an error during dispatch (e.g., database failure)
-          // Return 503 Service Unavailable
+        } else if (resolution.type === 'error') {
           console.error('Public route dispatcher error:', resolution.error);
-          return new NextResponse(
-            JSON.stringify({
-              error: 'Service Unavailable',
-              message: 'Route resolution service temporarily unavailable',
-            }),
-            {
-              status: 503,
-              headers: { 'Content-Type': 'application/json' },
-            }
-          );
-          break;
+        }
 
-        case 'no-match':
-          // No extension claimed this path, continue to App Router
-          break;
+        return response;
       }
+      // If response is null (no-match), continue to Phase 2
     } catch (error) {
       /**
-       * Error handling (fallback for unexpected errors):
-       * - Error thrown during dispatcher execution
+       * Unexpected dispatcher exception (fallback):
+       * - Should not happen with proper error handling in dispatcher
        * - Return 503 Service Unavailable to client
        * - Log error for debugging
        */
@@ -149,8 +119,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Protect all admin routes
-  if (pathname.startsWith('/admin')) {
+  // Protect all admin routes (using boundary-safe helper)
+  if (isAdminPath(pathname)) {
     const token = await getToken({
       req: request,
       secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
@@ -209,6 +179,9 @@ export async function middleware(request: NextRequest) {
  * - `/api/*` - Public route check skipped (handled by /api/[...path]/route.ts)
  * - `/admin/*` - Public route check skipped (handled by auth middleware)
  * - `/static/*` - Public route check skipped (direct file serving)
+ * - RSC requests (`rsc=1` or `next-action` header) - Server component requests
+ * - Prefetch requests (`purpose=prefetch` or `next-router-prefetch: 1`) - Router prefetch
+ * - Public asset files (.svg, .png, .woff2, .webmanifest, etc.) - Static assets
  *
  * All other paths are checked for public route extensions.
  * This includes:
@@ -219,10 +192,6 @@ export async function middleware(request: NextRequest) {
  * - `/about` - About page
  * - `/projects`, `/uses`, `/resume` - Dev pages
  * - Catch-all `/[...slug]` for custom CMS pages
- *
- * Note: RSC (React Server Component) requests and prefetch requests
- * are handled by Next.js request rewriting before middleware.
- * The middleware sees the original URL, not the RSC fetch suffix.
  */
 export const config = {
   /**
@@ -238,7 +207,8 @@ export const config = {
    * - /uploads/* (exact boundary)
    * - /.well-known/* (exact boundary)
    * - Static files: /favicon.ico, /robots.txt, /sitemap.xml (exact matches)
-   * - RSC and prefetch requests (handled by Next.js before middleware)
+   * - Public asset files by extension (.svg, .png, .webp, .woff2, .webmanifest)
+   * - RSC and prefetch requests (handled by Next.js before middleware, but also handled in code)
    *
    * This ensures paths like /apiary or /admin-panel are not incorrectly excluded.
    */
@@ -248,7 +218,8 @@ export const config = {
      * 1. Exact static files: favicon.ico, robots.txt, sitemap.xml
      * 2. Framework paths with boundaries: _next/static, _next/image
      * 3. Paths with explicit boundaries: /api/*, /uploads/*, /.well-known/*
+     * 4. Public asset extensions: .svg, .png, .jpg, .webp, .woff2, .webmanifest, etc.
      */
-    '/((?!(?:favicon\\.ico|robots\\.txt|sitemap\\.xml|api/|uploads/|\\.well-known/|_next/static|_next/image))[^?]*)',
+    '/((?!(?:favicon\\.ico|robots\\.txt|sitemap\\.xml|api/|uploads/|\\.well-known/|_next/static|_next/image|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff|woff2|ttf|eot|otf|webmanifest|ico)(?:\\?.*)?$))[^?]*)',
   ],
 };

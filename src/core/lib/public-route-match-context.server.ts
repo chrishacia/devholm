@@ -1,17 +1,4 @@
 /**
- * Read-only database accessor for match phase
- * Prevents write operations during side-effect-free matching
- */
-export interface ReadOnlyDatabaseAccessor {
-  /** Execute read-only SELECT queries only */
-  query(sql: string, params?: unknown[]): Promise<unknown[]>;
-  /** Select builder - read-only operations only on whitelisted tables */
-  selectFrom(table: string): {
-    where: (criteria: Record<string, unknown>) => { first: () => Promise<unknown> };
-  };
-}
-
-/**
  * Read-only settings accessor for match phase
  * Only reads from site_settings via DB layer
  */
@@ -24,16 +11,18 @@ export interface ReadOnlySettingsAccessor {
 
 /**
  * Narrowed context for public route matching
- * Restricted to read-only operations during match phase
+ * Restricted to read-only settings operations during match phase
  *
- * This interface ensures that matchers cannot perform mutations
+ * Phase 1 limitation: Settings-only access during match phase.
+ * This ensures matchers cannot perform arbitrary database queries
  * or side effects during the collection phase.
+ *
+ * If plugins need table access, they should expose their own
+ * narrow read repositories internally, not through match context.
  */
 export interface PublicRouteMatchContext {
   /** Reserved routes that cannot be claimed by plugins */
   readonly reservedRoutes: ReadonlySet<string>;
-  /** Read-only database access during matching */
-  readonly db: ReadOnlyDatabaseAccessor;
   /** Read-only settings access during matching */
   readonly settings: ReadOnlySettingsAccessor;
 }

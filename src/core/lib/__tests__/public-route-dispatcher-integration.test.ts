@@ -9,7 +9,6 @@ import { describe, it, expect, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 import type { PublicRouteExtension } from '@core/types/extensions.server';
 import type { PublicRouteMatchContext } from '@core/lib/public-route-match-context.server';
-import type { ExtensionHelpers } from '@core/types/extensions.server';
 import { dispatchPublicRoute } from '@core/lib/public-route-dispatcher-core.server';
 
 describe('Public Route Dispatcher - Real Integration Tests', () => {
@@ -23,29 +22,14 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
 
   // Helper to create a test match context factory
   function createTestContextFactory() {
-    return (
-      reservedRoutes: ReadonlySet<string>,
-      helpers: ExtensionHelpers
-    ): PublicRouteMatchContext => {
+    return (reservedRoutes: ReadonlySet<string>): PublicRouteMatchContext => {
       return {
         reservedRoutes,
-        db: {
-          async query(sql: string, params?: unknown[]) {
-            return [];
-          },
-          selectFrom(table: string) {
-            return {
-              where: (criteria: unknown) => ({
-                first: async () => null,
-              }),
-            };
-          },
-        },
         settings: {
-          async get(key: string) {
+          async get() {
             return undefined;
           },
-          async getMany(keys: readonly string[]) {
+          async getMany() {
             return {};
           },
         },
