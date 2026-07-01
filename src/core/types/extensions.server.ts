@@ -78,39 +78,92 @@ export interface RobotsExtension {
 }
 
 /**
- * Public route extension for plugins to claim and handle specific URL paths.
- * Supports dynamic, async path matching based on runtime settings.
+ * Context for public route matching
+ * Passed to match() phase to identify route ownership
+ */
+export interface PublicRouteMatchContext {
+  /** Reserved routes that cannot be claimed by plugins */
+  reservedRoutes: Set<string>;
+  /** Helpers for reading settings, database, etc. (read-only) */
+  helpers: ExtensionHelpers;
+}
+
+/**
+ * Match result from PublicRouteExtension.match()
+ * Opaque type - the extension stores what it needs to handle later
+ */
+export type PublicRouteMatch<TExtension = unknown> = TExtension;
+
+/**
+ * Two-phase public route extension contract
+ *
+ * Phase 1: Matching (side-effect-free)
+ * - match() called for each extension
+ * - Must not mutate state: no analytics, counters, records, etc.
+ * - Returns match state or null if not claimed
+ *
+ * Phase 2: Handling (after conflict detection)
+ * - If exactly one match: handle() called with match state
+ * - If zero matches: returns no-match
+ * - If multiple matches: returns conflict with extensions list
+ * - If matcher or handler throws: returns error
  *
  * Route precedence (in order):
  * 1. Next.js specific routes (api, admin, assets, etc.)
- * 2. DevHolm dev pages (from devPageDefinitions)
+ * 2. Reserved routes (protected dev pages, admin, API, framework routes)
  * 3. Plugin public routes (matched in registration order)
  * 4. CMS pages (single-segment slugs only)
  * 5. 404
- *
- * Conflicts: If multiple extensions claim the same path, route resolution fails.
- * All matches must return false or null to avoid conflicts.
  */
-export interface PublicRouteExtension {
+export interface PublicRouteExtension<TMatch = unknown> {
   pluginId?: string;
   /** Unique ID for this route extension (e.g., 'url-shortener-redirect') */
   id: string;
+
   /**
-   * Async function to determine if this extension claims the given pathname.
-   * Called for each request; supports runtime settings checks.
+   * Phase 1: Side-effect-free matching
+   *
+   * Determines if this extension claims the given pathname.
+   * May read runtime settings from database or config.
+   * Must NOT write analytics, increment counters, create records, or mutate any state.
+   *
+   * Called for every matching extension to collect all potential matches.
+   * Exceptions during match produce an error result.
    *
    * @param pathname - The request pathname (e.g., '/abc123')
    * @param request - The NextRequest for access to headers, cookies, etc.
-   * @param helpers - ExtensionHelpers for database, auth, config access
-   * @returns Promise<Response | null>
-   *   - Response: Claims this path and returns the response (e.g., redirect)
-   *   - null/undefined: Does not claim this path; continue to next extension
+   * @param context - Match context with reserved routes and helpers
+   * @returns Promise<TMatch | null> | TMatch | null
+   *   - TMatch (truthy): Claims this path; returns match state for handle() phase
+   *   - null/undefined: Does not claim this path; try next extension
+   *   - Throws: Returns error result; does not continue
    */
-  claimPath: (
+  match(
     pathname: string,
     request: NextRequest,
+    context: PublicRouteMatchContext
+  ): Promise<TMatch | null> | TMatch | null;
+
+  /**
+   * Phase 2: Handle request after conflict detection
+   *
+   * Called exactly once if match() returned truthy AND no other extension matched.
+   * This is where side effects are safe: analytics, redirects, data fetches, etc.
+   *
+   * Exceptions during handle produce an error result.
+   *
+   * @param match - The match state returned from match()
+   * @param request - The NextRequest
+   * @param helpers - ExtensionHelpers for database, auth, config access
+   * @returns Promise<Response> | Response
+   *   - Response: The response to send to the client
+   *   - Throws: Returns error result with 503 status
+   */
+  handle(
+    match: TMatch,
+    request: NextRequest,
     helpers: ExtensionHelpers
-  ) => Promise<Response | null> | Response | null;
+  ): Promise<Response> | Response;
 }
 
 /**

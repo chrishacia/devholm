@@ -1,7 +1,7 @@
 import { parseMarkdown } from './markdown';
 import { isPluginEnabled } from '@/db/plugins';
 import { embedExtensions } from '@user/extensions/embeds';
-import { getExtensionHelpers } from '@core/lib/extensions.server';
+import { getExtensionHelpers } from '@core/lib/extension-helpers.server';
 
 /**
  * Parse markdown content and render embed shortcodes

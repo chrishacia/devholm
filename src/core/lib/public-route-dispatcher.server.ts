@@ -1,38 +1,27 @@
-import type { NextRequest } from 'next/server';
-import type { PublicRouteExtension } from '@core/types/extensions.server';
-import { isPluginEnabled } from '@/db/plugins';
-import { getExtensionHelpers } from '@core/lib/extensions.server';
-import { publicRouteExtensions } from '@user/extensions/public-routes';
-
 /**
- * Reserved routes that plugins CANNOT claim
- * These are core DevHolm pages that must remain under application control
+ * Public route dispatcher - two-phase matching and handling
+ *
+ * Phase 1: Matching (side-effect-free)
+ * - Call match() on all extensions
+ * - Collect all matches
+ * - Check for conflicts
+ *
+ * Phase 2: Handling (after conflict detection)
+ * - If exactly one match: call handle()
+ * - If zero matches: return no-match
+ * - If multiple matches: return conflict
+ * - If any exception: return error
+ *
+ * No handler may execute before conflict detection completes.
+ * Matching must be side-effect-free (read-only).
  */
-const RESERVED_ROUTES = new Set([
-  '/blog',
-  '/calendar',
-  '/gallery',
-  '/about',
-  '/projects',
-  '/resume',
-  '/contact',
-  '/admin',
-  '/api',
-  '/static',
-  '/_next',
-  '/public',
-  '/.well-known',
-]);
 
-function isReservedRoute(pathname: string): boolean {
-  // Check if pathname matches any reserved route (exact or prefix match)
-  for (const reserved of RESERVED_ROUTES) {
-    if (pathname === reserved || pathname.startsWith(reserved + '/')) {
-      return true;
-    }
-  }
-  return false;
-}
+import type { NextRequest } from 'next/server';
+import type { PublicRouteExtension, PublicRouteMatchContext } from '@core/types/extensions.server';
+import { isPluginEnabled } from '@/db/plugins';
+import { getExtensionHelpers } from '@core/lib/extension-helpers.server';
+import { publicRouteExtensions } from '@user/extensions/public-routes';
+import { getReservedRoutes } from '@core/lib/reserved-routes.server';
 
 export type PublicRouteResolution =
   | {
@@ -56,17 +45,18 @@ export type PublicRouteResolution =
  * Resolve public route extensions for a given request
  *
  * Two-phase dispatch:
- * 1. Collect all matching extensions (side-effect free)
+ * 1. Collect all matching extensions (side-effect free, read-only)
  * 2. Handle exactly one match; fail closed on conflicts or errors
- *
- * Reserved routes cannot be claimed by plugins
  */
 export async function resolvePublicRouteExtension(
   pathname: string,
   request: NextRequest
 ): Promise<PublicRouteResolution> {
-  // Phase 0: Block reserved routes
-  if (isReservedRoute(pathname)) {
+  // Check if reserved route
+  const reservedRoutes = getReservedRoutes();
+  const isReserved = isReservedRoute(pathname, reservedRoutes);
+
+  if (isReserved) {
     return {
       type: 'no-match',
     };
@@ -81,49 +71,59 @@ export async function resolvePublicRouteExtension(
   }
 
   const helpers = getExtensionHelpers();
-  const matches: {
-    extension: PublicRouteExtension;
-    response: Response;
-  }[] = [];
+  const matchContext: PublicRouteMatchContext = {
+    reservedRoutes,
+    helpers,
+  };
 
-  // Phase 1: Collect all matches (side-effect free, check enablement)
+  // Phase 1: Collect all matches (side-effect free matching)
+  const collectedMatches: Array<{
+    extension: PublicRouteExtension;
+    match: unknown;
+  }> = [];
+
   for (const extension of publicRouteExtensions) {
-    // Skip disabled plugins (if pluginId is set, must be enabled)
+    // Skip disabled plugins
     if (extension.pluginId && !(await isPluginEnabled(extension.pluginId).catch(() => false))) {
       continue;
     }
 
     try {
-      const response = await extension.claimPath(pathname, request, helpers);
-      if (response) {
-        matches.push({ extension, response });
-        // Don't break - collect all matches to detect conflicts
+      // Call match() - must be side-effect-free
+      const matchResult = await extension.match(pathname, request, matchContext);
+
+      if (matchResult !== null && matchResult !== undefined) {
+        collectedMatches.push({
+          extension,
+          match: matchResult,
+        });
+        // Continue collecting all matches to detect conflicts
       }
     } catch (error) {
-      /**
-       * Extension error handling:
-       * - Extension threw during claimPath()
-       * - This is not a conflict - extension failed, didn't claim path
-       * - Log error for debugging, continue to next extension
-       * - Examples: database error, validation error, etc.
-       */
-      console.error(
-        `Extension ${extension.id} (plugin ${extension.pluginId || 'core'}) failed to claim path ${pathname}:`,
-        error
-      );
-      // Continue to next extension on error
+      // Matcher exception
+      const errorMessage =
+        `Public route matcher failed for extension ${extension.id} ` +
+        `(plugin: ${extension.pluginId || 'core'}) at path ${pathname}: ${error instanceof Error ? error.message : String(error)}`;
+
+      console.error(errorMessage);
+
+      return {
+        type: 'error',
+        error: new Error(errorMessage),
+      };
     }
   }
 
-  // Phase 2: Conflict detection
-  if (matches.length > 1) {
-    const conflictIds = matches.map(
+  // Phase 2: Conflict detection (before any handler executes)
+  if (collectedMatches.length > 1) {
+    const conflictIds = collectedMatches.map(
       (m) => `${m.extension.id} (plugin: ${m.extension.pluginId || 'core'})`
     );
     const errorMessage =
-      `Public route conflict at ${pathname}: multiple extensions claimed this path: ${conflictIds.join(', ')}. ` +
-      `Plugin extensions must be mutually exclusive. ` +
-      `Disable one extension or refactor patterns to avoid overlap.`;
+      `Public route conflict at ${pathname}: ` +
+      `multiple extensions claim this path: ${conflictIds.join(', ')}. ` +
+      `Plugin routes must be mutually exclusive. ` +
+      `Disable one plugin or refactor route patterns.`;
 
     console.error(errorMessage);
 
@@ -134,16 +134,54 @@ export async function resolvePublicRouteExtension(
     };
   }
 
-  // Phase 3: Return exactly one match or no match
-  if (matches.length === 1) {
-    return {
-      type: 'match',
-      response: matches[0].response,
-    };
+  // Phase 3: Handle exactly one match or return no-match
+  if (collectedMatches.length === 1) {
+    const { extension, match } = collectedMatches[0];
+
+    try {
+      // Phase 2: Call handle() - side effects allowed here
+      const response = await extension.handle(match, request, helpers);
+
+      return {
+        type: 'match',
+        response,
+      };
+    } catch (error) {
+      // Handler exception
+      const errorMessage =
+        `Public route handler failed for extension ${extension.id} ` +
+        `(plugin: ${extension.pluginId || 'core'}) at path ${pathname}: ${error instanceof Error ? error.message : String(error)}`;
+
+      console.error(errorMessage);
+
+      return {
+        type: 'error',
+        error: new Error(errorMessage),
+      };
+    }
   }
 
   // No match found
   return {
     type: 'no-match',
   };
+}
+
+/**
+ * Check if pathname is reserved (exact or prefix match)
+ */
+function isReservedRoute(pathname: string, reservedRoutes: Set<string>): boolean {
+  // Check exact match first
+  if (reservedRoutes.has(pathname)) {
+    return true;
+  }
+
+  // Check prefix matches (e.g., /admin/settings matches /admin)
+  for (const reserved of reservedRoutes) {
+    if (pathname.startsWith(reserved + '/')) {
+      return true;
+    }
+  }
+
+  return false;
 }
