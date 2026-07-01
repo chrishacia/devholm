@@ -164,10 +164,8 @@ describe('Admin Page Enablement Helpers', () => {
       extension: AdminPageExtension,
       enabled: boolean
     ): Promise<{
-      getAdminPageComponent: (
-        slug: string[]
-      ) => Promise<(() => string) | null | React.ComponentType>;
-      getAdminPageMetadata: (slug: string[]) => Promise<{ title: string } | undefined>;
+      getAdminPageComponent: (slug: string[]) => Promise<unknown>;
+      getAdminPageMetadata: (slug: string[]) => Promise<unknown>;
       isPluginEnabledSpy: ReturnType<typeof vi.fn>;
     }> {
       vi.resetModules();
