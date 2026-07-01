@@ -20,6 +20,10 @@ import {
 } from '@user/extensions/seo';
 import { isPluginEnabled } from '@/db/plugins';
 import { getExtensionHelpers } from '@core/lib/extension-helpers.server';
+import {
+  loadEnabledAdminPageComponent,
+  loadEnabledAdminPageMetadata,
+} from '@core/lib/admin-page-enablement.server';
 
 function normalizePath(pathname: string): string {
   const segments = pathname.split('/').filter(Boolean);
@@ -37,12 +41,6 @@ function resolveByPath<T extends { href?: string; path?: string }>(
   });
 }
 
-function hasDefaultExport(
-  module: Awaited<ReturnType<AdminPageExtension['loadPage']>>
-): module is { default: React.ComponentType } {
-  return typeof module === 'object' && module !== null && 'default' in module;
-}
-
 async function isExtensionEnabled(pluginId?: string): Promise<boolean> {
   if (!pluginId) {
     return true;
@@ -57,31 +55,22 @@ export function resolveAdminPageExtension(slug: string[]): AdminPageExtension | 
 
 export async function getAdminPageComponent(slug: string[]): Promise<React.ComponentType | null> {
   const extension = resolveAdminPageExtension(slug);
+
   if (!extension) {
     return null;
   }
 
-  // Enforce plugin enablement check
-  if (!(await isExtensionEnabled(extension.pluginId))) {
-    return null;
-  }
-
-  const loadedModule = await extension.loadPage();
-  return hasDefaultExport(loadedModule) ? loadedModule.default : loadedModule;
+  return loadEnabledAdminPageComponent(extension, isPluginEnabled);
 }
 
 export async function getAdminPageMetadata(slug: string[]): Promise<Metadata | undefined> {
   const extension = resolveAdminPageExtension(slug);
+
   if (!extension) {
     return undefined;
   }
 
-  // Enforce plugin enablement check
-  if (!(await isExtensionEnabled(extension.pluginId))) {
-    return undefined;
-  }
-
-  return extension?.getMetadata ? extension.getMetadata() : undefined;
+  return loadEnabledAdminPageMetadata(extension, isPluginEnabled);
 }
 
 export function resolveMetadataExtensions(path: string): MetadataExtension[] {
