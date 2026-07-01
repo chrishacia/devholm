@@ -1,4 +1,4 @@
-# Plugin Extensions Framework
+# Plugin Extensions Framework - Phase 1
 
 This document describes the Phase 1 plugin extension framework for DevHolm. This framework provides generic seams for plugins to extend the core application without hardcoding plugin-specific logic into the main codebase.
 
@@ -7,12 +7,542 @@ This document describes the Phase 1 plugin extension framework for DevHolm. This
 The plugin extension system is built on three core pillars:
 
 1. **Extension Types** - Contracts defined in `src/core/types/extensions.server.ts`
-2. **Extension Dispatchers** - Runtime resolution functions in `src/core/lib/extensions.server.ts`
-3. **Extension Registries** - Plugin definitions in `src/user/extensions/*/index.ts`
+2. **Dispatchers** - Two-phase resolution in `src/core/lib/public-route-dispatcher*.server.ts` and `src/core/lib/embed-processor*.server.ts`
+3. **Registries** - Plugin definitions in `src/user/extensions/*/index.ts`
 
 ### Design Principle: Complete Isolation
 
 The core principle is **strict isolation**: DevHolm core must never depend on plugin-specific code, database records, services, types, or UI components. Plugins register themselves with the framework; the framework does not know about plugins at compile time.
+
+## Two-Phase Dispatch Architecture
+
+All extension dispatchers follow a strict two-phase model:
+
+### Phase 1: Collection (Read-Only)
+
+- All matchers run in a **side-effect-free, read-only context**
+- Database queries are read-only
+- Settings are read-only
+- All potential matches collected
+- No handler executes
+- Exceptions are caught and logged
+
+### Phase 2: Conflict Detection
+
+- If exactly 1 match: proceed to handler
+- If 0 matches: return no-match type
+- If >1 matches: return conflict error immediately (before any handler executes)
+- If exception during Phase 1: return error type immediately
+
+### Phase 3: Handling (If Safe)
+
+- Handler executes ONLY if exactly 1 match confirmed
+- Database writes are allowed
+- Side effects allowed
+- Handler exceptions logged and return error type
+
+**Critical Invariant:** A handler may NEVER execute if there's ambiguity about which extension should claim the request.
+
+## Public Route Extensions
+
+Allows plugins to claim and handle specific URL paths (e.g., dynamic pages, redirects).
+
+**Contract:**
+
+```typescript
+interface PublicRouteExtension {
+  pluginId?: string;
+  id: string;
+  // Phase 1: Side-effect-free matching
+  match: (
+    pathname: string,
+    request: NextRequest,
+    context: PublicRouteMatchContext
+  ) => Promise<TMatch | null> | TMatch | null;
+  // Phase 3: Handling (after conflict detection passes)
+  handle: (
+    match: TMatch,
+    request: NextRequest,
+    helpers: ExtensionHelpers
+  ) => Promise<Response> | Response;
+}
+
+type PublicRouteResolution =
+  | { type: 'no-match' }
+  | { type: 'match'; response: Response }
+  | { type: 'conflict'; conflictingExtensions: string[]; error: Error }
+  | { type: 'error'; error: Error };
+```
+
+**Key Features:**
+
+- **Phase 1 matching** - Async path matching with read-only database access
+- **Returns opaque match** - `TMatch` is extension-specific state; core doesn't inspect
+- **Conflict detection** - Before any handler executes, all matches are checked
+- **Two-result model** - Match returns result state (opaque) or `null`; handle receives result state
+- **Error isolation** - Single extension error logged; next extension tried (graceful degradation)
+- **Multi-claim conflicts** - Multiple extensions claiming same path returns 409 Conflict (fail closed)
+- **Disabled plugins** - Skipped before Phase 1 matching
+- **Reserved routes** - Built from filesystem structure + dev pages; plugins cannot claim
+
+**Match Context (Phase 1 Read-Only):**
+
+```typescript
+interface PublicRouteMatchContext {
+  readonly reservedRoutes: ReadonlySet<string>;
+  readonly db: ReadOnlyDatabaseAccessor; // Read-only query subset
+  readonly settings: ReadOnlySettingsAccessor;
+}
+```
+
+The narrower context prevents accidental writes during the read-only phase.
+
+**Reserved Routes** (cannot be claimed by extensions):
+
+Built from:
+
+1. Framework roots: `/admin`, `/api`, `/auth`, `/invite`, `/static`, `/public`, `/uploads`
+2. Next.js infrastructure: `/_next`, `/.well-known`, `/favicon.ico`, `/robots.txt`, `/sitemap.xml`
+3. Filesystem-owned pages: `/about`, `/blog`, `/calendar`, `/contact`, `/gallery`, `/now`, `/projects`, `/resume`, `/search`, `/uses`
+4. Developer-defined pages: from `devPageDefinitions`
+
+**Route Precedence & Control Flow**
+
+```
+Request arrives
+  ↓
+1. Middleware runs (via matcher config)
+   - Check if path is reserved (excluded)
+   - If reserved: skip to App Router
+   - If not reserved:
+     → Call publicRouteDispatcher (two-phase dispatch)
+     → Phase 1: Collect all matches (side-effect-free)
+     → Phase 2: Check conflict
+       - If conflict (>1 match): return 409 Conflict JSON response
+       - If error during match: return 503 Service Unavailable
+     → Phase 3: If exactly 1 match, execute handler
+       - If handler throws: return 503 Service Unavailable
+       - If handler succeeds: return Response immediately
+     → If no match: call NextResponse.next() → App Router
+   ↓
+2. App Router processes request
+   - Dev pages: exact routes like /blog, /calendar
+   - CMS pages: catch-all [...slug] for single-segment paths
+   - API routes: /api/...
+   - Admin routes: /admin/...
+   - 404 if no match
+```
+
+**Middleware Response Types:**
+
+- **200 OK** - Extension handled path successfully (handler returned Response)
+- **409 Conflict** - Multiple extensions claimed same path; error logged
+- **503 Service Unavailable** - Matcher exception or handler exception; error logged
+- **No response** - No extension claimed path; Next.js App Router processes request
+
+**Important Implementation Details:**
+
+- Public routes run at MIDDLEWARE level, NOT in App Router
+- Extensions execute BEFORE dev pages and CMS pages
+- If no extension claims path, `NextResponse.next()` called, App Router runs normally (no plugin dependency)
+- If extension throws during match, next extension tried (graceful error handling)
+- If multiple extensions match, NO handler executes and 409 returned (fail closed)
+- Dev pages load normally even if plugin data unavailable
+
+## Embed Extensions
+
+Allows plugins to define custom shortcodes for markdown content (e.g., `[calendar:slug]`, `[gallery:id]`).
+
+**Contract:**
+
+```typescript
+interface EmbedExtensionConfig {
+  pluginId?: string;
+  id: string;
+  shortcode: string; // Unique identifier for shortcode
+  pattern: RegExp; // Global pattern with 'g' flag
+  render: (
+    match: RegExpExecArray,
+    content: string,
+    helpers: ExtensionHelpers
+  ) => Promise<string | null> | string | null;
+}
+```
+
+**Key Features:**
+
+- Regex pattern matching for shortcode detection
+- `render` returns HTML string or `null` (leaves shortcode as-is if render returns null)
+- Errors caught and logged; shortcode preserved if extension throws (graceful degradation)
+- Extensions processed in registry order; first matching pattern wins
+- **Duplicate embed IDs and shortcodes detected at startup** (fail fast)
+- **Duplicate shortcodes throw error** - Two different embeds cannot have same shortcode name
+
+**Pattern Requirements:**
+
+- MUST have global flag: `/pattern/g`
+- MUST be inline-matching: `/\\[shortcode.*\\]/g` (not anchored with `^` or `$`)
+- Using inline patterns with named captures improves match accuracy
+
+**Built-in Embeds:**
+
+- `[calendar slug="slug-name"]` - Calendar collection with upcoming events
+- `[gallery slug="slug-name"]` - Gallery collection with images, videos, and external media
+
+**Validation (Module Initialization):**
+
+Registry validation runs when `src/user/extensions/embeds/index.ts` loads:
+
+1. **Duplicate ID Detection** - Throws error if two embeds have same `id`
+2. **Duplicate Shortcode Detection** - Throws error if two embeds have same `shortcode`
+3. **Pattern Validation** - Throws error if pattern lacks global `g` flag
+4. **Pattern Overlap Warnings** - Warns (doesn't fail) if patterns might overlap
+
+Example error:
+
+```
+Embed ID conflict: duplicate ID 'my-embed' registered twice.
+First: my-embed (plugin: my-plugin),
+Second: my-embed (plugin: other-plugin).
+Embed IDs must be unique. Disable one embed or rename it.
+```
+
+**Render Error Handling:**
+
+If `render()` throws an error:
+
+- Error is logged with extension ID and plugin name
+- Original shortcode is left in the rendered output (graceful degradation)
+- Next embed extension continues processing
+- Page does not fail
+
+Example logging:
+
+```
+Embed extension my-embed (plugin: my-plugin) failed to render shortcode: [error message]
+```
+
+## Extension Helpers
+
+All extensions receive `ExtensionHelpers` for accessing core services:
+
+```typescript
+interface ExtensionHelpers {
+  auth: typeof import('@/auth').auth;
+  getDb: typeof import('@/db').getDb;
+  verifyAdmin: typeof import('@/lib/auth-helpers').verifyAdmin;
+}
+```
+
+**Available in:**
+
+- `PublicRouteExtension.handle()` - Full helpers (database writes allowed)
+- `PublicRouteExtension.match()` - Same helpers but should only read
+- `EmbedExtensionConfig.render()` - Full helpers
+
+## Runtime Settings & Plugin Enablement
+
+Plugins are enabled/disabled via `site_settings` table with key pattern:
+
+```
+plugin:<plugin-id>:enabled
+```
+
+Extensions check enablement using:
+
+```typescript
+const enabled = await isPluginEnabled('plugin-id');
+if (!enabled) {
+  return null; // Decline to handle
+}
+```
+
+**Enablement Checks Happen At:**
+
+- Public route dispatcher: before Phase 1 matching
+- Embed processor: before processing matches
+- Admin pages: before loading component
+
+Disabled extensions are skipped entirely and their handlers never execute.
+
+## Dependency Injection Pattern
+
+For testing purposes, core functions are split:
+
+**Public Routes:**
+
+```typescript
+// Core function (testable via dependency injection)
+async function dispatchPublicRoute(
+  pathname: string,
+  request: NextRequest,
+  dependencies: PublicRouteDispatcherDependencies
+): Promise<PublicRouteResolution>;
+
+// Production wrapper (supplies real dependencies)
+export async function resolvePublicRouteExtension(
+  pathname: string,
+  request: NextRequest
+): Promise<PublicRouteResolution>;
+```
+
+Tests can inject mock extensions, mock databases, and verify behavior directly.
+
+**Embeds:**
+
+```typescript
+// Core function (testable via dependency injection)
+async function processEmbeds(
+  content: string,
+  dependencies: EmbedProcessorDependencies
+): Promise<string>;
+
+// Production wrapper (supplies real dependencies)
+export async function parseMarkdownWithEmbeds(content: string): Promise<string>;
+```
+
+Tests create real embed extensions and verify transformations.
+
+## Implementation Pattern
+
+### Creating a Public Route Extension
+
+1. **Define the extension:**
+
+```typescript
+import type { PublicRouteExtension } from '@core/types/extensions.server';
+import type { PublicRouteMatchContext } from '@core/lib/public-route-match-context.server';
+
+export const myRouteExtensions: PublicRouteExtension[] = [
+  {
+    pluginId: 'my-plugin',
+    id: 'my-route-handler',
+    // Phase 1: Side-effect-free matching
+    match: async (pathname, request, context) => {
+      // Check if path matches your pattern
+      if (!pathname.startsWith('/my-pattern')) {
+        return null;
+      }
+
+      // Read-only database access is OK
+      const db = context.db;
+      const exists = await db.query('SELECT COUNT(*) FROM my_table');
+
+      // Return opaque match state that handle() will receive
+      return { pathname, timestamp: Date.now() };
+    },
+    // Phase 3: Handle (only if match returned non-null and no conflicts)
+    handle: async (match, request, helpers) => {
+      // Database writes are allowed here
+      const db = helpers.getDb();
+      // ... do work ...
+      return new Response('content');
+    },
+  },
+];
+```
+
+2. **Register in the public-routes registry:**
+
+```typescript
+// src/user/extensions/public-routes/index.ts
+import { myRouteExtensions } from '@/plugins/my-plugin/extensions';
+
+export const publicRouteExtensions: PublicRouteExtension[] = [
+  ...myRouteExtensions,
+  // ... other extensions ...
+];
+```
+
+3. **Used automatically by middleware:**
+
+The middleware calls `resolvePublicRouteExtension()` automatically.
+
+### Creating an Embed Extension
+
+1. **Define the embed:**
+
+```typescript
+import type { EmbedExtensionConfig } from '@core/types/extensions.server';
+
+export const myEmbeds: EmbedExtensionConfig[] = [
+  {
+    pluginId: 'my-plugin',
+    id: 'my-embed-type',
+    shortcode: 'mytype', // Unique shortcode name
+    pattern: /\[mytype\s+([^\]]+)\]/g, // Global flag required
+    render: async (match, content, helpers) => {
+      const arg = match[1];
+      const html = `<div>${arg}</div>`;
+      return html;
+    },
+  },
+];
+```
+
+2. **Register in the embeds registry:**
+
+```typescript
+// src/user/extensions/embeds/index.ts
+import { myEmbeds } from '@/plugins/my-plugin/extensions';
+
+export const embedExtensions: EmbedExtensionConfig[] = [
+  ...calendarEmbeds,
+  ...galleryEmbeds,
+  ...myEmbeds,
+];
+
+// Validation happens automatically on module load
+validateEmbedExtensions(embedExtensions);
+```
+
+3. **Automatically used in content:**
+
+```typescript
+// parseMarkdownWithEmbeds() loops through embedExtensions
+const html = await parseMarkdownWithEmbeds(markdownContent);
+```
+
+## Middleware Integration
+
+The public route resolver is integrated into middleware (`middleware.ts`) with these steps:
+
+1. Check if pathname is reserved (cannot be claimed by extensions)
+2. Only handle GET and HEAD requests
+3. Call `resolvePublicRouteExtension()` for two-phase dispatch
+4. Based on `PublicRouteResolution.type`:
+   - `'match'`: return the Response immediately
+   - `'conflict'`: return 409 Conflict JSON response
+   - `'error'`: return 503 Service Unavailable
+   - `'no-match'`: call `NextResponse.next()` to continue to App Router
+5. Catch-all error handler: return 503 (should never reach here if phases 1-3 handled all cases)
+
+**Middleware Matcher Configuration:**
+
+The matcher (at end of `middleware.ts`) uses explicit path boundaries to avoid false positives:
+
+```typescript
+matcher: [
+  '/((?!(?:favicon\\.ico|robots\\.txt|sitemap\\.xml|api/|uploads/|\\.well-known/|_next/static|_next/image))[^?]*)',
+];
+```
+
+This excludes:
+
+- `/api/*` - API routes
+- `/uploads/*` - Static uploads
+- `/.well-known/*` - Well-known configuration
+- `/_next/static/*` and `/_next/image/*` - Next.js internals
+- `/favicon.ico`, `/robots.txt`, `/sitemap.xml` - Static metadata
+
+Note: Paths like `/apiary`, `/admin-panel`, `/admin-settings` are NOT excluded because the matcher uses proper path boundaries (e.g., `api/` not `api`).
+
+## Conflict Handling
+
+### Public Routes - Multi-Claim Conflicts
+
+If multiple extensions successfully match the same path in Phase 1, Phase 2 conflict detection catches this:
+
+```json
+{
+  "type": "conflict",
+  "conflictingExtensions": ["extension1 (plugin: plugin-a)", "extension2 (plugin: plugin-b)"],
+  "error": "Error: Public route conflict at /path: multiple extensions claim this path: ..."
+}
+```
+
+**Response to client:** 409 Conflict JSON
+
+**Handling in middleware:**
+
+- Dispatcher detects conflict in Phase 2
+- Error logged to console with full details
+- `NextResponse.next()` called (NOT returned as error response)
+- App Router processes request normally
+- Result: typically 404 (App Router has no match either)
+
+**Rationale:** Route conflicts must fail closed. Returning either extension's response would be ambiguous. The conflict is logged but not exposed to client (App Router attempt prevents information leak).
+
+### Embeds - Duplicate Detection
+
+Duplicate embed IDs or shortcodes are detected at module initialization (app startup):
+
+```
+Error: Embed ID conflict: duplicate ID 'my-embed' registered twice.
+First: my-embed (plugin: plugin-a),
+Second: my-embed (plugin: plugin-b).
+Embed IDs must be unique. Disable one embed or rename it.
+```
+
+```
+Error: Embed shortcode conflict: duplicate shortcode 'myshortcode' registered twice.
+First: embed1 (plugin: plugin-a),
+Second: embed2 (plugin: plugin-b).
+Shortcode names must be unique to prevent parsing ambiguity. Rename one shortcode.
+```
+
+**Startup behavior:** Startup fails immediately (prevents running with conflicting embeds).
+
+## Testing
+
+### Testing Public Routes
+
+```typescript
+import { dispatchPublicRoute } from '@core/lib/public-route-dispatcher-core.server';
+
+test('should match and handle route', async () => {
+  const mockExtensions = [
+    {
+      id: 'test-extension',
+      match: async () => ({ some: 'state' }),
+      handle: async () => new Response('ok'),
+    },
+  ];
+
+  const resolution = await dispatchPublicRoute('/test', request, {
+    extensions: mockExtensions,
+    isPluginEnabled: async () => true,
+    getReservedRoutes: () => new Set(['/admin']),
+    getHelpers: () => ({
+      /* ... */
+    }),
+  });
+
+  expect(resolution.type).toBe('match');
+  expect(resolution.response.status).toBe(200);
+});
+```
+
+### Testing Embeds
+
+```typescript
+import { processEmbeds } from '@core/lib/embed-processor-core.server';
+import { validateEmbedExtensions } from '@core/lib/embed-validation.server';
+
+test('should render embeds', async () => {
+  const embeds = [
+    {
+      id: 'test-embed',
+      shortcode: 'test',
+      pattern: /\[test:([^\]]+)\]/g,
+      render: async (match) => `<div>${match[1]}</div>`,
+    },
+  ];
+
+  validateEmbedExtensions(embeds); // Should not throw
+
+  const result = await processEmbeds('Hello [test:world]', {
+    extensions: embeds,
+    isPluginEnabled: async () => true,
+    getHelpers: () => ({
+      /* ... */
+    }),
+    parseMarkdown: (x) => x,
+  });
+
+  expect(result).toContain('<div>world</div>');
+});
+```
 
 ## Extension Types
 

@@ -123,10 +123,18 @@ export async function middleware(request: NextRequest) {
       /**
        * Error handling (fallback for unexpected errors):
        * - Error thrown during dispatcher execution
-       * - Log error, continue to App Router
+       * - Return 503 Service Unavailable to client
+       * - Log error for debugging
        */
       console.error('Unexpected public route extension error:', error);
-      // Continue to regular routing - do NOT return error response
+      return NextResponse.json(
+        {
+          error: 'Service Unavailable',
+          message: 'An unexpected error occurred while processing this request',
+          timestamp: new Date().toISOString(),
+        },
+        { status: 503 }
+      );
     }
   }
 
@@ -220,21 +228,27 @@ export const config = {
   /**
    * Middleware matcher: which paths trigger middleware execution
    *
-   * Explicit negative matcher to exclude:
-   * - API routes and Next.js internals
-   * - Static assets
-   * - Metadata routes (favicon, robots, sitemap)
-   * - Health checks and bot files
+   * Explicit path-boundary matcher that only includes paths where middleware is needed:
+   * - Plugin public routes (all paths except reserved)
+   * - Admin routes (authentication + authorization)
    *
-   * Middleware only runs for:
-   * - Public routes (where plugins can claim paths)
-   * - Admin routes (where auth/role checks are needed)
+   * Exclude using path boundaries to prevent false positives:
+   * - /api/* (exact path boundary with /)
+   * - /_next/static/* and /_next/image/* (exact boundaries)
+   * - /uploads/* (exact boundary)
+   * - /.well-known/* (exact boundary)
+   * - Static files: /favicon.ico, /robots.txt, /sitemap.xml (exact matches)
+   * - RSC and prefetch requests (handled by Next.js before middleware)
+   *
+   * This ensures paths like /apiary or /admin-panel are not incorrectly excluded.
    */
   matcher: [
     /**
-     * Include all paths except known static/internal routes
-     * Using negative lookahead to exclude specific patterns
+     * Match all paths EXCEPT:
+     * 1. Exact static files: favicon.ico, robots.txt, sitemap.xml
+     * 2. Framework paths with boundaries: _next/static, _next/image
+     * 3. Paths with explicit boundaries: /api/*, /uploads/*, /.well-known/*
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.well-known|uploads).*)',
+    '/((?!(?:favicon\\.ico|robots\\.txt|sitemap\\.xml|api/|uploads/|\\.well-known/|_next/static|_next/image))[^?]*)',
   ],
 };

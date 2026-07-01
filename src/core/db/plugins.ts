@@ -97,7 +97,11 @@ export async function getPluginState(pluginId: string): Promise<PluginRuntimeSta
   });
 }
 
-export async function isPluginEnabled(pluginId: string): Promise<boolean> {
+export async function isPluginEnabled(pluginId: string | undefined): Promise<boolean> {
+  // Core extensions (no pluginId) are always enabled
+  if (!pluginId) {
+    return true;
+  }
   const state = await getPluginState(pluginId);
   return state?.isEnabled ?? false;
 }

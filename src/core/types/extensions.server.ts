@@ -1,6 +1,10 @@
 import type { Metadata } from 'next';
 import type { NextRequest } from 'next/server';
 import type React from 'react';
+import type { PublicRouteMatchContext } from '@core/lib/public-route-match-context.server';
+
+// Re-export for convenience
+export type { PublicRouteMatchContext };
 
 export interface ExtensionHelpers {
   auth: typeof import('@/auth').auth;
@@ -75,17 +79,6 @@ export interface RobotsExtension {
   id: string;
   pluginId?: string;
   getRules: (helpers: ExtensionHelpers) => Promise<string[]> | string[];
-}
-
-/**
- * Context for public route matching
- * Passed to match() phase to identify route ownership
- */
-export interface PublicRouteMatchContext {
-  /** Reserved routes that cannot be claimed by plugins */
-  reservedRoutes: Set<string>;
-  /** Helpers for reading settings, database, etc. (read-only) */
-  helpers: ExtensionHelpers;
 }
 
 /**

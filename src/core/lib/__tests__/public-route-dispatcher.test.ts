@@ -53,25 +53,29 @@ describe('PublicRouteDispatcher - Two-Phase Contract', () => {
       const matchSpy = vi.fn().mockResolvedValue(null);
       const handleSpy = vi.fn();
 
-      // Mock extension
-      const extension: PublicRouteExtension = {
+      // Mock extension (type check - not used in this test structure)
+      // Real integration tests will inject and execute these extensions
+      void {
         id: 'test-extension',
         pluginId: 'test-plugin',
         match: matchSpy,
         handle: handleSpy,
-      };
+      } as unknown as PublicRouteExtension;
 
       // Override the public routes registry (via vi.mock doesn't work well here)
       // Instead, we test the dispatcher logic directly
 
       // Since we can't easily mock the registry, verify the types compile
       const testContext: PublicRouteMatchContext = {
-        reservedRoutes: new Set(['/admin', '/api']),
-        helpers: {
-          auth: vi.fn(),
-          getDb: vi.fn(),
-          verifyAdmin: vi.fn(),
-        },
+        reservedRoutes: new Set(['/admin', '/api']) as ReadonlySet<string>,
+        db: {
+          query: vi.fn(),
+          selectFrom: vi.fn(),
+        } as unknown as import('@core/lib/public-route-match-context.server').ReadOnlyDatabaseAccessor,
+        settings: {
+          get: vi.fn(),
+          getAll: vi.fn(),
+        } as unknown as import('@core/lib/public-route-match-context.server').ReadOnlySettingsAccessor,
       };
 
       expect(testContext).toBeDefined();
