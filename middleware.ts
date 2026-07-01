@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { auth as authConfig } from '@/config/env';
-import { resolvePublicRouteExtension } from '@core/lib/extensions.server';
+import { resolvePublicRouteExtension } from '@core/lib/public-route-dispatcher.server';
 
 // Cookie name must match auth.ts configuration
 const COOKIE_NAME =
@@ -57,6 +57,13 @@ export async function middleware(request: NextRequest) {
    * Only check paths that are NOT admin/api/static.
    * These paths would normally go to App Router (dev pages or CMS).
    * Extensions get a chance to claim them first.
+   *
+   * Possible outcomes:
+   * - match: Extension claimed the path, return its response
+   * - no-match: No extension claimed, continue to App Router
+   * - conflict: Multiple extensions claimed same path, fail closed (no response, App Router 404s)
+   * - error: Extension error during matching, continue to App Router
+   * - reserved-route: Path is protected from plugins, continue to App Router
    */
   if (
     !pathname.startsWith('/admin') &&
@@ -64,21 +71,61 @@ export async function middleware(request: NextRequest) {
     !pathname.startsWith('/static')
   ) {
     try {
-      const response = await resolvePublicRouteExtension(pathname, request);
-      if (response) {
-        return response;
+      const resolution = await resolvePublicRouteExtension(pathname, request);
+
+      switch (resolution.type) {
+        case 'match':
+          // Extension claimed the path successfully
+          return resolution.response;
+
+        case 'conflict':
+          // Multiple extensions claimed same path - fail closed with explicit error
+          // This is a server configuration error, not a 404
+          // Return 409 Conflict response
+          console.error('Public route conflict detected:', {
+            pathname,
+            conflictingExtensions: resolution.conflictingExtensions,
+            error: resolution.error.message,
+          });
+          return new NextResponse(
+            JSON.stringify({
+              error: 'Route Configuration Conflict',
+              message: `Multiple plugin routes claimed the same path: ${pathname}. This is a server configuration error.`,
+              conflictingExtensions: resolution.conflictingExtensions,
+            }),
+            {
+              status: 409,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+
+        case 'error':
+          // Dispatcher encountered an error during dispatch (e.g., database failure)
+          // Return 503 Service Unavailable
+          console.error('Public route dispatcher error:', resolution.error);
+          return new NextResponse(
+            JSON.stringify({
+              error: 'Service Unavailable',
+              message: 'Route resolution service temporarily unavailable',
+            }),
+            {
+              status: 503,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          );
+          break;
+
+        case 'no-match':
+          // No extension claimed this path, continue to App Router
+          break;
       }
     } catch (error) {
       /**
-       * Error handling:
-       * - Conflict (multiple extensions claimed): log error, DON'T return response
-       * - Extension threw exception: log error, continue
-       * - Database unavailable: caught by extension, logged, continue
-       *
-       * In all error cases, middleware continues with NextResponse.next()
-       * so App Router can still serve dev pages or CMS content.
+       * Error handling (fallback for unexpected errors):
+       * - Error thrown during dispatcher execution
+       * - Log error, continue to App Router
        */
-      console.error('Public route extension error:', error);
+      console.error('Unexpected public route extension error:', error);
       // Continue to regular routing - do NOT return error response
     }
   }
@@ -170,11 +217,24 @@ export async function middleware(request: NextRequest) {
  * The middleware sees the original URL, not the RSC fetch suffix.
  */
 export const config = {
+  /**
+   * Middleware matcher: which paths trigger middleware execution
+   *
+   * Explicit negative matcher to exclude:
+   * - API routes and Next.js internals
+   * - Static assets
+   * - Metadata routes (favicon, robots, sitemap)
+   * - Health checks and bot files
+   *
+   * Middleware only runs for:
+   * - Public routes (where plugins can claim paths)
+   * - Admin routes (where auth/role checks are needed)
+   */
   matcher: [
     /**
-     * Match all paths
-     * Next.js excludes metadata routes automatically
+     * Include all paths except known static/internal routes
+     * Using negative lookahead to exclude specific patterns
      */
-    '/:path*',
+    '/((?!api|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.well-known|uploads).*)',
   ],
 };

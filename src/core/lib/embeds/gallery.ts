@@ -99,13 +99,15 @@ async function renderGalleryEmbed(slug: string) {
 /**
  * Gallery collection embed
  *
- * Pattern: /^\[gallery\s+([^\]]+)\]$/
+ * Pattern: /\[gallery\s+([^\]]+)\]/g
  * Example: [gallery slug="my-gallery"]
  */
 export const galleryEmbeds: EmbedExtensionConfig[] = [
   {
     id: 'gallery-embed',
-    pattern: /^\[gallery\s+([^\]]+)\]$/,
+    pluginId: 'gallery',
+    shortcode: 'gallery',
+    pattern: /\[gallery\s+([^\]]+)\]/g,
     render: async (match) => {
       // Parse attributes from shortcode
       const attrs: Record<string, string> = {};

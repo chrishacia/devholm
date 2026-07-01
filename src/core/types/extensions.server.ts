@@ -118,15 +118,17 @@ export interface PublicRouteExtension {
  * Supports custom embed types like galleries, calendars, forms, etc.
  *
  * Example:
- * - Shortcode: [gallery:my-gallery]
- * - Pattern match: /^\[gallery:([^\]]+)\]$/
+ * - Shortcode: [gallery slug="my-gallery"]
+ * - Pattern: /\[gallery\s+([^\]]+)\]/g
  * - render: async (match, helpers) => <html for gallery>
  */
 export interface EmbedExtensionConfig {
   pluginId?: string;
   /** Unique ID for this embed type (e.g., 'calendar-embed', 'gallery-embed') */
   id: string;
-  /** Regex to match the shortcode pattern, e.g., /^\[gallery:([^\]]+)\]$/ */
+  /** Shortcode name/identifier (e.g., 'calendar', 'gallery') for conflict detection */
+  shortcode: string;
+  /** Regex to match the shortcode pattern, e.g., /\[gallery\s+([^\]]+)\]/g */
   pattern: RegExp;
   /**
    * Async function to render the embed shortcode.

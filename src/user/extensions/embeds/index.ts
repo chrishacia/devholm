@@ -55,13 +55,21 @@ export const embedExtensions: EmbedExtensionConfig[] = [
 /**
  * Validate embed registry at initialization
  * - Check for duplicate IDs
- * - Log detailed error identifying both duplicates
- * - Fail startup if duplicates found (prevent silent issues)
+ * - Check for duplicate shortcode names
+ * - Check for overlapping patterns (can cause silent conflicts)
+ * - Log detailed errors identifying both conflicting entries
+ * - Fail startup if conflicts found (prevent silent issues)
  */
 function validateEmbedRegistry() {
   const seenIds = new Map<string, EmbedExtensionConfig>();
+  const seenShortcodes = new Map<string, EmbedExtensionConfig>();
+  const patterns: Array<{
+    embed: EmbedExtensionConfig;
+    pattern: RegExp;
+  }> = [];
 
   for (const embed of embedExtensions) {
+    // Check for duplicate IDs
     if (seenIds.has(embed.id)) {
       const first = seenIds.get(embed.id)!;
       const errorMessage =
@@ -73,6 +81,61 @@ function validateEmbedRegistry() {
       throw new Error(errorMessage);
     }
     seenIds.set(embed.id, embed);
+
+    // Check for duplicate shortcodes
+    if (seenShortcodes.has(embed.shortcode)) {
+      const first = seenShortcodes.get(embed.shortcode)!;
+      const errorMessage =
+        `Embed shortcode conflict: duplicate shortcode '${embed.shortcode}' registered twice. ` +
+        `First: ${first.id} (plugin: ${first.pluginId || 'core'}), ` +
+        `Second: ${embed.id} (plugin: ${embed.pluginId || 'core'}). ` +
+        `Shortcode names must be unique to prevent parsing ambiguity. Rename one shortcode.`;
+      console.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+    seenShortcodes.set(embed.shortcode, embed);
+
+    // Check pattern validity (must have global flag)
+    if (!embed.pattern.global) {
+      const errorMessage =
+        `Embed pattern error: pattern for '${embed.id}' (plugin: ${embed.pluginId || 'core'}) ` +
+        `does not have global flag. Pattern: ${embed.pattern.source}. ` +
+        `All patterns must have 'g' flag for inline matching. Use /\\[...\\]/g instead of /^\\[...\\]$/.`;
+      console.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    patterns.push({ embed, pattern: embed.pattern });
+  }
+
+  /**
+   * Pattern overlap detection (warns but doesn't fail startup)
+   * Two patterns can coexist if they have distinct literal prefixes
+   * Example: /\[calendar:/ and /\[gallery:/ are safe
+   * Example: /\[(\w+):/ and /\[calendar:/ would overlap
+   * This is approximate - detailed regex analysis would be more thorough
+   */
+  for (let i = 0; i < patterns.length; i++) {
+    for (let j = i + 1; j < patterns.length; j++) {
+      const { embed: embed1, pattern: pattern1 } = patterns[i];
+      const { embed: embed2, pattern: pattern2 } = patterns[j];
+
+      // Simple heuristic: both start with \[ so they could overlap
+      // This catches most real conflicts
+      if (
+        pattern1.source.includes('[') &&
+        pattern2.source.includes('[') &&
+        !pattern1.source.includes('|') &&
+        !pattern2.source.includes('|')
+      ) {
+        // Could potentially overlap - issue warning
+        console.warn(
+          `Embed pattern overlap warning: ${embed1.id} (plugin: ${embed1.pluginId || 'core'}) ` +
+            `and ${embed2.id} (plugin: ${embed2.pluginId || 'core'}) have similar bracket patterns. ` +
+            `This may cause unexpected behavior. Patterns: ${pattern1.source} vs ${pattern2.source}`
+        );
+      }
+    }
   }
 }
 

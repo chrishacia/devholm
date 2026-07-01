@@ -36,33 +36,51 @@ export async function parseMarkdownWithEmbeds(content: string) {
       continue;
     }
 
-    const regex = extension.pattern;
+    // Collect all matches from current transformed content
+    let matches: RegExpExecArray[] = [];
+    try {
+      // Pattern must be global to use matchAll
+      if (!extension.pattern.global) {
+        console.warn(
+          `Embed extension ${extension.id} (plugin ${extension.pluginId || 'core'}) has non-global pattern. ` +
+            `Patterns must have 'g' flag to match multiple occurrences.`
+        );
+        continue;
+      }
 
-    // Process all matches for this extension
-    // Note: Using exec() with regex.lastIndex would be more efficient for multiple matches
-    // but pattern reset is handled by creating fresh regex or using matchAll
-    const matches = [...content.matchAll(regex)];
-    for (const matchResult of matches) {
+      matches = Array.from(transformed.matchAll(extension.pattern));
+    } catch (error) {
+      /**
+       * Pattern matching error (e.g., invalid regex)
+       * Log and skip this extension
+       */
+      console.error(
+        `Embed extension ${extension.id} (plugin ${extension.pluginId || 'core'}) pattern error:`,
+        error
+      );
+      continue;
+    }
+
+    // Replace matches in reverse order to maintain correct indices
+    // Process from end to start so earlier replacements don't shift positions
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const matchResult = matches[i];
       try {
         const html = await extension.render(matchResult, content, helpers);
-        if (html) {
-          transformed = transformed.replace(matchResult[0], html);
-        } else {
-          // Render returned null - leave shortcode as-is
-          // This could mean: not found, not enabled, or intentional fallback
+        if (html !== null) {
+          // Safe replacement: use index positions to avoid double-replacements
+          const before = transformed.substring(0, matchResult.index!);
+          const after = transformed.substring(matchResult.index! + matchResult[0].length);
+          transformed = before + html + after;
         }
+        // If render returns null, leave shortcode as-is by not modifying transformed
       } catch (error) {
         /**
          * Broken embed handler:
          * - Extension.render() threw an error
          * - Log error for debugging
-         * - Leave original shortcode in output
-         * - Continue processing other embeds
-         *
-         * Examples:
-         * - Database error when loading related data
-         * - Invalid shortcode attributes
-         * - Permission check failed
+         * - Leave original shortcode in output (no modification)
+         * - Continue with next match
          */
         console.error(
           `Embed extension ${extension.id} (plugin ${extension.pluginId || 'core'}) failed to render shortcode:`,

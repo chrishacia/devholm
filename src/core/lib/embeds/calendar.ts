@@ -97,13 +97,15 @@ async function renderCalendarEmbed(slug: string) {
 /**
  * Calendar collection embed
  *
- * Pattern: /^\[calendar\s+([^\]]+)\]$/
+ * Pattern: /\[calendar\s+([^\]]+)\]/g
  * Example: [calendar slug="my-calendar"]
  */
 export const calendarEmbeds: EmbedExtensionConfig[] = [
   {
     id: 'calendar-embed',
-    pattern: /^\[calendar\s+([^\]]+)\]$/,
+    pluginId: 'calendar',
+    shortcode: 'calendar',
+    pattern: /\[calendar\s+([^\]]+)\]/g,
     render: async (match) => {
       // Parse attributes from shortcode
       const attrs: Record<string, string> = {};
