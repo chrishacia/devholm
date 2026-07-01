@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { auth as authConfig } from '@/config/env';
+import { resolvePublicRouteExtension } from '@core/lib/extensions.server';
 
 // Cookie name must match auth.ts configuration
 const COOKIE_NAME =
@@ -9,6 +10,24 @@ const COOKIE_NAME =
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Check for public route extensions (redirects, dynamic pages, etc.)
+  // This runs before dev pages and CMS pages, allowing plugins to intercept routes
+  if (
+    !pathname.startsWith('/admin') &&
+    !pathname.startsWith('/api') &&
+    !pathname.startsWith('/static')
+  ) {
+    try {
+      const response = await resolvePublicRouteExtension(pathname, request);
+      if (response) {
+        return response;
+      }
+    } catch (error) {
+      // Log conflicts but continue to regular routing
+      console.error('Public route extension error:', error);
+    }
+  }
 
   // Skip auth check for login page
   if (pathname === '/admin/login') {
@@ -57,5 +76,14 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/:path*'],
+  // Exclude Next.js internals, static files, and API documentation
+  negative: [
+    '/_next',
+    '/favicon.ico',
+    '/robots.txt',
+    '/sitemap.xml',
+    '/public/:path*',
+    '/.well-known/:path*',
+  ],
 };

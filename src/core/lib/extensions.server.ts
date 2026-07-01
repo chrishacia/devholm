@@ -10,12 +10,14 @@ import type {
   ApiExtensionMethod,
   ExtensionHelpers,
   MetadataExtension,
+  PublicRouteExtension,
   RobotsExtension,
   SitemapExtension,
   StructuredDataExtension,
 } from '@core/types/extensions.server';
 import { adminPageExtensions } from '@user/extensions/admin/pages';
 import { apiExtensions } from '@user/extensions/api';
+import { publicRouteExtensions } from '@user/extensions/public-routes';
 import {
   metadataExtensions,
   robotsExtensions,
@@ -72,12 +74,26 @@ export async function getAdminPageComponent(slug: string[]): Promise<React.Compo
     return null;
   }
 
+  // Enforce plugin enablement check
+  if (!(await isExtensionEnabled(extension.pluginId))) {
+    return null;
+  }
+
   const loadedModule = await extension.loadPage();
   return hasDefaultExport(loadedModule) ? loadedModule.default : loadedModule;
 }
 
 export async function getAdminPageMetadata(slug: string[]): Promise<Metadata | undefined> {
   const extension = resolveAdminPageExtension(slug);
+  if (!extension) {
+    return undefined;
+  }
+
+  // Enforce plugin enablement check
+  if (!(await isExtensionEnabled(extension.pluginId))) {
+    return undefined;
+  }
+
   return extension?.getMetadata ? extension.getMetadata() : undefined;
 }
 
@@ -200,4 +216,66 @@ export async function runApiExtension(
     params: { path },
     helpers: getExtensionHelpers(),
   });
+}
+
+/**
+ * Resolve a public route extension for the given pathname.
+ * Checks extensions in order and detects conflicts (multiple matches).
+ *
+ * Route precedence (enforced in the caller):
+ * 1. Next.js specific routes (api, admin, assets, etc.)
+ * 2. DevHolm dev pages (from devPageDefinitions)
+ * 3. Plugin public routes (matched in registration order) <- This function
+ * 4. CMS pages (single-segment slugs only)
+ * 5. 404
+ *
+ * @throws Error if multiple extensions claim the same path (conflict detection)
+ * @returns Response from claiming extension, or null if no match
+ */
+export async function resolvePublicRouteExtension(
+  pathname: string,
+  request: NextRequest
+): Promise<Response | null> {
+  const helpers = getExtensionHelpers();
+  const matches: PublicRouteExtension[] = [];
+
+  // Check each enabled extension in order
+  for (const extension of publicRouteExtensions) {
+    if (!(await isExtensionEnabled(extension.pluginId))) {
+      continue;
+    }
+
+    try {
+      const response = await extension.claimPath(pathname, request, helpers);
+      if (response) {
+        matches.push(extension);
+      }
+    } catch (error) {
+      console.error(
+        `Extension ${extension.id} (plugin ${extension.pluginId || 'core'}) failed to claim path ${pathname}:`,
+        error
+      );
+      // Continue to next extension on error
+    }
+  }
+
+  // Detect conflicts: multiple extensions claimed the same path
+  if (matches.length > 1) {
+    const matchIds = matches.map((m) => `${m.id} (${m.pluginId || 'core'})`).join(', ');
+    console.error(
+      `Public route conflict detected at ${pathname}: multiple extensions matched: ${matchIds}`
+    );
+    throw new Error(`Route conflict at ${pathname}: ${matchIds}`);
+  }
+
+  if (matches.length === 1) {
+    // Return response from the claiming extension
+    return (
+      (await publicRouteExtensions
+        .find((e) => e === matches[0])
+        ?.claimPath(pathname, request, helpers)) ?? null
+    );
+  }
+
+  return null;
 }
