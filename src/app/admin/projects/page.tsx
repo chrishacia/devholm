@@ -130,6 +130,8 @@ export default function ProjectsListPage() {
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [imageBrowserOpen, setImageBrowserOpen] = useState(false);
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
+  const [isImageDropActive, setIsImageDropActive] = useState(false);
+  const [isImageUploading, setIsImageUploading] = useState(false);
   const [isReordering, setIsReordering] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -147,7 +149,6 @@ export default function ProjectsListPage() {
     liveUrl: '',
     isFeatured: false,
     isPrivate: false,
-    sortOrder: 0,
     technologies: '',
   });
 
@@ -212,7 +213,6 @@ export default function ProjectsListPage() {
         liveUrl: project.liveUrl || '',
         isFeatured: project.isFeatured,
         isPrivate: project.isPrivate,
-        sortOrder: project.sortOrder,
         technologies: project.technologies.join(', '),
       });
     } else {
@@ -226,7 +226,6 @@ export default function ProjectsListPage() {
         liveUrl: '',
         isFeatured: false,
         isPrivate: false,
-        sortOrder: 0,
         technologies: '',
       });
     }
@@ -342,15 +341,18 @@ export default function ProjectsListPage() {
   };
 
   const syncProjectOrder = async (nextProjects: Project[]) => {
-    const normalizedProjects = normalizeProjectOrder(nextProjects);
-    setProjects(normalizedProjects);
+    const orderedProjects = nextProjects.map((project, index) => ({
+      ...project,
+      sortOrder: index,
+    }));
+    setProjects(orderedProjects);
     setIsReordering(true);
 
     try {
       const response = await fetch('/api/admin/projects', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderedIds: normalizedProjects.map((project) => project.id) }),
+        body: JSON.stringify({ orderedIds: orderedProjects.map((project) => project.id) }),
       });
 
       if (!response.ok) {
@@ -371,19 +373,9 @@ export default function ProjectsListPage() {
     }
   };
 
-  const handleManualSortOrderChange = async (projectId: string, nextSortOrder: number) => {
-    const currentIndex = projects.findIndex((project) => project.id === projectId);
-    if (currentIndex === -1) return;
-
-    const nextProjects = projects.slice();
-    const [movedProject] = nextProjects.splice(currentIndex, 1);
-    const targetIndex = Math.max(0, Math.min(nextSortOrder, nextProjects.length));
-    nextProjects.splice(targetIndex, 0, movedProject);
-
-    await syncProjectOrder(nextProjects);
-  };
-
-  const handleDragStart = (projectId: string) => {
+  const handleDragStart = (event: ReactDragEvent<HTMLTableRowElement>, projectId: string) => {
+    event.dataTransfer.setData('text/plain', projectId);
+    event.dataTransfer.effectAllowed = 'move';
     setDraggedProjectId(projectId);
   };
 
@@ -411,6 +403,63 @@ export default function ProjectsListPage() {
 
     setDraggedProjectId(null);
     await syncProjectOrder(nextProjects);
+  };
+
+  const uploadProjectImage = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setSnackbar({
+        open: true,
+        message: 'Please drop an image file',
+        severity: 'error',
+      });
+      return;
+    }
+
+    setIsImageUploading(true);
+
+    try {
+      const uploadFormData = new FormData();
+      uploadFormData.append('file', file);
+      uploadFormData.append('altText', `${projectForm.title || 'Project'} image`);
+
+      const uploadResponse = await fetch('/api/admin/media', {
+        method: 'POST',
+        body: uploadFormData,
+      });
+
+      if (!uploadResponse.ok) {
+        const data = (await uploadResponse.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error || 'Failed to upload image');
+      }
+
+      const mediaAsset = (await uploadResponse.json()) as { publicUrl?: string | null };
+      setProjectForm((prev) => ({ ...prev, imageUrl: mediaAsset.publicUrl || '' }));
+      setSnackbar({
+        open: true,
+        message: 'Image uploaded successfully',
+        severity: 'success',
+      });
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: error instanceof Error ? error.message : 'Failed to upload image',
+        severity: 'error',
+      });
+    } finally {
+      setIsImageUploading(false);
+    }
+  };
+
+  const handleImageDrop = async (event: ReactDragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsImageDropActive(false);
+
+    const file = event.dataTransfer.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    await uploadProjectImage(file);
   };
 
   const generateSlug = (title: string) => {
@@ -465,8 +514,7 @@ export default function ProjectsListPage() {
             sx={{ width: 300 }}
           />
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-            {totalProjects} total projects. Drag rows to reorder or edit Sort Order to renumber the
-            full list.
+            {totalProjects} total projects. Drag rows to reorder.
           </Typography>
         </Box>
 
@@ -517,7 +565,7 @@ export default function ProjectsListPage() {
                     key={project.id}
                     hover
                     draggable
-                    onDragStart={() => handleDragStart(project.id)}
+                    onDragStart={(event) => handleDragStart(event, project.id)}
                     onDragOver={handleDragOver}
                     onDrop={() => handleDrop(project.id)}
                     sx={{
@@ -754,23 +802,54 @@ export default function ProjectsListPage() {
                     Remove
                   </Button>
                 </Box>
+                <Box
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setIsImageDropActive(true);
+                  }}
+                  onDragLeave={() => setIsImageDropActive(false)}
+                  onDrop={handleImageDrop}
+                  sx={{
+                    mt: 1,
+                    border: 2,
+                    borderStyle: 'dashed',
+                    borderColor: isImageDropActive ? 'primary.main' : 'divider',
+                    borderRadius: 1,
+                    p: 1.5,
+                    textAlign: 'center',
+                    bgcolor: isImageDropActive ? 'action.hover' : 'transparent',
+                  }}
+                >
+                  <Typography variant="caption" color="text.secondary">
+                    {isImageUploading ? 'Uploading image...' : 'Or drop an image here to replace'}
+                  </Typography>
+                </Box>
               </Box>
             ) : (
               <Box
                 onClick={() => setImageBrowserOpen(true)}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsImageDropActive(true);
+                }}
+                onDragLeave={() => setIsImageDropActive(false)}
+                onDrop={handleImageDrop}
                 sx={{
                   border: 2,
                   borderStyle: 'dashed',
-                  borderColor: 'divider',
+                  borderColor: isImageDropActive ? 'primary.main' : 'divider',
                   borderRadius: 1,
                   p: 3,
                   textAlign: 'center',
                   cursor: 'pointer',
+                  bgcolor: isImageDropActive ? 'action.hover' : 'transparent',
                   '&:hover': { borderColor: 'primary.main' },
                 }}
               >
                 <Typography variant="body2" color="text.secondary">
-                  Click to browse or upload an image
+                  {isImageUploading
+                    ? 'Uploading image...'
+                    : 'Click to browse media, or drop an image here to upload'}
                 </Typography>
               </Box>
             )}
@@ -807,29 +886,12 @@ export default function ProjectsListPage() {
           <Box
             sx={{
               display: 'grid',
-              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' },
+              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
               gap: 2,
               mt: 2,
               alignItems: 'center',
             }}
           >
-            <TextField
-              fullWidth
-              type="number"
-              label="Sort Order"
-              value={projectForm.sortOrder}
-              onChange={(e) =>
-                setProjectForm({
-                  ...projectForm,
-                  sortOrder: parseInt(e.target.value) || 0,
-                })
-              }
-              onBlur={async () => {
-                if (!editingProject) return;
-                await handleManualSortOrderChange(editingProject.id, projectForm.sortOrder);
-              }}
-              helperText="Move one project and the rest will renumber automatically."
-            />
             <FormControlLabel
               control={
                 <Switch

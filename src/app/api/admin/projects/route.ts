@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
       liveUrl,
       isFeatured = false,
       isPrivate = false,
-      sortOrder = 0,
+      sortOrder,
       technologies = [],
     } = body;
 
@@ -131,6 +131,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const [{ count: totalCount }] = await db('projects').count('* as count');
+    const appendedSortOrder = Number(totalCount);
+    const parsedSortOrder = Number(sortOrder);
+    const requestedSortOrder = Number.isFinite(parsedSortOrder)
+      ? parsedSortOrder
+      : appendedSortOrder;
+
     // Insert project
     const [project] = await db('projects')
       .insert({
@@ -142,11 +149,11 @@ export async function POST(request: NextRequest) {
         live_url: liveUrl || null,
         is_featured: isFeatured,
         is_private: isPrivate,
-        sort_order: sortOrder,
+        sort_order: requestedSortOrder,
       })
       .returning('*');
 
-    await moveProjectToSortOrder(project.id, sortOrder);
+    await moveProjectToSortOrder(project.id, requestedSortOrder);
 
     const orderedProject = await db('projects').where('id', project.id).first();
 
