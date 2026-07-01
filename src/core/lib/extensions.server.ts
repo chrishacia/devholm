@@ -220,27 +220,49 @@ export async function runApiExtension(
 
 /**
  * Resolve a public route extension for the given pathname.
- * Checks extensions in order and detects conflicts (multiple matches).
+ * Checks extensions in order and detects conflicts (multiple successful claims).
  *
- * Route precedence (enforced in the caller):
- * 1. Next.js specific routes (api, admin, assets, etc.)
- * 2. DevHolm dev pages (from devPageDefinitions)
- * 3. Plugin public routes (matched in registration order) <- This function
- * 4. CMS pages (single-segment slugs only)
- * 5. 404
+ * IMPORTANT: This function runs at MIDDLEWARE LEVEL.
+ * Control flow (enforced in middleware.ts):
  *
- * @throws Error if multiple extensions claim the same path (conflict detection)
- * @returns Response from claiming extension, or null if no match
+ * 1. Middleware receives request
+ * 2. Public route resolution (this function) for non-admin/api/static paths
+ *    - If extension claims path (returns Response): return it immediately
+ *    - If extension throws: log error, try next extension (graceful error handling)
+ *    - If multiple extensions claim: detect conflict, throw error (fail closed)
+ *    - If no extension claims: return null, continue to App Router
+ * 3. Middleware calls NextResponse.next() -> App Router
+ * 4. App Router evaluates dev pages, CMS catch-all, 404
+ *
+ * Error handling:
+ * - Single extension throws during claimPath(): logged, next extension tried
+ * - Multiple extensions successfully claim same path: throws conflict error
+ * - Conflict error not caught by middleware: logged, NextResponse.next() called
+ * - Result: page 404 (app router finds no match either)
+ *
+ * Database availability:
+ * - If extension calls helpers.getDb() and database is down:
+ *   - Exception thrown during claimPath()
+ *   - Caught here, logged, next extension tried
+ *   - If no extension claims path, App Router proceeds
+ *   - Dev pages load without plugin data (graceful degradation)
+ *
+ * @throws Error only if multiple extensions successfully claim the same path
+ * @returns Response from claiming extension, or null if no extension claims path
  */
 export async function resolvePublicRouteExtension(
   pathname: string,
   request: NextRequest
 ): Promise<Response | null> {
   const helpers = getExtensionHelpers();
-  const matches: PublicRouteExtension[] = [];
+  const matches: {
+    extension: PublicRouteExtension;
+    response: Response;
+  }[] = [];
 
   // Check each enabled extension in order
   for (const extension of publicRouteExtensions) {
+    // Skip disabled plugins
     if (!(await isExtensionEnabled(extension.pluginId))) {
       continue;
     }
@@ -248,9 +270,17 @@ export async function resolvePublicRouteExtension(
     try {
       const response = await extension.claimPath(pathname, request, helpers);
       if (response) {
-        matches.push(extension);
+        matches.push({ extension, response });
+        // Don't break - collect all matches to detect conflicts
       }
     } catch (error) {
+      /**
+       * Extension error handling:
+       * - Extension threw during claimPath()
+       * - This is not a conflict - extension failed, didn't claim path
+       * - Log error for debugging, continue to next extension
+       * - Examples: database error, validation error, etc.
+       */
       console.error(
         `Extension ${extension.id} (plugin ${extension.pluginId || 'core'}) failed to claim path ${pathname}:`,
         error
@@ -259,23 +289,28 @@ export async function resolvePublicRouteExtension(
     }
   }
 
-  // Detect conflicts: multiple extensions claimed the same path
+  /**
+   * CONFLICT DETECTION: Multiple extensions claimed same path
+   * This is a critical error - routing is ambiguous
+   * Fail closed: throw error instead of returning either response
+   */
   if (matches.length > 1) {
-    const matchIds = matches.map((m) => `${m.id} (${m.pluginId || 'core'})`).join(', ');
-    console.error(
-      `Public route conflict detected at ${pathname}: multiple extensions matched: ${matchIds}`
-    );
-    throw new Error(`Route conflict at ${pathname}: ${matchIds}`);
+    const conflictIds = matches
+      .map((m) => `${m.extension.id} (${m.extension.pluginId || 'core'})`)
+      .join(', ');
+    const errorMessage =
+      `Public route conflict at ${pathname}: multiple extensions claimed this path: ${conflictIds}. ` +
+      `Plugin extensions must be mutually exclusive. ` +
+      `Disable one extension or refactor patterns to avoid overlap.`;
+    console.error(errorMessage);
+    throw new Error(errorMessage);
   }
 
+  // Exactly one extension claimed the path
   if (matches.length === 1) {
-    // Return response from the claiming extension
-    return (
-      (await publicRouteExtensions
-        .find((e) => e === matches[0])
-        ?.claimPath(pathname, request, helpers)) ?? null
-    );
+    return matches[0].response;
   }
 
+  // No extension claimed the path - continue to App Router
   return null;
 }

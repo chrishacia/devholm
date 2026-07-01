@@ -2,7 +2,10 @@
  * Embed extensions registry
  *
  * Combines core embeds (calendar, gallery) with plugin embeds.
- * Extensions are processed in order; first match wins.
+ * Extensions are processed in order; first matching pattern wins.
+ *
+ * VALIDATION: Duplicate embed IDs are detected at initialization.
+ * If two embeds have the same ID, a detailed error is logged identifying both.
  *
  * Example plugin embed (Phase 2 - URL Shortener):
  *
@@ -48,3 +51,38 @@ export const embedExtensions: EmbedExtensionConfig[] = [
   ...galleryEmbeds,
   ...pluginEmbeds,
 ];
+
+/**
+ * Validate embed registry at initialization
+ * - Check for duplicate IDs
+ * - Log detailed error identifying both duplicates
+ * - Fail startup if duplicates found (prevent silent issues)
+ */
+function validateEmbedRegistry() {
+  const seenIds = new Map<string, EmbedExtensionConfig>();
+
+  for (const embed of embedExtensions) {
+    if (seenIds.has(embed.id)) {
+      const first = seenIds.get(embed.id)!;
+      const errorMessage =
+        `Embed ID conflict: duplicate ID '${embed.id}' registered twice. ` +
+        `First: ${first.id} (plugin: ${first.pluginId || 'core'}), ` +
+        `Second: ${embed.id} (plugin: ${embed.pluginId || 'core'}). ` +
+        `Embed IDs must be unique. Disable one embed or rename it.`;
+      console.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+    seenIds.set(embed.id, embed);
+  }
+}
+
+// Validate on module load
+if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'production') {
+  try {
+    validateEmbedRegistry();
+  } catch (error) {
+    console.error('Embed registry validation failed:', error);
+    // Re-throw to fail startup
+    throw error;
+  }
+}

@@ -38,16 +38,58 @@ interface PublicRouteExtension {
 
 - Async path matching supports runtime settings checks
 - Returns `Response` to claim the path, or `null` to decline
-- Errors are caught and logged; extension continues if it throws
-- Conflicts (multiple matches for same path) are detected and fail the route
+- Single extension error is caught and logged; next extension tried (graceful degradation)
+- Multiple extensions claiming same path is a conflict; error thrown and logged (fail closed)
+- Disabled plugins are skipped before invoking `claimPath()`
 
-**Route Precedence** (in order):
+**Route Precedence & Control Flow**
 
-1. Next.js specific routes (`/api`, `/admin`, `/static`, etc.)
-2. DevHolm dev pages (from `devPageDefinitions`)
-3. **Plugin public routes** ← This extension type
-4. CMS pages (single-segment slugs only)
-5. 404 Not Found
+The actual control flow is determined by Next.js middleware execution order:
+
+```
+Request arrives
+  ↓
+1. Middleware runs (before App Router)
+   - Check if path excluded (/admin, /api, /static)
+   - If not excluded:
+     → Call resolvePublicRouteExtension()
+     → If extension claims path: return Response immediately
+     → If extension throws: log, try next extension
+     → If multiple claim path: throw conflict error, log, continue
+     → If no extension claims: call NextResponse.next()
+   ↓
+2. App Router processes request (if middleware called NextResponse.next())
+   - Next.js handles /api/*, /admin/*, /static/* routes
+   - Exact dev pages are evaluated (higher specificity)
+   - Catch-all [...]slug] for CMS pages
+   - 404 if no match
+```
+
+**Effective Route Precedence** (from client perspective):
+
+1. **Public route extensions** (claimed at middleware level)
+2. **Next.js specific routes** (/api/_, /admin/_, /static/\*)
+3. **DevHolm dev pages** (exact App Router routes like /blog, /calendar, etc.)
+4. **CMS pages** (single-segment slugs via catch-all)
+5. **404** Not Found
+
+**Important Implementation Details:**
+
+- Public routes run at MIDDLEWARE level, NOT in App Router
+- This means extensions execute BEFORE dev pages and CMS pages
+- Paths excluded from middleware (`/admin`, `/api`, `/static`) can never be claimed by extensions
+- Other paths (like `/blog`, `/calendar`) CAN be claimed by extensions if registered
+- If no extension claims a path, App Router runs normally - no dependency on plugin availability
+- If extension throws (database down, etc.), next extension is tried - graceful error handling
+- If multiple extensions claim same path: error logged, no response returned, App Router proceeds
+
+**Database Availability Impact:**
+
+- If extension calls `helpers.getDb()` and database is down: exception thrown during `claimPath()`
+- Exception caught in dispatcher, logged, next extension tried
+- If no extension claims path, `NextResponse.next()` called, App Router proceeds
+- Dev pages load normally without plugin data (fail safe)
+- Core DevHolm is NOT blocked by plugin database unavailability
 
 ### EmbedExtensionConfig
 
@@ -71,14 +113,42 @@ interface EmbedExtensionConfig {
 **Key Features:**
 
 - Regex pattern matching for shortcode detection
-- `render` returns HTML string or `null` (leaves shortcode as-is on error)
-- Errors are caught and logged; shortcode preserved if extension throws
-- Extensions processed in registry order; first match wins (no conflicts)
+- `render` returns HTML string or `null` (leaves shortcode as-is if render returns null)
+- Errors caught and logged; shortcode preserved if extension throws (graceful degradation)
+- Extensions processed in registry order; first matching pattern wins
+- **Duplicate embed IDs are detected at startup and cause initialization error** (fail fast)
 
 **Built-in Embeds:**
 
 - `[calendar slug="slug-name"]` - Calendar collection with upcoming events or booking types
 - `[gallery slug="slug-name"]` - Gallery collection with images, videos, and external media
+
+**Embed Conflict Handling:**
+
+Unlike public routes, embed patterns don't naturally conflict (different patterns). However, duplicate embed IDs (the unique identifier for each embed extension) ARE detected:
+
+- Registry validation runs on module load
+- If two embeds have same ID: error logged with both extension names
+- Startup fails (prevents silent duplicate registration)
+- Both extensions must have unique IDs
+
+Example error:
+
+```
+Embed ID conflict: duplicate ID 'my-embed' registered twice.
+First: my-embed (plugin: my-plugin),
+Second: my-embed (plugin: other-plugin).
+Embed IDs must be unique. Disable one embed or rename it.
+```
+
+**Render Error Handling:**
+
+If `render()` throws an error:
+
+- Error is logged with extension ID and plugin name
+- Original shortcode is left in the rendered output
+- Next embed extension continues processing
+- Page does not fail; broken embed degrades gracefully
 
 ## Extension Helpers
 
@@ -242,33 +312,103 @@ The public route resolver is integrated into middleware with this flow:
 
 ## Conflict Detection
 
-### Public Routes
+### Public Routes - Multi-Claim Conflicts
 
-If multiple extensions claim the same path, route resolution throws:
+If multiple extensions successfully claim the same path (all return Response), this is a routing conflict:
 
 ```
-Error: Route conflict at /path: extension1 (plugin-a), extension2 (plugin-b)
+Error: Public route conflict at /path: multiple extensions claimed this path:
+  extension1 (plugin-a), extension2 (plugin-b).
+Plugin extensions must be mutually exclusive.
+Disable one extension or refactor patterns to avoid overlap.
 ```
 
-This prevents ambiguous routing. Extensions must be mutually exclusive.
+**Conflict handling:**
 
-### Embeds
+- Dispatcher collects all extensions that claim the path
+- If count > 1: throw error (fail closed)
+- Error logged to console
+- Middleware catches error, logs it
+- Middleware calls `NextResponse.next()` (continues to App Router)
+- Result: page 404 (App Router also finds no match)
 
-Since embeds use regex patterns and first-match-wins, conflicts are prevented by careful pattern design. Two embeds can match the same shortcode format, but only the first in registry order is used.
+**This is intentional:** Route conflicts must fail closed. Returning either response would be ambiguous. The strict failure ensures conflicts are caught during development.
+
+### Embeds - Duplicate ID Detection
+
+Duplicate embed IDs are detected at module initialization:
+
+```
+Error: Embed ID conflict: duplicate ID 'my-embed' registered twice.
+First: my-embed (plugin: plugin-a),
+Second: my-embed (plugin: plugin-b).
+Embed IDs must be unique. Disable one embed or rename it.
+```
+
+**ID validation:**
+
+- Happens when embed registry loads (app startup)
+- Fails fast with clear error message
+- Prevents silent overwriting of embedextensions
+- Both offending embeds identified by ID and plugin
+
+**Pattern-based conflicts:**
+
+- Embeds use regex patterns, not exact paths
+- Two embeds can theoretically match same content
+- First registered pattern in registry wins (no conflict, by design)
+- Mitigated by:
+  - Clear pattern naming conventions
+  - Core calendar/gallery use distinct patterns
+  - Plugins should use unique, non-overlapping patterns
+  - Document pattern usage in plugin specs
+
+### Error Handling Distinction
+
+The dispatcher distinguishes three scenarios:
+
+1. **Single extension throws during claimPath()**
+
+   - Caught and logged
+   - Next extension tried
+   - Not a conflict, just an error
+   - Example: database query fails, validation error
+
+2. **One extension claims path successfully, another throws**
+
+   - Thrown error is logged
+   - Claiming extension's response is returned
+   - No conflict (only one successful claim)
+
+3. **Multiple extensions claim path (all return Response)**
+   - Conflict error is thrown
+   - Not caught by dispatcher (propagates to middleware)
+   - Middleware logs error and continues
+   - Fail closed: neither response used
 
 ## Error Handling
 
-### Public Routes
+### Public Routes - Single Extension Errors
 
-Extension errors are caught and logged; the next extension is tried:
+Extension errors (e.g., database unavailable) are caught and logged:
 
 ```
-Extension my-route (plugin my-plugin) failed to claim path /test: <error details>
+Extension my-route (plugin my-plugin) failed to claim path /test:
+  Error: Unable to connect to database
 ```
 
-### Embeds
+**Behavior:**
 
-Extension errors leave the shortcode as-is in the rendered output:
+- Exception caught in dispatcher
+- Error logged with extension ID and plugin name
+- Dispatcher continues to next extension
+- If no extension claims path: `NextResponse.next()` called
+- App Router proceeds normally (dev pages, CMS, 404)
+- Core functionality not blocked by plugin errors
+
+### Embeds - Render Errors
+
+Embed render errors leave the shortcode in the output:
 
 ```
 Embed extension my-embed (plugin my-plugin) failed: <error details>
