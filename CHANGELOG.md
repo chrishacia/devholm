@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 3.4.2 (2026-07-01)
+
+### Bug Fixes
+
+- **admin:** persist project drag order and image drop upload ([28c992a](https://github.com/chrishacia/devholm/commit/28c992ab4552ed49806e79e7bc473fca52a51f65))
+
 ## [3.4.1](https://github.com/chrishacia/devholm/compare/v3.4.0...v3.4.1) (2026-06-30)
 
 ### Code Refactoring
