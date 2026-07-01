@@ -1,0 +1,11 @@
+{
+  "plugins": [
+    {
+      "id": "url-shortener",
+      "version": "0.1.0",
+      "migrationDir": "src/user/extensions/plugins/url-shortener/db/migrations",
+      "productionMigrationDir": "plugins/url-shortener/migrations",
+      "seedDir": "src/user/extensions/plugins/url-shortener/db/seeds"
+    }
+  ]
+}

@@ -32,5 +32,8 @@
  */
 
 import type { PublicRouteExtension } from '@core/types/extensions.server';
+import { bundledPlugins } from '@user/extensions/plugins/registry';
 
-export const publicRouteExtensions: PublicRouteExtension[] = [];
+export const publicRouteExtensions: PublicRouteExtension[] = bundledPlugins.flatMap(
+  (plugin) => plugin.publicRouteExtensions ?? []
+);
