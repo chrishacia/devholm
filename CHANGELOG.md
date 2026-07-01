@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.0](https://github.com/chrishacia/devholm/compare/v3.5.0...v3.6.0) (2026-07-01)
+
+### Features
+
+- **updates:** enforce devholm source-of-truth sync contract ([234a874](https://github.com/chrishacia/devholm/commit/234a874809ddc0750ba5a6a34aeda6d0eb1d213f))
+
 ## [3.5.0](https://github.com/chrishacia/devholm/compare/v3.4.2...v3.5.0) (2026-07-01)
 
 ### Features
