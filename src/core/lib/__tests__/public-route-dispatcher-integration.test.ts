@@ -45,8 +45,8 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
           async get(key: string) {
             return undefined;
           },
-          async getMany(keys: string[]) {
-            return new Map();
+          async getMany(keys: readonly string[]) {
+            return {};
           },
         },
       };

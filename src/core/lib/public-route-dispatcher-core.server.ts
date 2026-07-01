@@ -10,11 +10,7 @@
 import type { NextRequest } from 'next/server';
 import type { PublicRouteExtension } from '@core/types/extensions.server';
 import type { ExtensionHelpers } from '@core/types/extensions.server';
-import type {
-  PublicRouteMatchContext,
-  ReadOnlyDatabaseAccessor,
-  ReadOnlySettingsAccessor,
-} from '@core/lib/public-route-match-context.server';
+import type { PublicRouteMatchContext } from '@core/lib/public-route-match-context.server';
 
 export interface PublicRouteDispatcherDependencies {
   extensions: PublicRouteExtension[];
