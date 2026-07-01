@@ -68,11 +68,72 @@ env:
 
 jobs:
   # ===========================================================================
+  # Change Scope Guard
+  # ===========================================================================
+  changes:
+    name: Detect Non-Docs Changes
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.filter.outputs.docs_only }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect docs-only changes
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual dispatch should always run full CI unless canceled explicitly.
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BEFORE_SHA='${{ github.event.before }}'
+          CURRENT_SHA='${{ github.sha }}'
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA='${{ github.event.pull_request.base.sha }}'
+            HEAD_SHA='${{ github.event.pull_request.head.sha }}'
+            CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          else
+            if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+              CHANGED_FILES="$(git diff-tree --no-commit-id --name-only -r "$CURRENT_SHA")"
+            else
+              CHANGED_FILES="$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA")"
+            fi
+          fi
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          NON_DOCS="$(printf '%s\n' "$CHANGED_FILES" | grep -Ev '(^docs/|\.md$|^LICENSE$|^\.gitignore$|^\.vscode/|^\.idea/|\.txt$)' || true)"
+
+          if [ -z "$NON_DOCS" ]; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Report change scope
+        run: |
+          if [ "${{ steps.filter.outputs.docs_only }}" = "true" ]; then
+            echo "Docs-only change detected. Build/test/deploy jobs will be skipped."
+          else
+            echo "Code or runtime-impacting changes detected. Full CI will run."
+          fi
+
+  # ===========================================================================
   # Lint & Type Check
   # ===========================================================================
   lint:
     name: Lint & Type Check
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

@@ -1,5 +1,9 @@
 # DevHolm
 
+<p align="center">
+  <img src="/devholm_logo.png" alt="DevHolm logo" width="180" />
+</p>
+
 [![CI/CD Pipeline](https://github.com/chrishacia/devholm/actions/workflows/ci.yml/badge.svg)](https://github.com/chrishacia/devholm/actions/workflows/ci.yml)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev/)
