@@ -1,7 +1,7 @@
 # DevHolm
 
 <p align="center">
-  <img src="/devholm_logo.png" alt="DevHolm logo" width="180" />
+  <img src="public/devholm_logo.png" alt="DevHolm logo" width="180" />
 </p>
 
 [![CI/CD Pipeline](https://github.com/chrishacia/devholm/actions/workflows/ci.yml/badge.svg)](https://github.com/chrishacia/devholm/actions/workflows/ci.yml)
