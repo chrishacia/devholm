@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.7.0](https://github.com/chrishacia/devholm/compare/v3.6.0...v3.7.0) (2026-07-02)
+
+### Features
+
+- add generic plugin public-route and embed infrastructure ([a9989e9](https://github.com/chrishacia/devholm/commit/a9989e95f3b0c3c7f7383f65fe0fc4d565c96545))
+
 ## [3.6.0](https://github.com/chrishacia/devholm/compare/v3.5.0...v3.6.0) (2026-07-01)
 
 ### Features
