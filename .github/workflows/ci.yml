@@ -440,6 +440,11 @@ jobs:
         run: pnpm db:setup
         env:
           DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
+          DATABASE_HOST: 'localhost'
+          DATABASE_PORT: '5432'
+          DATABASE_NAME: 'test'
+          DATABASE_USER: 'test'
+          DATABASE_PASSWORD: 'test'
           NEXTAUTH_URL: 'http://localhost:3000'
           NEXTAUTH_SECRET: 'test-secret'
 
@@ -447,6 +452,11 @@ jobs:
         run: pnpm test:e2e --project=chromium
         env:
           DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
+          DATABASE_HOST: 'localhost'
+          DATABASE_PORT: '5432'
+          DATABASE_NAME: 'test'
+          DATABASE_USER: 'test'
+          DATABASE_PASSWORD: 'test'
           NEXTAUTH_URL: 'http://localhost:3000'
           NEXTAUTH_SECRET: 'test-secret'
 
