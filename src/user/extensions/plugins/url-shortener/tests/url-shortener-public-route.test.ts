@@ -66,6 +66,44 @@ describe('url shortener public route extension', () => {
     expect(noMatch).toBeNull();
   });
 
+  it('rejects invalid short code shapes', async () => {
+    const dotted = await urlShortenerPublicRouteExtension.match(
+      '/s/bad.code',
+      mockRequest('/s/bad.code'),
+      {
+        reservedRoutes: new Set(['/api', '/admin']),
+        settings: {
+          get: async () => null,
+          getMany: async () => ({}),
+        },
+      }
+    );
+
+    const encodedSlash = await urlShortenerPublicRouteExtension.match(
+      '/s/abc%2F123',
+      mockRequest('/s/abc%2F123'),
+      {
+        reservedRoutes: new Set(['/api', '/admin']),
+        settings: {
+          get: async () => null,
+          getMany: async () => ({}),
+        },
+      }
+    );
+
+    const emptyPrefix = await urlShortenerPublicRouteExtension.match('/s', mockRequest('/s'), {
+      reservedRoutes: new Set(['/api', '/admin']),
+      settings: {
+        get: async () => null,
+        getMany: async () => ({}),
+      },
+    });
+
+    expect(dotted).toBeNull();
+    expect(encodedSlash).toBeNull();
+    expect(emptyPrefix).toBeNull();
+  });
+
   it('is skipped by dispatcher when plugin is disabled', async () => {
     const result = await dispatchPublicRoute('/s/abc123', mockRequest('/s/abc123'), {
       extensions: [urlShortenerPublicRouteExtension],

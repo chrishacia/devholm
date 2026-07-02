@@ -20,34 +20,80 @@ function parseVersion(input: string): { major: number; minor: number; patch: num
   return { major, minor, patch };
 }
 
-export function isVersionCompatible(currentVersion: string, expectedRange: string): boolean {
-  const expected = expectedRange.trim();
-  if (!expected || expected === '*') {
+function compareVersions(
+  left: { major: number; minor: number; patch: number },
+  right: { major: number; minor: number; patch: number }
+): number {
+  if (left.major !== right.major) {
+    return left.major - right.major;
+  }
+
+  if (left.minor !== right.minor) {
+    return left.minor - right.minor;
+  }
+
+  return left.patch - right.patch;
+}
+
+function satisfiesComparator(
+  current: ReturnType<typeof parseVersion>,
+  comparator: string
+): boolean {
+  if (!current) {
+    return false;
+  }
+
+  const trimmed = comparator.trim();
+  if (!trimmed || trimmed === '*') {
     return true;
   }
 
+  const operatorMatch = trimmed.match(/^(<=|>=|<|>|\^|~)?\s*(.+)$/u);
+  if (!operatorMatch) {
+    return false;
+  }
+
+  const operator = operatorMatch[1] ?? '';
+  const version = parseVersion(operatorMatch[2]);
+  if (!version) {
+    return false;
+  }
+
+  const comparison = compareVersions(current, version);
+
+  switch (operator) {
+    case '':
+      return comparison === 0;
+    case '^':
+      return current.major === version.major && comparison >= 0;
+    case '~':
+      return current.major === version.major && current.minor === version.minor && comparison >= 0;
+    case '>=':
+      return comparison >= 0;
+    case '<=':
+      return comparison <= 0;
+    case '>':
+      return comparison > 0;
+    case '<':
+      return comparison < 0;
+    default:
+      return false;
+  }
+}
+
+export function isVersionCompatible(currentVersion: string, expectedRange: string): boolean {
   const current = parseVersion(currentVersion);
   if (!current) {
     return false;
   }
 
-  if (expected.startsWith('^')) {
-    const min = parseVersion(expected.slice(1));
-    if (!min) {
-      return false;
-    }
-
-    return current.major === min.major;
-  }
-
-  const exact = parseVersion(expected);
-  if (!exact) {
-    return false;
-  }
-
-  return (
-    current.major === exact.major && current.minor === exact.minor && current.patch === exact.patch
-  );
+  return expectedRange
+    .split('||')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .some((part) =>
+      part.split(/\s+/u).every((comparator) => satisfiesComparator(current, comparator))
+    );
 }
 
 export function validateManifest(manifest: DevholmPluginManifest): string[] {
@@ -214,7 +260,6 @@ export function validatePackageDependenciesForManifests(
 export function validatePackageDependencies(): string[] {
   const installed = {
     ...(packageJson.dependencies ?? {}),
-    ...(packageJson.devDependencies ?? {}),
   } as Record<string, string>;
 
   return validatePackageDependenciesForManifests(getBundledPluginManifests(), installed);

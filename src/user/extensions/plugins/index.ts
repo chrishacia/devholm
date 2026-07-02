@@ -6,7 +6,7 @@ export const pluginDefinitions: DevHolmPluginDefinition[] = bundledPlugins.map((
   name: plugin.manifest.name,
   description: plugin.manifest.description,
   source: 'user',
-  enabledByDefault: true,
+  enabledByDefault: false,
   adminSurface: plugin.adminPageExtensions?.[0]
     ? {
         href: plugin.adminPageExtensions[0].href,

@@ -1,6 +1,7 @@
 import type { PublicRouteExtension } from '@core/types/extensions.server';
 import { URL_SHORTENER_PLUGIN_ID } from '@user/extensions/plugins/url-shortener/constants';
 import type { UrlShortenerMatchState } from '@user/extensions/plugins/url-shortener/types';
+import { shortCodeSchema } from '@user/extensions/plugins/url-shortener/validation/schemas';
 import {
   resolveConfiguredPrefix,
   validateRoutePrefix,
@@ -31,7 +32,7 @@ export const urlShortenerPublicRouteExtension: PublicRouteExtension<UrlShortener
     }
 
     const code = pathSegments[pathSegments.length - 1];
-    if (!code || code.includes('/')) {
+    if (!code || !shortCodeSchema.safeParse(code).success) {
       return null;
     }
 

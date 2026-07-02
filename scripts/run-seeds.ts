@@ -7,34 +7,10 @@ import path from 'path';
 
 type SeedProfile = 'all' | 'bootstrap' | 'demo' | 'user';
 
-function getPluginSeedDirs(): string[] {
-  const registryPath = path.join(
-    process.cwd(),
-    'src/user/extensions/plugins/migration-registry.json'
-  );
-  if (!fs.existsSync(registryPath)) {
-    return [];
-  }
-
-  try {
-    const raw = fs.readFileSync(registryPath, 'utf8');
-    const parsed = JSON.parse(raw) as {
-      plugins?: Array<{ seedDir?: string }>;
-    };
-    return (parsed.plugins ?? [])
-      .map((plugin) => plugin.seedDir)
-      .filter((seedDir): seedDir is string => Boolean(seedDir));
-  } catch {
-    return [];
-  }
-}
-
-const pluginSeedDirs = getPluginSeedDirs();
-
 const SEED_DIRECTORIES: Record<Exclude<SeedProfile, 'all'>, string[]> = {
   bootstrap: ['./src/core/db/seeds/bootstrap'],
   demo: ['./src/core/db/seeds/demo'],
-  user: ['./src/user/extensions/db/seeds', ...pluginSeedDirs],
+  user: ['./src/user/extensions/db/seeds'],
 };
 
 function log(message: string) {

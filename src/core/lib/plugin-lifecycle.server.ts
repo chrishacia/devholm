@@ -1,4 +1,4 @@
-import { updatePluginEnabledState } from '@/db/plugins';
+import { getDb } from '@/db';
 import {
   getInstalledPlugin,
   listInstalledPlugins,
@@ -12,6 +12,26 @@ import {
   validateBundledPluginRegistry,
 } from '@core/lib/plugin-registry.server';
 import type { DevholmPluginManifest, PluginLifecycleContext } from '@core/types/plugins';
+
+async function setPluginEnabledSetting(pluginId: string, enabled: boolean): Promise<void> {
+  const db = getDb();
+  const now = new Date();
+
+  await db('site_settings')
+    .insert({
+      key: `plugin:${pluginId}:enabled`,
+      value: enabled ? 'true' : 'false',
+      type: 'boolean',
+      category: 'plugins',
+      description: `${pluginId} plugin enabled state`,
+      updated_at: now,
+    })
+    .onConflict('key')
+    .merge({
+      value: enabled ? 'true' : 'false',
+      updated_at: now,
+    });
+}
 
 function getManifest(pluginId: string): DevholmPluginManifest {
   const manifest = getBundledPluginManifests().find((item) => item.id === pluginId);
@@ -67,25 +87,71 @@ export async function installPlugin(pluginId: string, initiatedBy?: string): Pro
 
   validateCompatibilityAndDependencies();
 
-  await upsertPluginLedgerRecord(manifest, 'pending_install', false, null);
+  await upsertPluginLedgerRecord({
+    manifest,
+    state: 'pending_install',
+    enabled: false,
+    installedAt: null,
+    upgradedAt: null,
+    disabledAt: null,
+    lastError: null,
+  });
 
   try {
     await applyPendingPluginMigrations(pluginId);
+
+    const db = getDb();
+    const now = new Date();
+
+    for (const setting of manifest.settings ?? []) {
+      const defaultValue = setting.defaultValue;
+      const storedValue =
+        defaultValue === null || defaultValue === undefined
+          ? ''
+          : typeof defaultValue === 'string'
+            ? defaultValue
+            : typeof defaultValue === 'number' || typeof defaultValue === 'boolean'
+              ? String(defaultValue)
+              : JSON.stringify(defaultValue);
+
+      await db('site_settings')
+        .insert({
+          key: setting.key,
+          value: storedValue,
+          type: setting.type,
+          category: setting.category ?? 'plugins',
+          description: setting.description ?? null,
+          updated_at: now,
+        })
+        .onConflict('key')
+        .ignore();
+    }
 
     if (manifest.lifecycle?.afterInstall) {
       await manifest.lifecycle.afterInstall(context);
     }
 
-    await upsertPluginLedgerRecord(manifest, 'enabled', true, null);
-    await updatePluginEnabledState(pluginId, true);
-  } catch (error) {
-    await upsertPluginLedgerRecord(
+    await upsertPluginLedgerRecord({
       manifest,
-      'error',
-      false,
-      error instanceof Error ? error.message : String(error)
-    );
-    await updatePluginEnabledState(pluginId, false);
+      state: 'installed',
+      enabled: false,
+      installedAt: now,
+      upgradedAt: null,
+      disabledAt: null,
+      lastError: null,
+    });
+    await setPluginEnabledSetting(pluginId, false);
+  } catch (error) {
+    await upsertPluginLedgerRecord({
+      manifest,
+      state: 'error',
+      enabled: false,
+      installedAt: null,
+      upgradedAt: null,
+      disabledAt: new Date(),
+      lastError: error instanceof Error ? error.message : String(error),
+    });
+    await setPluginEnabledSetting(pluginId, false);
     throw error;
   }
 }
@@ -93,6 +159,14 @@ export async function installPlugin(pluginId: string, initiatedBy?: string): Pro
 export async function upgradePlugin(pluginId: string, initiatedBy?: string): Promise<void> {
   const manifest = getManifest(pluginId);
   const previous = await getInstalledPlugin(pluginId);
+
+  if (
+    !previous ||
+    previous.lifecycleState === 'pending_install' ||
+    previous.lifecycleState === 'error'
+  ) {
+    throw new Error(`Cannot upgrade ${pluginId}: plugin is not successfully installed`);
+  }
 
   validateCompatibilityAndDependencies();
 
@@ -107,15 +181,20 @@ export async function upgradePlugin(pluginId: string, initiatedBy?: string): Pro
     });
   }
 
-  await upsertPluginLedgerRecord(
+  await upsertPluginLedgerRecord({
     manifest,
-    previous?.enabled ? 'enabled' : 'installed',
-    !!previous?.enabled
-  );
+    state: previous.enabled ? 'enabled' : 'installed',
+    enabled: !!previous.enabled,
+    installedAt: previous.installedAt,
+    upgradedAt: new Date(),
+    disabledAt: previous.enabled ? null : previous.disabledAt,
+    lastError: null,
+  });
 }
 
 export async function disablePlugin(pluginId: string, initiatedBy?: string): Promise<void> {
   const manifest = getManifest(pluginId);
+  const previous = await getInstalledPlugin(pluginId);
   await ensureDependentsAllowDisable(pluginId);
 
   if (manifest.lifecycle?.beforeDisable) {
@@ -126,12 +205,21 @@ export async function disablePlugin(pluginId: string, initiatedBy?: string): Pro
     });
   }
 
-  await updatePluginEnabledState(pluginId, false);
-  await upsertPluginLedgerRecord(manifest, 'disabled', false, null);
+  await setPluginEnabledSetting(pluginId, false);
+  await upsertPluginLedgerRecord({
+    manifest,
+    state: 'disabled',
+    enabled: false,
+    installedAt: previous?.installedAt ?? null,
+    upgradedAt: previous?.upgradedAt ?? null,
+    disabledAt: new Date(),
+    lastError: null,
+  });
 }
 
 export async function uninstallPlugin(pluginId: string, initiatedBy?: string): Promise<void> {
   const manifest = getManifest(pluginId);
+  const previous = await getInstalledPlugin(pluginId);
   await ensureDependentsAllowDisable(pluginId);
 
   if (manifest.lifecycle?.beforeUninstall) {
@@ -142,8 +230,16 @@ export async function uninstallPlugin(pluginId: string, initiatedBy?: string): P
     });
   }
 
-  await updatePluginEnabledState(pluginId, false);
-  await upsertPluginLedgerRecord(manifest, 'uninstalled', false, null);
+  await setPluginEnabledSetting(pluginId, false);
+  await upsertPluginLedgerRecord({
+    manifest,
+    state: 'uninstalled',
+    enabled: false,
+    installedAt: previous?.installedAt ?? null,
+    upgradedAt: previous?.upgradedAt ?? null,
+    disabledAt: new Date(),
+    lastError: null,
+  });
 }
 
 export async function purgePlugin(pluginId: string, initiatedBy?: string): Promise<void> {

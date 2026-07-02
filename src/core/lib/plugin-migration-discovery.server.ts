@@ -35,6 +35,18 @@ export function loadPluginMigrationRegistry(registryPath: string): PluginRegistr
   return Array.isArray(parsed.plugins) ? parsed.plugins : [];
 }
 
+export function resolvePluginRegistryPath(rootDir: string): string | null {
+  const candidatePaths = [
+    path.join(rootDir, 'generated/plugins/registry.json'),
+    path.join(rootDir, 'generated/plugins/migration-registry.json'),
+    path.join(rootDir, 'plugins/registry.json'),
+    path.join(rootDir, 'plugins/migration-registry.json'),
+    path.join(rootDir, 'src/user/extensions/plugins/migration-registry.json'),
+  ];
+
+  return candidatePaths.find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
 export function resolvePluginMigrationDir(
   rootDir: string,
   entry: PluginRegistryEntry
@@ -97,10 +109,20 @@ export function ensureChecksumsUnchanged(
   migrations: readonly PluginMigrationFile[],
   applied: ReadonlyMap<string, string>
 ): void {
+  const discoveredIds = new Set(migrations.map((migration) => migration.migrationId));
+
   for (const migration of migrations) {
     const existing = applied.get(migration.migrationId);
     if (existing && existing !== migration.checksum) {
       throw new Error(`Checksum mismatch for already-applied migration ${migration.migrationId}`);
+    }
+  }
+
+  for (const appliedMigrationId of applied.keys()) {
+    if (!discoveredIds.has(appliedMigrationId)) {
+      throw new Error(
+        `Previously applied migration is missing from manifest: ${appliedMigrationId}`
+      );
     }
   }
 }

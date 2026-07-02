@@ -1,37 +1,4 @@
 require('dotenv').config();
-const fs = require('fs');
-const path = require('path');
-
-function loadPluginRegistry() {
-  const registryPath = path.join(__dirname, 'src/user/extensions/plugins/migration-registry.json');
-  if (!fs.existsSync(registryPath)) {
-    return { plugins: [] };
-  }
-
-  try {
-    const raw = fs.readFileSync(registryPath, 'utf8');
-    return JSON.parse(raw);
-  } catch {
-    return { plugins: [] };
-  }
-}
-
-function getPluginMigrationDirectories() {
-  const registry = loadPluginRegistry();
-  return (registry.plugins || [])
-    .map((plugin) => plugin.migrationDir)
-    .filter((dir) => typeof dir === 'string' && fs.existsSync(path.join(__dirname, dir)));
-}
-
-function getPluginSeedDirectories() {
-  const registry = loadPluginRegistry();
-  return (registry.plugins || [])
-    .map((plugin) => plugin.seedDir)
-    .filter((dir) => typeof dir === 'string' && fs.existsSync(path.join(__dirname, dir)));
-}
-
-const pluginMigrationDirectories = getPluginMigrationDirectories();
-const pluginSeedDirectories = getPluginSeedDirectories();
 
 /**
  * Knex Configuration
@@ -57,11 +24,7 @@ const config = {
       max: 10,
     },
     migrations: {
-      directory: [
-        './src/core/db/migrations',
-        './src/user/extensions/db/migrations',
-        ...pluginMigrationDirectories,
-      ],
+      directory: ['./src/core/db/migrations', './src/user/extensions/db/migrations'],
       tableName: 'knex_migrations',
       extension: 'ts',
       loadExtensions: ['.ts'],
@@ -71,7 +34,6 @@ const config = {
         './src/core/db/seeds/bootstrap',
         './src/core/db/seeds/demo',
         './src/user/extensions/db/seeds',
-        ...pluginSeedDirectories,
       ],
       extension: 'ts',
       loadExtensions: ['.ts'],
@@ -94,11 +56,7 @@ const config = {
       max: 10,
     },
     migrations: {
-      directory: [
-        './src/core/db/migrations',
-        './src/user/extensions/db/migrations',
-        ...pluginMigrationDirectories,
-      ],
+      directory: ['./src/core/db/migrations', './src/user/extensions/db/migrations'],
       tableName: 'knex_migrations',
       extension: 'ts',
       loadExtensions: ['.ts'],
@@ -108,7 +66,6 @@ const config = {
         './src/core/db/seeds/bootstrap',
         './src/core/db/seeds/demo',
         './src/user/extensions/db/seeds',
-        ...pluginSeedDirectories,
       ],
       extension: 'ts',
       loadExtensions: ['.ts'],

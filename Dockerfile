@@ -80,8 +80,7 @@ COPY --from=builder /app/.next/static ./.next/static
 # Copy migration infrastructure (TypeScript migration files kept with original names)
 COPY --from=builder /app/src/core/db/migrations ./migrations
 COPY --from=builder /app/src/user/extensions/db/migrations ./migrations/user
-COPY --from=builder /app/src/user/extensions/plugins/migration-registry.json ./plugins/migration-registry.json
-COPY --from=builder /app/src/user/extensions/plugins/url-shortener/db/migrations ./plugins/url-shortener/migrations
+COPY --from=builder /app/src/user/extensions/plugins ./generated/plugins
 COPY --from=builder /app/scripts/migrate.js ./migrate.js
 COPY --from=builder /app/scripts/seed-admin.js ./seed-admin.js
 

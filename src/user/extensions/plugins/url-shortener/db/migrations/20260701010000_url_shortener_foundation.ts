@@ -54,15 +54,18 @@ export async function up(knex: Knex): Promise<void> {
     table.string('browser_category', 64).nullable();
     table.timestamp('created_at').notNullable().defaultTo(knex.fn.now());
     table.timestamp('updated_at').notNullable().defaultTo(knex.fn.now());
-
-    table.unique([
-      'link_id',
-      'stat_date',
-      'referrer_category',
-      'device_category',
-      'browser_category',
-    ]);
   });
+
+  await knex.raw(
+    `CREATE UNIQUE INDEX ${DAILY}_unique_daily_stat
+     ON ${DAILY} (
+       link_id,
+       stat_date,
+       referrer_category,
+       device_category,
+       browser_category
+     ) NULLS NOT DISTINCT`
+  );
 
   await knex.schema.createTable(SUBMISSIONS, (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
@@ -88,14 +91,18 @@ export async function up(knex: Knex): Promise<void> {
 
   await knex.schema.alterTable(LINKS, (table) => {
     table
-      .foreign('source_submission_id')
+      .foreign('source_submission_id', 'u_url_shortener_links_source_submission_id_foreign')
       .references('id')
       .inTable(SUBMISSIONS)
       .onDelete('SET NULL');
   });
 
   await knex.schema.alterTable(SUBMISSIONS, (table) => {
-    table.foreign('result_link_id').references('id').inTable(LINKS).onDelete('SET NULL');
+    table
+      .foreign('result_link_id', 'u_url_shortener_submissions_result_link_id_foreign')
+      .references('id')
+      .inTable(LINKS)
+      .onDelete('SET NULL');
   });
 
   await knex.schema.createTable(AUDIT, (table) => {
@@ -129,6 +136,16 @@ export async function up(knex: Knex): Promise<void> {
 }
 
 export async function down(knex: Knex): Promise<void> {
+  await knex.schema.alterTable(SUBMISSIONS, (table) => {
+    table.dropForeign('result_link_id', 'u_url_shortener_submissions_result_link_id_foreign');
+  });
+
+  await knex.schema.alterTable(LINKS, (table) => {
+    table.dropForeign('source_submission_id', 'u_url_shortener_links_source_submission_id_foreign');
+  });
+
+  await knex.raw(`DROP INDEX IF EXISTS ${DAILY}_unique_daily_stat`);
+
   await knex.schema.dropTableIfExists(PREFIX_ALIASES);
   await knex.schema.dropTableIfExists(AUDIT);
   await knex.schema.dropTableIfExists(SUBMISSIONS);

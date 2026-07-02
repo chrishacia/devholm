@@ -3,6 +3,15 @@ export interface PluginAdminSurface {
   label?: string;
 }
 
+export type PluginLifecycleState =
+  | 'bundled'
+  | 'pending_install'
+  | 'installed'
+  | 'enabled'
+  | 'disabled'
+  | 'uninstalled'
+  | 'error';
+
 export type PluginLifecycleEvent = 'install' | 'upgrade' | 'disable' | 'uninstall' | 'purge';
 
 export interface PluginLifecycleContext {
@@ -90,7 +99,10 @@ export interface DevHolmPluginDefinition {
 
 export interface PluginRuntimeState {
   id: string;
+  bundled: boolean;
+  installed: boolean;
   isEnabled: boolean;
+  lifecycleState: PluginLifecycleState;
   updatedAt: Date | null;
 }
 

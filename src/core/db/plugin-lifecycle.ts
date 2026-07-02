@@ -1,14 +1,7 @@
 import { createHash } from 'crypto';
+import type { Knex } from 'knex';
 import { getDb } from './index';
-import type { DevholmPluginManifest } from '@core/types/plugins';
-
-export type PluginLifecycleState =
-  | 'pending_install'
-  | 'installed'
-  | 'enabled'
-  | 'disabled'
-  | 'uninstalled'
-  | 'error';
+import type { DevholmPluginManifest, PluginLifecycleState } from '@core/types/plugins';
 
 export interface InstalledPluginRecord {
   pluginId: string;
@@ -30,37 +23,45 @@ export function checksumManifest(manifest: DevholmPluginManifest): string {
   return checksum(JSON.stringify(manifest));
 }
 
-export async function upsertPluginLedgerRecord(
-  manifest: DevholmPluginManifest,
-  state: PluginLifecycleState,
-  enabled: boolean,
-  lastError: string | null = null
-): Promise<void> {
+export async function upsertPluginLedgerRecord(input: {
+  manifest: DevholmPluginManifest;
+  state: PluginLifecycleState;
+  enabled: boolean;
+  installedAt?: Date | null;
+  upgradedAt?: Date | null;
+  disabledAt?: Date | null;
+  lastError?: string | null;
+}): Promise<void> {
   const db = getDb();
   const now = new Date();
+  const installedAt = input.installedAt === undefined ? now : input.installedAt;
+  const upgradedAt = input.upgradedAt === undefined ? now : input.upgradedAt;
+  const disabledAt =
+    input.disabledAt === undefined ? (input.enabled ? null : now) : input.disabledAt;
 
   await db('devholm_plugins')
     .insert({
-      plugin_id: manifest.id,
-      installed_version: manifest.version,
-      enabled,
-      lifecycle_state: state,
-      installed_at: now,
-      upgraded_at: now,
-      disabled_at: enabled ? null : now,
-      last_error: lastError,
-      manifest_checksum: checksumManifest(manifest),
+      plugin_id: input.manifest.id,
+      installed_version: input.manifest.version,
+      enabled: input.enabled,
+      lifecycle_state: input.state,
+      installed_at: installedAt,
+      upgraded_at: upgradedAt,
+      disabled_at: disabledAt,
+      last_error: input.lastError ?? null,
+      manifest_checksum: checksumManifest(input.manifest),
       updated_at: now,
     })
     .onConflict('plugin_id')
     .merge({
-      installed_version: manifest.version,
-      enabled,
-      lifecycle_state: state,
-      upgraded_at: now,
-      disabled_at: enabled ? null : now,
-      last_error: lastError,
-      manifest_checksum: checksumManifest(manifest),
+      installed_version: input.manifest.version,
+      enabled: input.enabled,
+      lifecycle_state: input.state,
+      installed_at: installedAt,
+      upgraded_at: upgradedAt,
+      disabled_at: disabledAt,
+      last_error: input.lastError ?? null,
+      manifest_checksum: checksumManifest(input.manifest),
       updated_at: now,
     });
 }
@@ -110,8 +111,9 @@ export async function insertPluginMigrationLedger(input: {
   appliedAt: Date;
   durationMs: number;
   batchOrder: number;
+  db?: Knex;
 }): Promise<void> {
-  const db = getDb();
+  const db = input.db ?? getDb();
   await db('devholm_plugin_migrations')
     .insert({
       plugin_id: input.pluginId,

@@ -3,10 +3,7 @@ import {
   URL_SHORTENER_ENABLEMENT_KEY,
   URL_SHORTENER_PLUGIN_ID,
 } from '@user/extensions/plugins/url-shortener/constants';
-import {
-  urlShortenerAfterInstall,
-  urlShortenerPurge,
-} from '@user/extensions/plugins/url-shortener/lifecycle/hooks';
+import { urlShortenerPurge } from '@user/extensions/plugins/url-shortener/lifecycle/hooks';
 import { urlShortenerSettingsDefinitions } from '@user/extensions/plugins/url-shortener/settings/definitions';
 
 export const urlShortenerPluginManifest: DevholmPluginManifest = {
@@ -37,7 +34,6 @@ export const urlShortenerPluginManifest: DevholmPluginManifest = {
   ],
   seeds: [],
   lifecycle: {
-    afterInstall: urlShortenerAfterInstall,
     purge: urlShortenerPurge,
   },
 };

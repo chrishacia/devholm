@@ -1,22 +1,5 @@
 import { getDb } from '@/db';
 
-export async function urlShortenerAfterInstall(): Promise<void> {
-  const db = getDb();
-  const now = new Date();
-
-  await db('site_settings')
-    .insert({
-      key: 'plugin:url-shortener:route-prefix',
-      value: '/s',
-      type: 'string',
-      category: 'plugins',
-      description: 'URL shortener route prefix',
-      updated_at: now,
-    })
-    .onConflict('key')
-    .ignore();
-}
-
 export async function urlShortenerPurge(): Promise<void> {
   const db = getDb();
 
