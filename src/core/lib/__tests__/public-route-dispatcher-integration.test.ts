@@ -76,6 +76,31 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
       expect(resolution.type).toBe('no-match');
       expect(extension.handle).not.toHaveBeenCalled();
     });
+
+    it('should not initialize helpers when no extension matches', async () => {
+      const extension: PublicRouteExtension = {
+        id: 'no-match-ext',
+        match: async () => null,
+        handle: vi.fn(),
+      };
+
+      const getHelpers = vi.fn(() => ({
+        auth: vi.fn(),
+        getDb: vi.fn(),
+        verifyAdmin: vi.fn(),
+      }));
+
+      const resolution = await dispatchPublicRoute('/no-match', mockRequest('GET', '/no-match'), {
+        extensions: [extension],
+        isPluginEnabled: async () => true,
+        getReservedRoutes: () => new Set(),
+        getHelpers,
+        createMatchContext: createTestContextFactory(),
+      });
+
+      expect(resolution.type).toBe('no-match');
+      expect(getHelpers).not.toHaveBeenCalled();
+    });
   });
 
   describe('One match - handler execution', () => {
@@ -132,6 +157,31 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         expect.any(Object),
         expect.any(Object)
       );
+    });
+
+    it('should initialize helpers exactly once when handler executes', async () => {
+      const extension: PublicRouteExtension = {
+        id: 'single-match-ext',
+        match: async () => ({ matched: true }),
+        handle: vi.fn().mockResolvedValue(new Response('ok')),
+      };
+
+      const getHelpers = vi.fn(() => ({
+        auth: vi.fn(),
+        getDb: vi.fn(),
+        verifyAdmin: vi.fn(),
+      }));
+
+      const resolution = await dispatchPublicRoute('/match', mockRequest('GET', '/match'), {
+        extensions: [extension],
+        isPluginEnabled: async () => true,
+        getReservedRoutes: () => new Set(),
+        getHelpers,
+        createMatchContext: createTestContextFactory(),
+      });
+
+      expect(resolution.type).toBe('match');
+      expect(getHelpers).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -200,6 +250,43 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         createMatchContext: createTestContextFactory(),
       });
 
+      expect(ext1.handle).not.toHaveBeenCalled();
+      expect(ext2.handle).not.toHaveBeenCalled();
+    });
+
+    it('should not initialize helpers when multiple extensions conflict', async () => {
+      const ext1: PublicRouteExtension = {
+        id: 'ext-1',
+        match: async () => ({ from: 'ext1' }),
+        handle: vi.fn(),
+      };
+
+      const ext2: PublicRouteExtension = {
+        id: 'ext-2',
+        match: async () => ({ from: 'ext2' }),
+        handle: vi.fn(),
+      };
+
+      const getHelpers = vi.fn(() => ({
+        auth: vi.fn(),
+        getDb: vi.fn(),
+        verifyAdmin: vi.fn(),
+      }));
+
+      const resolution = await dispatchPublicRoute(
+        '/conflicted',
+        mockRequest('GET', '/conflicted'),
+        {
+          extensions: [ext1, ext2],
+          isPluginEnabled: async () => true,
+          getReservedRoutes: () => new Set(),
+          getHelpers,
+          createMatchContext: createTestContextFactory(),
+        }
+      );
+
+      expect(resolution.type).toBe('conflict');
+      expect(getHelpers).not.toHaveBeenCalled();
       expect(ext1.handle).not.toHaveBeenCalled();
       expect(ext2.handle).not.toHaveBeenCalled();
     });

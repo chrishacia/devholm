@@ -19,21 +19,25 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const path = toPath(slug);
 
-  const devPage = await getEnabledDevPageByPath(path, devPageDefinitions);
-  if (devPage?.definition.getMetadata) {
-    return devPage.definition.getMetadata();
-  }
-
-  if (slug.length === 1) {
-    const cmsPage = await getPublishedCmsPageBySlug(slug[0]);
-    if (cmsPage) {
-      const settings = await getSeoSiteSettings();
-      return buildExtendedPageMetadata(settings, {
-        title: cmsPage.title,
-        description: cmsPage.excerpt || settings.site.description,
-        path,
-      });
+  try {
+    const devPage = await getEnabledDevPageByPath(path, devPageDefinitions);
+    if (devPage?.definition.getMetadata) {
+      return devPage.definition.getMetadata();
     }
+
+    if (slug.length === 1) {
+      const cmsPage = await getPublishedCmsPageBySlug(slug[0]);
+      if (cmsPage) {
+        const settings = await getSeoSiteSettings();
+        return buildExtendedPageMetadata(settings, {
+          title: cmsPage.title,
+          description: cmsPage.excerpt || settings.site.description,
+          path,
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Catch-all metadata resolution failed:', error);
   }
 
   return {
@@ -46,7 +50,13 @@ export default async function CatchAllPage({ params }: Props) {
   const { slug } = await params;
   const path = toPath(slug);
 
-  const devPage = await getEnabledDevPageByPath(path, devPageDefinitions);
+  let devPage: Awaited<ReturnType<typeof getEnabledDevPageByPath>> = null;
+  try {
+    devPage = await getEnabledDevPageByPath(path, devPageDefinitions);
+  } catch (error) {
+    console.error('Catch-all dev page resolution failed:', error);
+  }
+
   if (devPage) {
     const loaded = await devPage.definition.loadPage();
     const PageComponent =
@@ -67,7 +77,13 @@ export default async function CatchAllPage({ params }: Props) {
     notFound();
   }
 
-  const cmsPage = await getPublishedCmsPageBySlug(slug[0]);
+  let cmsPage: Awaited<ReturnType<typeof getPublishedCmsPageBySlug>> = null;
+  try {
+    cmsPage = await getPublishedCmsPageBySlug(slug[0]);
+  } catch (error) {
+    console.error('Catch-all CMS page lookup failed:', error);
+  }
+
   if (!cmsPage) {
     notFound();
   }

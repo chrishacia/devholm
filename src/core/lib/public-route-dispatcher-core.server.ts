@@ -18,10 +18,7 @@ export interface PublicRouteDispatcherDependencies {
   getReservedRoutes: () => Set<string>;
   getHelpers: () => ExtensionHelpers;
   /** Optional: pre-created match context for testing */
-  createMatchContext?: (
-    reservedRoutes: ReadonlySet<string>,
-    helpers: ExtensionHelpers
-  ) => PublicRouteMatchContext;
+  createMatchContext?: (reservedRoutes: ReadonlySet<string>) => PublicRouteMatchContext;
 }
 
 export type PublicRouteResolution =
@@ -88,7 +85,8 @@ export async function dispatchPublicRoute(
     return { type: 'no-match' };
   }
 
-  // Lazy initialization: only get helpers when first matcher needs it
+  // Lazy initialization: match context can be created without helpers.
+  // Helpers are only needed if we actually execute a handler.
   let helpers: ExtensionHelpers | null = null;
   let matchContext: PublicRouteMatchContext | null = null;
 
@@ -107,14 +105,9 @@ export async function dispatchPublicRoute(
     try {
       // Lazy-initialize match context only when we have a potential matcher
       if (matchContext === null) {
-        helpers = dependencies.getHelpers();
-
         if (dependencies.createMatchContext) {
           // For testing: use injected context factory
-          matchContext = dependencies.createMatchContext(
-            reservedRoutes as ReadonlySet<string>,
-            helpers
-          );
+          matchContext = dependencies.createMatchContext(reservedRoutes as ReadonlySet<string>);
         } else {
           // For production: throw and let wrapper handle it
           throw new Error(

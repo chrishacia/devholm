@@ -65,11 +65,7 @@ describe('createPublicRouteDispatcherDependencies - Regression Test', () => {
 
     expect(deps.createMatchContext).toBeDefined();
 
-    const context = deps.createMatchContext!(new Set(['/admin']), {
-      auth: vi.fn(),
-      getDb: vi.fn(),
-      verifyAdmin: vi.fn(),
-    });
+    const context = deps.createMatchContext!(new Set(['/admin']));
 
     expect(context.settings).toBeDefined();
     expect(context.settings.get).toBeDefined();
@@ -81,11 +77,7 @@ describe('createPublicRouteDispatcherDependencies - Regression Test', () => {
 
     expect(deps.createMatchContext).toBeDefined();
 
-    const context = deps.createMatchContext!(new Set(['/admin']), {
-      auth: vi.fn(),
-      getDb: vi.fn(),
-      verifyAdmin: vi.fn(),
-    });
+    const context = deps.createMatchContext!(new Set(['/admin']));
 
     expect(context.settings).toBeDefined();
     expect(context.settings.getMany).toBeDefined();
@@ -97,11 +89,7 @@ describe('createPublicRouteDispatcherDependencies - Regression Test', () => {
 
     expect(deps.createMatchContext).toBeDefined();
 
-    const context = deps.createMatchContext!(new Set(['/admin']), {
-      auth: vi.fn(),
-      getDb: vi.fn(),
-      verifyAdmin: vi.fn(),
-    });
+    const context = deps.createMatchContext!(new Set(['/admin']));
 
     // Should not have raw query or database methods
     expect((context as unknown as Record<string, unknown>).query).toBeUndefined();
@@ -114,11 +102,7 @@ describe('createPublicRouteDispatcherDependencies - Regression Test', () => {
 
     expect(deps.createMatchContext).toBeDefined();
 
-    const context = deps.createMatchContext!(new Set(['/admin']), {
-      auth: vi.fn(),
-      getDb: vi.fn(),
-      verifyAdmin: vi.fn(),
-    });
+    const context = deps.createMatchContext!(new Set(['/admin']));
 
     const value = await context.settings.get('plugin:test:enabled');
     expect(value).toBe(true);
@@ -129,11 +113,7 @@ describe('createPublicRouteDispatcherDependencies - Regression Test', () => {
 
     expect(deps.createMatchContext).toBeDefined();
 
-    const context = deps.createMatchContext!(new Set(['/admin']), {
-      auth: vi.fn(),
-      getDb: vi.fn(),
-      verifyAdmin: vi.fn(),
-    });
+    const context = deps.createMatchContext!(new Set(['/admin']));
 
     const values = await context.settings.getMany(['plugin:test:enabled']);
     expect(values).toEqual({ 'plugin:test:enabled': true });
