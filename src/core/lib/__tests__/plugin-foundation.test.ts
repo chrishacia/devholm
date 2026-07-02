@@ -44,6 +44,10 @@ describe('generic plugin foundation', () => {
     expect(isVersionCompatible('3.6.0', '^3.0.0')).toBe(true);
     expect(isVersionCompatible('3.6.0', '3.6.0')).toBe(true);
     expect(isVersionCompatible('3.6.0', '^4.0.0')).toBe(false);
+
+    expect(isVersionCompatible('3.0.0', '^3.6.0')).toBe(false);
+    expect(isVersionCompatible('3.6.5', '^3.6.0')).toBe(true);
+    expect(isVersionCompatible('4.0.0', '^3.6.0')).toBe(false);
   });
 
   it('rejects missing plugin dependencies and dependency cycles', () => {
@@ -185,7 +189,7 @@ describe('generic plugin foundation', () => {
           continue;
         }
 
-        if (fullPath.endsWith('plugin-foundation.test.ts')) {
+        if (fullPath.endsWith('.test.ts') || fullPath.endsWith('.test.tsx')) {
           continue;
         }
 

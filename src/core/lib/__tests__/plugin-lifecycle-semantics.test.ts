@@ -7,11 +7,12 @@ function createDbMock() {
   const insert = vi.fn(() => ({ onConflict }));
   const update = vi.fn(async () => 1);
   const where = vi.fn(() => ({ update, first: vi.fn(async () => null) }));
+  const raw = vi.fn(async () => undefined);
 
   const table = vi.fn(() => ({ insert, where, update, onConflict }));
-  const transaction = vi.fn(async (callback) => callback(table));
+  const transaction = vi.fn(async (callback) => callback(Object.assign(table, { raw })));
 
-  return Object.assign(table, { insert, where, update, onConflict, transaction });
+  return Object.assign(table, { insert, where, update, onConflict, transaction, raw });
 }
 
 function manifest(overrides: Partial<DevholmPluginManifest> = {}): DevholmPluginManifest {
@@ -173,14 +174,109 @@ describe('plugin lifecycle semantics', () => {
     }));
 
     vi.doMock('@core/db/plugin-lifecycle', () => ({
-      getInstalledPlugin: vi.fn(async () => null),
+      getInstalledPlugin: vi.fn(async () => ({
+        pluginId: 'plugin-a',
+        installedVersion: '1.0.0',
+        enabled: false,
+        lifecycleState: 'disabled',
+        installedAt: new Date('2026-01-01T00:00:00.000Z'),
+        upgradedAt: null,
+        disabledAt: new Date('2026-01-01T00:00:00.000Z'),
+        lastError: null,
+        manifestChecksum: null,
+      })),
       listInstalledPlugins: vi.fn(async () => []),
       upsertPluginLedgerRecord: vi.fn(async () => undefined),
     }));
 
+    const db = createDbMock();
+    vi.doMock('@/db', () => ({
+      getDb: vi.fn(() => db),
+    }));
+
     const { purgePlugin } = await import('@core/lib/plugin-lifecycle.server');
 
-    await purgePlugin('plugin-a', 'tester');
+    await purgePlugin('plugin-a', { confirmPluginId: 'plugin-a', initiatedBy: 'tester' });
     expect(purgeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects purge without explicit confirmation', async () => {
+    vi.resetModules();
+
+    vi.doMock('@core/lib/plugin-registry.server', () => ({
+      getBundledPluginManifests: () => [manifest()],
+      validateDependencyGraph: () => [],
+      validatePackageDependencies: () => [],
+      validateBundledPluginRegistry: () => [],
+    }));
+
+    vi.doMock('@core/db/plugin-lifecycle', () => ({
+      getInstalledPlugin: vi.fn(async () => ({
+        pluginId: 'plugin-a',
+        installedVersion: '1.0.0',
+        enabled: false,
+        lifecycleState: 'disabled',
+        installedAt: new Date('2026-01-01T00:00:00.000Z'),
+        upgradedAt: null,
+        disabledAt: new Date('2026-01-01T00:00:00.000Z'),
+        lastError: null,
+        manifestChecksum: null,
+      })),
+      listInstalledPlugins: vi.fn(async () => []),
+      upsertPluginLedgerRecord: vi.fn(async () => undefined),
+    }));
+
+    const db = createDbMock();
+    vi.doMock('@/db', () => ({
+      getDb: vi.fn(() => db),
+    }));
+
+    const { purgePlugin } = await import('@core/lib/plugin-lifecycle.server');
+
+    await expect(purgePlugin('plugin-a')).rejects.toThrow(/Purge confirmation required/);
+  });
+
+  it('enable transitions installed plugin to enabled', async () => {
+    vi.resetModules();
+
+    const upsertSpy = vi.fn(async () => undefined);
+    const db = createDbMock();
+
+    vi.doMock('@core/lib/plugin-registry.server', () => ({
+      getBundledPluginManifests: () => [manifest()],
+      validateDependencyGraph: () => [],
+      validatePackageDependencies: () => [],
+      validateBundledPluginRegistry: () => [],
+    }));
+
+    vi.doMock('@core/db/plugin-lifecycle', () => ({
+      getInstalledPlugin: vi.fn(async () => ({
+        pluginId: 'plugin-a',
+        installedVersion: '1.0.0',
+        enabled: false,
+        lifecycleState: 'installed',
+        installedAt: new Date('2026-01-01T00:00:00.000Z'),
+        upgradedAt: null,
+        disabledAt: new Date('2026-01-01T00:00:00.000Z'),
+        lastError: null,
+        manifestChecksum: null,
+      })),
+      listInstalledPlugins: vi.fn(async () => []),
+      upsertPluginLedgerRecord: upsertSpy,
+    }));
+
+    vi.doMock('@/db', () => ({
+      getDb: vi.fn(() => db),
+    }));
+
+    const { enablePlugin } = await import('@core/lib/plugin-lifecycle.server');
+
+    await enablePlugin('plugin-a');
+    expect(upsertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: 'enabled',
+        enabled: true,
+      })
+    );
   });
 });

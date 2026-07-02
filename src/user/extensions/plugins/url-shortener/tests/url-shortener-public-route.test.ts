@@ -35,6 +35,25 @@ describe('url shortener public route extension', () => {
     });
   });
 
+  it('matches dashed short code shape', async () => {
+    const match = await urlShortenerPublicRouteExtension.match(
+      '/s/my-link',
+      mockRequest('/s/my-link'),
+      {
+        reservedRoutes: new Set(['/api', '/admin']),
+        settings: {
+          get: async () => null,
+          getMany: async () => ({}),
+        },
+      }
+    );
+
+    expect(match).toEqual({
+      code: 'my-link',
+      prefix: '/s',
+    });
+  });
+
   it('matches custom prefix from settings', async () => {
     const match = await urlShortenerPublicRouteExtension.match('/go/xyz', mockRequest('/go/xyz'), {
       reservedRoutes: new Set(['/api', '/admin']),
