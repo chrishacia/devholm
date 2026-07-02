@@ -436,8 +436,8 @@ jobs:
           name: build-output
           path: .next/
 
-      - name: Prepare E2E database
-        run: pnpm db:setup
+      - name: Run E2E database migrations
+        run: pnpm db:migrate
         env:
           DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
           DATABASE_HOST: 'localhost'
@@ -447,6 +447,20 @@ jobs:
           DATABASE_PASSWORD: 'test'
           NEXTAUTH_URL: 'http://localhost:3000'
           NEXTAUTH_SECRET: 'test-secret'
+
+      - name: Run E2E bootstrap seeds
+        run: pnpm db:seed:bootstrap
+        env:
+          DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
+          DATABASE_HOST: 'localhost'
+          DATABASE_PORT: '5432'
+          DATABASE_NAME: 'test'
+          DATABASE_USER: 'test'
+          DATABASE_PASSWORD: 'test'
+          NEXTAUTH_URL: 'http://localhost:3000'
+          NEXTAUTH_SECRET: 'test-secret'
+          ADMIN_EMAIL: 'admin@example.test'
+          ADMIN_PASSWORD: 'e2e-test-password-change-me'
 
       - name: Run E2E tests
         run: pnpm test:e2e --project=chromium
