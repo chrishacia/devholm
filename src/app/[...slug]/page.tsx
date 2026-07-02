@@ -47,6 +47,7 @@ export default async function CatchAllPage({ params }: Props) {
   const path = toPath(slug);
 
   const devPage = await getEnabledDevPageByPath(path, devPageDefinitions);
+
   if (devPage) {
     const loaded = await devPage.definition.loadPage();
     const PageComponent =
@@ -68,6 +69,7 @@ export default async function CatchAllPage({ params }: Props) {
   }
 
   const cmsPage = await getPublishedCmsPageBySlug(slug[0]);
+
   if (!cmsPage) {
     notFound();
   }

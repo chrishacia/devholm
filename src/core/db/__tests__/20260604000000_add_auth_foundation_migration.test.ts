@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { up } from './20260604000000_add_auth_foundation';
+import { up } from '../migrations/20260604000000_add_auth_foundation';
 
 interface MockKnexOptions {
   adminUsers?: Array<Record<string, unknown>>;

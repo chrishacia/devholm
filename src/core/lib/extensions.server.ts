@@ -1,14 +1,10 @@
 import type React from 'react';
 import type { Metadata } from 'next';
 import type { NextRequest } from 'next/server';
-import { auth } from '@/auth';
-import { getDb } from '@/db';
-import { verifyAdmin } from '@/lib/auth-helpers';
 import type {
   AdminPageExtension,
   ApiExtension,
   ApiExtensionMethod,
-  ExtensionHelpers,
   MetadataExtension,
   RobotsExtension,
   SitemapExtension,
@@ -23,6 +19,11 @@ import {
   structuredDataExtensions,
 } from '@user/extensions/seo';
 import { isPluginEnabled } from '@/db/plugins';
+import { getExtensionHelpers } from '@core/lib/extension-helpers.server';
+import {
+  loadEnabledAdminPageComponent,
+  loadEnabledAdminPageMetadata,
+} from '@core/lib/admin-page-enablement.server';
 
 function normalizePath(pathname: string): string {
   const segments = pathname.split('/').filter(Boolean);
@@ -40,20 +41,6 @@ function resolveByPath<T extends { href?: string; path?: string }>(
   });
 }
 
-function hasDefaultExport(
-  module: Awaited<ReturnType<AdminPageExtension['loadPage']>>
-): module is { default: React.ComponentType } {
-  return typeof module === 'object' && module !== null && 'default' in module;
-}
-
-export function getExtensionHelpers(): ExtensionHelpers {
-  return {
-    auth,
-    getDb,
-    verifyAdmin,
-  };
-}
-
 async function isExtensionEnabled(pluginId?: string): Promise<boolean> {
   if (!pluginId) {
     return true;
@@ -68,17 +55,22 @@ export function resolveAdminPageExtension(slug: string[]): AdminPageExtension | 
 
 export async function getAdminPageComponent(slug: string[]): Promise<React.ComponentType | null> {
   const extension = resolveAdminPageExtension(slug);
+
   if (!extension) {
     return null;
   }
 
-  const loadedModule = await extension.loadPage();
-  return hasDefaultExport(loadedModule) ? loadedModule.default : loadedModule;
+  return loadEnabledAdminPageComponent(extension, isPluginEnabled);
 }
 
 export async function getAdminPageMetadata(slug: string[]): Promise<Metadata | undefined> {
   const extension = resolveAdminPageExtension(slug);
-  return extension?.getMetadata ? extension.getMetadata() : undefined;
+
+  if (!extension) {
+    return undefined;
+  }
+
+  return loadEnabledAdminPageMetadata(extension, isPluginEnabled);
 }
 
 export function resolveMetadataExtensions(path: string): MetadataExtension[] {
