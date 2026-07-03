@@ -7,84 +7,112 @@
 
 ## Context
 
-DevHolm has useful extension and auth primitives, but downstream contracts are not yet centralized under versioned SDK entrypoints. Downstream code can still import internal `@core/lib/*` modules directly, and authorization behavior is inconsistent across middleware, route handlers, and extension dispatch paths.
+DevHolm currently blends normal Next.js development patterns with framework-specific extension and plugin contracts. Internal orchestration modules and runtime-specific behavior are not yet separated into stable public SDK boundaries.
 
-Issue #6 requires stable, upgrade-safe SDK boundaries and a shared policy model that applies consistently across pages, APIs, server actions, navigation, admin pages, public routes, slot components, and UI actions.
+Issue #6 requires upgrade-safe public contracts, explicit authorization defaults, and deterministic behavior across pages, APIs, actions, admin pages, public routes, navigation, slots, and UI actions.
 
 ## Decision
 
-Adopt a proposed four-entrypoint boundary model:
+Adopt a runtime-separated contract model:
 
-1. `@devholm/sdk` for runtime-neutral, serializable declarations and registration metadata
-2. `@devholm/sdk/server` for server-only evaluators, resolvers, and authoritative authorization adapters
-3. `@devholm/sdk/client` for client-safe visibility projections only
-4. `@devholm/sdk/testing` for contract, compatibility, and boundary-guard tests
+1. `@devholm/sdk` contains runtime-neutral serializable declarations and identifier types.
+2. Runtime-specific executable helpers are owned by runtime-appropriate entrypoints (`@devholm/sdk/server`, `@devholm/sdk/react` or equivalent split).
+3. `@devholm/sdk/testing` provides compatibility, boundary, and runtime-target fixture tests.
 
-Adopt an explicit-policy default for newly registered executable server surfaces:
+Adopt explicit policy defaults for new executable server registrations:
 
 - access declaration is required
-- omitted policy is invalid for new registrations
-- public behavior must be explicit (`everyone`)
+- omitted declaration is invalid
+- public behavior requires explicit `everyone`
 
-Adopt fail-closed evaluation defaults:
+Adopt fail-closed operational behavior:
 
-- evaluator/resolver exceptions deny execution
-- log operational diagnostics without sensitive details
-- return defined server error outcomes
+- evaluator/resolver exceptions produce `policy-error`
+- default transport 500, dependency-unavailable classification 503
+- no sensitive details exposed
+- claimed public route failures do not fall through to lower-precedence routes
 
-Adopt declaration/evaluator split:
+Adopt registration ownership and namespacing:
 
-- serializable policy declarations are runtime-neutral
-- custom callbacks and ownership/resource resolvers are server-only contracts
-- client bundles must never import server evaluators or raw service handles
+- registrations are owner-scoped (`framework`, `site`, `plugin:<id>`)
+- references to permissions/evaluators/resolvers are validated against owner namespace
+- duplicates, unknown references, and owner/plugin mismatches are rejected
+- plugin-owned registrations require plugin installed/enabled validation
+
+Adopt composition validation and deterministic aggregation:
+
+- evaluators/resolvers must be side-effect-free
+- empty `allOf` and `anyOf` are invalid registrations
+- invalid composition fails validation and fails closed at runtime if encountered
+- deterministic result classes: `allow`, `unauthenticated`, `forbidden`, `not-found`, `policy-error`
+
+Adopt capability-scoped service construction:
+
+- plugin evaluators receive plugin-scoped capabilities only
+- no raw framework DB handle in plugin evaluator context
+- no arbitrary site/framework/other-plugin settings exposure
+- runtime service construction enforces capability boundaries beyond type-level checks
+
+Adopt SDK stability baseline:
+
+- public SDK contracts follow DevHolm SemVer initially
+- breaking public SDK contract changes require major DevHolm version
+- deep implementation imports are unsupported
+- deprecations remain functional through documented migration window with diagnostics before removal
+
+Adopt runtime-target separation:
+
+- runtime compatibility matrix is documented and tested
+- import safety tests detect Node-only server modules in incompatible client/middleware/edge bundles
 
 ## Consequences
 
 ### Positive
 
-- Clear separation between supported SDK imports and internal orchestration modules
-- Deterministic security defaults for new executable registrations
-- Better upgrade safety through explicit contracts and testing layers
-- Improved ability to enforce import boundaries across aliases and deep imports
+- Clear public/internal boundary with runtime ownership clarity
+- Safer default authorization posture for new executable registrations
+- Deterministic composition/failure semantics
+- Stronger upgrade safety through explicit versioning and boundary enforcement
 
 ### Compatibility and migration costs
 
-- Existing registrations that rely on implicit behavior require a temporary legacy adapter
-- Legacy adapter must emit development/build warnings and provide migration path
-- Existing one-off route authorization checks will coexist during migration stages
-- Administrator-resolution inconsistency (middleware `isAdmin` path vs helper behavior) must be reconciled explicitly before unified policy replacement
+- legacy registrations may require temporary compatibility adapters
+- compatibility adapters must warn and include migration path
+- existing route-level auth checks coexist during staged migration
+- current administrator-resolution mismatch (middleware `isAdmin` path vs helper behavior) must be reconciled explicitly
 
 ### Operational costs
 
-- Additional adapter layers per surface (pages, APIs, actions, admin pages, public routes)
-- New boundary enforcement configuration (export maps, lint rules, TS/module constraints, fixture tests)
-- Review overhead to ratify unresolved policy defaults
+- additional validation and registry checks at generation/build/startup
+- additional per-surface adapter logic
+- additional test matrix for runtime targets and boundary enforcement
 
 ## Alternatives considered
 
-### Keep internal imports and rely on documentation guidance
+### Keep internal imports and rely on docs guidance
 
-Rejected because guidance alone does not create enforceable, upgrade-safe contracts.
+Rejected because guidance alone does not enforce compatibility boundaries.
 
-### Put all authorization logic in middleware
+### Centralize all authorization in middleware
 
-Rejected because middleware cannot safely/authoritatively enforce every server action, ownership check, or mutation-time decision.
+Rejected because middleware cannot authoritatively cover all server action/API/ownership cases.
 
-### Expose internal orchestration modules directly as public API
+### Expose internal orchestration as public API
 
-Rejected because it freezes implementation details and increases long-term maintenance and compatibility risk.
+Rejected because it freezes implementation details and increases long-term maintenance risk.
 
 ## Unresolved decisions (explicit)
 
-1. Canonical administrator semantics during and after compatibility migration.
-2. Surface-level defaults for forbidden vs concealed-not-found outcomes.
-3. Duration and enforcement level of legacy compatibility adapters.
-4. Final scoped service API detail for plugin-owned data/settings operations.
+1. Canonical administrator semantics after compatibility migration (including `isAdmin` parity).
+2. Default concealment behavior (`403` vs `404`) per surface/capability class.
+3. Compatibility adapter duration and strictness milestones.
+4. Final plugin data API shape inside capability isolation boundaries.
+5. Final runtime entrypoint naming refinement (`client` vs `react` split details).
 
 ## Follow-up
 
-- Keep this ADR proposed until independent review confirms unresolved decisions.
+- Keep ADR in proposed status pending independent review.
 - Use these design artifacts for staged implementation planning:
   - `docs/roadmap/sdk-authorization-contract-inventory.md`
   - `docs/roadmap/sdk-authorization-architecture.md`
-- Preserve issue boundaries: #11, #7, #8, #9, and #10 remain separate workstreams.
+- Preserve issue boundaries: #11, #7, #8, #9, #10 remain separate workstreams.
