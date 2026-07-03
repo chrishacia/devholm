@@ -11,6 +11,11 @@ Use sequential filenames:
 0002-next-decision.md
 ```
 
+## Current records
+
+- `0001-structured-roadmap-and-work-intake.md` (accepted)
+- `0002-sdk-boundaries-and-access-policy.md` (proposed)
+
 ## Required sections
 
 ```markdown
