@@ -16,12 +16,23 @@ GitHub issues carry actionable work. The documents here preserve the long-lived 
 
 ## Current sequence
 
-1. Complete and merge the plugin lifecycle foundation and URL Shortener skeleton ([#5](https://github.com/chrishacia/devholm/issues/5)).
-2. Formalize the public developer SDK and authorization contracts ([#6](https://github.com/chrishacia/devholm/issues/6)).
-3. Add extension events, background jobs, and scheduled-task seams ([#11](https://github.com/chrishacia/devholm/issues/11)).
-4. Add plugin package versioning, pinning, lockfiles, and safe update planning ([#7](https://github.com/chrishacia/devholm/issues/7)).
-5. Build the URL Shortener functional MVP as the first complete reference plugin ([#8](https://github.com/chrishacia/devholm/issues/8)).
-6. Convert Calendar and Gallery into lifecycle-managed plugins ([#9](https://github.com/chrishacia/devholm/issues/9), [#10](https://github.com/chrishacia/devholm/issues/10)).
+Completed foundation:
+
+- Plugin lifecycle and URL Shortener skeleton ([#5](https://github.com/chrishacia/devholm/issues/5), [#4](https://github.com/chrishacia/devholm/pull/4))
+
+Next active foundation:
+
+- Formalize the public developer SDK and authorization contracts ([#6](https://github.com/chrishacia/devholm/issues/6))
+
+Planned after SDK:
+
+- Add extension events, background jobs, and scheduled-task seams ([#11](https://github.com/chrishacia/devholm/issues/11))
+- Add plugin package versioning, pinning, lockfiles, and safe update planning ([#7](https://github.com/chrishacia/devholm/issues/7))
+- Build the URL Shortener functional MVP as the first complete reference plugin ([#8](https://github.com/chrishacia/devholm/issues/8))
+- Convert Calendar and Gallery into lifecycle-managed plugins ([#9](https://github.com/chrishacia/devholm/issues/9), [#10](https://github.com/chrishacia/devholm/issues/10))
+
+Plugin lifecycle foundation: completed.
+URL Shortener functional product: not completed.
 
 ## Architectural principles
 

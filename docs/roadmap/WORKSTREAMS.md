@@ -17,13 +17,24 @@ This workstream is complete when the lifecycle foundation is merged with full CI
 
 ### Status
 
-Active and in final CI correction/review.
+Completed on 2026-07-03.
+
+- Issue: [#5](https://github.com/chrishacia/devholm/issues/5)
+- Implementation: [PR #4](https://github.com/chrishacia/devholm/pull/4)
+- Squash SHA: `1ff17aad4ffafc12ac1ec3eea0a7f11c871c9c37`
+- Lifecycle foundation completed
+- URL Shortener remains a skeleton
+- Functional URL Shortener work remains tracked by [#8](https://github.com/chrishacia/devholm/issues/8)
 
 ---
 
 ## 2. Public developer SDK and authorization contracts
 
 Issue: [#6](https://github.com/chrishacia/devholm/issues/6)
+
+### Status
+
+Next active foundation workstream.
 
 ### Goal
 
