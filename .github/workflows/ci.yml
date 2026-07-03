@@ -462,6 +462,24 @@ jobs:
           ADMIN_EMAIL: 'admin@example.test'
           ADMIN_PASSWORD: 'e2e-test-password-change-me'
 
+      - name: Run PostgreSQL plugin lifecycle integration tests
+        run: |
+          set -euo pipefail
+          pnpm vitest --run src/core/lib/__tests__/plugin-lifecycle-postgres.integration.test.ts 2>&1 | tee /tmp/plugin-lifecycle-postgres.log
+          grep -Eq 'Test Files[[:space:]]+1 passed' /tmp/plugin-lifecycle-postgres.log
+          grep -Eq 'Tests[[:space:]]+28 passed' /tmp/plugin-lifecycle-postgres.log
+          ! grep -Eq '1 skipped|28 skipped' /tmp/plugin-lifecycle-postgres.log
+        env:
+          PHASE2_TEST_DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
+          DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
+          DATABASE_HOST: 'localhost'
+          DATABASE_PORT: '5432'
+          DATABASE_NAME: 'test'
+          DATABASE_USER: 'test'
+          DATABASE_PASSWORD: 'test'
+          NEXTAUTH_URL: 'http://localhost:3000'
+          NEXTAUTH_SECRET: 'test-secret'
+
       - name: Run E2E tests
         run: pnpm test:e2e --project=chromium
         env:
