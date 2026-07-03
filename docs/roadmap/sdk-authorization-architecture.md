@@ -229,11 +229,14 @@ Normative aggregation rules:
     - `forbidden + not-found` -> `forbidden`
     - `policy-error + any` -> `policy-error`
 - `anyOf`:
-  - Evaluate every branch and aggregate by precedence, with success only if every branch is `allow`-compatible and at least one branch is `allow`.
+  - Evaluate all branches because `policy-error` has global fail-closed precedence.
   - If any branch returns `policy-error`, aggregate result is `policy-error` (fail closed).
   - Else if any branch returns `allow`, aggregate result is `allow`.
-  - Else aggregate by deny precedence among returned deny classes.
+  - Else aggregate deny results by deny precedence: `forbidden`, `not-found`, `unauthenticated`.
   - Examples required by this proposal:
+    - `allow + forbidden` -> `allow`
+    - `allow + not-found` -> `allow`
+    - `allow + unauthenticated` -> `allow`
     - `allow + policy-error` -> `policy-error`
     - `forbidden + unauthenticated` -> `forbidden`
     - `forbidden + not-found` -> `forbidden`
@@ -260,6 +263,9 @@ Required test coverage:
 - `allOf`: `unauthenticated + forbidden` -> `forbidden`
 - `allOf`: `forbidden + not-found` -> `forbidden`
 - `allOf`: `policy-error + any` -> `policy-error`
+- `anyOf`: `allow + forbidden` -> `allow`
+- `anyOf`: `allow + not-found` -> `allow`
+- `anyOf`: `allow + unauthenticated` -> `allow`
 - `anyOf`: `allow + policy-error` -> `policy-error`
 - `anyOf`: `forbidden + unauthenticated` -> `forbidden`
 - `anyOf`: `forbidden + not-found` -> `forbidden`
