@@ -31,6 +31,8 @@
     "db:seed:demo": "tsx scripts/run-seeds.ts demo",
     "db:seed:user": "tsx scripts/run-seeds.ts user",
     "db:setup": "pnpm db:migrate && pnpm db:seed:bootstrap",
+    "plugins:generate": "tsx scripts/plugins-generate-registry.ts",
+    "plugins:check": "tsx scripts/plugins-check-registry.ts",
     "seed:admin": "tsx src/db/seed-admin.ts",
     "debug:smoke": "node scripts/debug-smoke.js",
     "prepare": "husky",

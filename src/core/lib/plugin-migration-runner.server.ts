@@ -8,13 +8,20 @@ import {
   loadPluginMigrationRegistry,
   resolvePluginRegistryPath,
 } from '@core/lib/plugin-migration-discovery.server';
-import { getPluginMigrationLedger, insertPluginMigrationLedger } from '@core/db/plugin-lifecycle';
+import {
+  getPluginMigrationLedgerWithDb,
+  insertPluginMigrationLedger,
+} from '@core/db/plugin-lifecycle';
 
 function getRegistryPath(): string {
-  return (
-    resolvePluginRegistryPath(process.cwd()) ??
-    path.join(process.cwd(), 'src/user/extensions/plugins/migration-registry.json')
-  );
+  const resolved = resolvePluginRegistryPath(process.cwd());
+  if (!resolved) {
+    throw new Error(
+      `Plugin migration registry not found. Expected generated/plugins/registry.json or src/user/extensions/plugins/migration-registry.json`
+    );
+  }
+
+  return resolved;
 }
 
 async function executeMigration(
@@ -35,22 +42,22 @@ async function applyPluginMigrationsForEntry(entry: {
   migrationDir: string;
   productionMigrationDir?: string;
 }): Promise<void> {
-  const discovered = discoverPluginMigrations([entry], process.cwd());
-  ensureUniqueMigrationIds(discovered);
-
-  const applied = await getPluginMigrationLedger(entry.id);
-  const appliedMap = new Map(applied.map((row) => [row.migrationId, row.checksum]));
-
-  ensureChecksumsUnchanged(discovered, appliedMap);
-
-  const pending = discovered.filter((migration) => !appliedMap.has(migration.migrationId));
-  if (pending.length === 0) {
-    return;
-  }
-
   const db = getDb();
   await db.transaction(async (trx) => {
     await trx.raw('select pg_advisory_xact_lock(hashtext(?))', [entry.id]);
+
+    const discovered = discoverPluginMigrations([entry], process.cwd());
+    ensureUniqueMigrationIds(discovered);
+
+    const applied = await getPluginMigrationLedgerWithDb(entry.id, trx);
+    const appliedMap = new Map(applied.map((row) => [row.migrationId, row.checksum]));
+
+    ensureChecksumsUnchanged(discovered, appliedMap);
+
+    const pending = discovered.filter((migration) => !appliedMap.has(migration.migrationId));
+    if (pending.length === 0) {
+      return;
+    }
 
     let batchOrder = 0;
     for (const migration of pending) {
@@ -73,9 +80,12 @@ async function applyPluginMigrationsForEntry(entry: {
 }
 
 export async function applyPendingPluginMigrations(pluginId?: string): Promise<void> {
-  const registryEntries = loadPluginMigrationRegistry(getRegistryPath()).filter((entry) =>
-    pluginId ? entry.id === pluginId : true
-  );
+  const allEntries = loadPluginMigrationRegistry(getRegistryPath());
+  const registryEntries = allEntries.filter((entry) => (pluginId ? entry.id === pluginId : true));
+
+  if (pluginId && registryEntries.length === 0) {
+    throw new Error(`Plugin migration registry entry not found for plugin ${pluginId}`);
+  }
 
   if (registryEntries.length === 0) {
     return;
@@ -83,15 +93,6 @@ export async function applyPendingPluginMigrations(pluginId?: string): Promise<v
 
   const discovered = discoverPluginMigrations(registryEntries, process.cwd());
   ensureUniqueMigrationIds(discovered);
-
-  for (const entry of registryEntries) {
-    const applied = await getPluginMigrationLedger(entry.id);
-    const appliedMap = new Map(applied.map((row) => [row.migrationId, row.checksum]));
-    ensureChecksumsUnchanged(
-      discovered.filter((migration) => migration.pluginId === entry.id),
-      appliedMap
-    );
-  }
 
   for (const entry of registryEntries) {
     await applyPluginMigrationsForEntry(entry);

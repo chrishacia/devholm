@@ -240,7 +240,8 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
     await expect(installPlugin('url-shortener')).rejects.toThrow(/forced migration failure/);
 
     const row = await readPluginRow();
-    expect(row.lifecycle_state).toBe('error');
+    expect(row.lifecycle_state).toBe('bundled');
+    expect(row.operation_status).toBe('error');
     expect(row.enabled).toBe(false);
   });
 
@@ -271,7 +272,8 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
 
     await expect(installPlugin('url-shortener')).rejects.toThrow(/afterInstall failure/);
     const row = await readPluginRow();
-    expect(row.lifecycle_state).toBe('error');
+    expect(row.lifecycle_state).toBe('bundled');
+    expect(row.operation_status).toBe('error');
     expect(row.enabled).toBe(false);
   });
 
@@ -388,9 +390,11 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
   it('10) incompatible installed dependency version blocks install', async () => {
     await integrationDb('devholm_plugins').insert({
       plugin_id: 'dependency-a',
+      bundled_version: '1.0.0',
       installed_version: '1.0.0',
       enabled: true,
-      lifecycle_state: 'enabled',
+      lifecycle_state: 'installed',
+      operation_status: 'idle',
       installed_at: new Date(),
       upgraded_at: null,
       disabled_at: null,
@@ -459,9 +463,11 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
 
     await integrationDb('devholm_plugins').insert({
       plugin_id: 'url-shortener',
+      bundled_version: '0.0.1',
       installed_version: '0.0.1',
       enabled: false,
       lifecycle_state: 'installed',
+      operation_status: 'idle',
       installed_at: new Date(),
       upgraded_at: null,
       disabled_at: null,

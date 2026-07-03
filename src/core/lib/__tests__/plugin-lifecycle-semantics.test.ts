@@ -5,14 +5,37 @@ function createDbMock() {
   const merge = vi.fn(async () => undefined);
   const onConflict = vi.fn(() => ({ merge, ignore: vi.fn(async () => undefined) }));
   const insert = vi.fn(() => ({ onConflict }));
+  const del = vi.fn(async () => 1);
   const update = vi.fn(async () => 1);
-  const where = vi.fn(() => ({ update, first: vi.fn(async () => null) }));
-  const raw = vi.fn(async () => undefined);
+  const where = vi.fn(() => ({ update, first: vi.fn(async () => null), del }));
+  const whereIn = vi.fn(() => ({ del }));
+  const raw = vi.fn(() => ({ connection: vi.fn(async () => undefined) }));
 
-  const table = vi.fn(() => ({ insert, where, update, onConflict }));
+  const table = vi.fn(() => ({ insert, where, whereIn, update, onConflict, del }));
   const transaction = vi.fn(async (callback) => callback(Object.assign(table, { raw })));
 
-  return Object.assign(table, { insert, where, update, onConflict, transaction, raw });
+  const db = Object.assign(table, {
+    insert,
+    where,
+    whereIn,
+    update,
+    onConflict,
+    del,
+    transaction,
+    raw,
+    connection: vi.fn(() => ({ raw })),
+  }) as ReturnType<typeof Object.assign> & {
+    client?: {
+      acquireConnection: ReturnType<typeof vi.fn>;
+      releaseConnection: ReturnType<typeof vi.fn>;
+    };
+  };
+  db.client = {
+    acquireConnection: vi.fn(async () => ({ __id: 'mock-connection' })),
+    releaseConnection: vi.fn(async () => undefined),
+  };
+
+  return db;
 }
 
 function manifest(overrides: Partial<DevholmPluginManifest> = {}): DevholmPluginManifest {
@@ -94,21 +117,19 @@ describe('plugin lifecycle semantics', () => {
       listInstalledPlugins: vi.fn(async () => [
         {
           pluginId: 'plugin-b',
+          bundledVersion: '1.0.0',
           installedVersion: '1.0.0',
           enabled: true,
-          lifecycleState: 'enabled',
+          lifecycleState: 'installed',
+          operationStatus: 'idle',
         },
       ]),
       upsertPluginLedgerRecord: vi.fn(async () => undefined),
     }));
 
-    vi.doMock('@/db/plugins', () => ({
-      updatePluginEnabledState: vi.fn(async () => true),
-    }));
-
     const { canDisableOrUninstallPlugin } = await import('@core/lib/plugin-lifecycle.server');
     await expect(canDisableOrUninstallPlugin('plugin-a')).rejects.toThrow(
-      /Cannot disable\/uninstall plugin-a/
+      /Cannot disable\/uninstall\/purge plugin-a/
     );
   });
 
@@ -140,7 +161,19 @@ describe('plugin lifecycle semantics', () => {
     }));
 
     vi.doMock('@core/db/plugin-lifecycle', () => ({
-      getInstalledPlugin: vi.fn(async () => null),
+      getInstalledPlugin: vi.fn(async () => ({
+        pluginId: 'plugin-a',
+        bundledVersion: '1.0.0',
+        installedVersion: '1.0.0',
+        enabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedAt: new Date('2026-01-01T00:00:00.000Z'),
+        upgradedAt: null,
+        disabledAt: null,
+        lastError: null,
+        manifestChecksum: null,
+      })),
       listInstalledPlugins: vi.fn(async () => []),
       upsertPluginLedgerRecord: vi.fn(async () => undefined),
     }));
@@ -176,9 +209,11 @@ describe('plugin lifecycle semantics', () => {
     vi.doMock('@core/db/plugin-lifecycle', () => ({
       getInstalledPlugin: vi.fn(async () => ({
         pluginId: 'plugin-a',
+        bundledVersion: '1.0.0',
         installedVersion: '1.0.0',
         enabled: false,
         lifecycleState: 'disabled',
+        operationStatus: 'idle',
         installedAt: new Date('2026-01-01T00:00:00.000Z'),
         upgradedAt: null,
         disabledAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -213,9 +248,11 @@ describe('plugin lifecycle semantics', () => {
     vi.doMock('@core/db/plugin-lifecycle', () => ({
       getInstalledPlugin: vi.fn(async () => ({
         pluginId: 'plugin-a',
+        bundledVersion: '1.0.0',
         installedVersion: '1.0.0',
         enabled: false,
         lifecycleState: 'disabled',
+        operationStatus: 'idle',
         installedAt: new Date('2026-01-01T00:00:00.000Z'),
         upgradedAt: null,
         disabledAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -252,9 +289,11 @@ describe('plugin lifecycle semantics', () => {
     vi.doMock('@core/db/plugin-lifecycle', () => ({
       getInstalledPlugin: vi.fn(async () => ({
         pluginId: 'plugin-a',
+        bundledVersion: '1.0.0',
         installedVersion: '1.0.0',
         enabled: false,
         lifecycleState: 'installed',
+        operationStatus: 'idle',
         installedAt: new Date('2026-01-01T00:00:00.000Z'),
         upgradedAt: null,
         disabledAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -274,7 +313,7 @@ describe('plugin lifecycle semantics', () => {
     await enablePlugin('plugin-a');
     expect(upsertSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        state: 'enabled',
+        state: 'installed',
         enabled: true,
       })
     );

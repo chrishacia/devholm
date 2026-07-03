@@ -10,6 +10,9 @@ function mapPluginState(row: Record<string, unknown>): PluginRuntimeState {
     installed: false,
     isEnabled: row.value === 'true' || row.value === '1',
     lifecycleState: 'bundled',
+    operationStatus: 'idle',
+    installedVersion: null,
+    bundledVersion: null,
     updatedAt: (row.updated_at as Date | null) ?? null,
   };
 }
@@ -62,6 +65,9 @@ export async function listPluginStates(): Promise<PluginAdminRecord[]> {
       installed: false,
       isEnabled: row.value === 'true' || row.value === '1',
       lifecycleState: 'bundled',
+      operationStatus: 'idle',
+      installedVersion: null,
+      bundledVersion: null,
       updatedAt: row.updated_at,
     });
   }
@@ -70,8 +76,11 @@ export async function listPluginStates(): Promise<PluginAdminRecord[]> {
     installedRows.map((row) => [
       row.plugin_id as string,
       {
+        bundledVersion: row.bundled_version as string | null,
+        installedVersion: row.installed_version as string | null,
         enabled: Boolean(row.enabled),
         lifecycleState: row.lifecycle_state as PluginRuntimeState['lifecycleState'],
+        operationStatus: row.operation_status as PluginRuntimeState['operationStatus'],
         installedAt: row.installed_at as Date | null,
         upgradedAt: row.upgraded_at as Date | null,
         disabledAt: row.disabled_at as Date | null,
@@ -84,10 +93,7 @@ export async function listPluginStates(): Promise<PluginAdminRecord[]> {
     const state = stateById.get(definition.id);
     const installed = installedById.get(definition.id);
     const installedState = installed?.lifecycleState ?? 'bundled';
-    const isInstalled =
-      installedState !== 'pending_install' &&
-      installedState !== 'error' &&
-      installedState !== 'bundled';
+    const isInstalled = installedState === 'installed' || installedState === 'disabled';
     return {
       id: definition.id,
       bundled: true,
@@ -105,10 +111,11 @@ export async function listPluginStates(): Promise<PluginAdminRecord[]> {
         embeds: false,
       },
       installed: isInstalled,
-      isEnabled: installed
-        ? installed.enabled && installedState === 'enabled'
-        : state?.isEnabled ?? false,
+      isEnabled: installed ? isInstalled && installed.enabled : state?.isEnabled ?? false,
       lifecycleState: installedState,
+      operationStatus: installed?.operationStatus ?? 'idle',
+      installedVersion: installed?.installedVersion ?? null,
+      bundledVersion: installed?.bundledVersion ?? null,
       updatedAt: installed?.updatedAt ?? state?.updatedAt ?? null,
     };
   });
@@ -131,13 +138,17 @@ export async function getPluginState(pluginId: string): Promise<PluginRuntimeSta
   ]);
 
   if (installed) {
+    const isInstalled =
+      installed.lifecycleState === 'installed' || installed.lifecycleState === 'disabled';
     return {
       id: pluginId,
       bundled: true,
-      installed:
-        installed.lifecycleState !== 'pending_install' && installed.lifecycleState !== 'error',
-      isEnabled: installed.enabled && installed.lifecycleState === 'enabled',
+      installed: isInstalled,
+      isEnabled: isInstalled && installed.enabled,
       lifecycleState: installed.lifecycleState,
+      operationStatus: installed.operationStatus,
+      installedVersion: installed.installedVersion,
+      bundledVersion: installed.bundledVersion,
       updatedAt: installed.installedAt ?? installed.upgradedAt ?? installed.disabledAt ?? null,
     };
   }
@@ -149,6 +160,9 @@ export async function getPluginState(pluginId: string): Promise<PluginRuntimeSta
       installed: false,
       isEnabled: false,
       lifecycleState: 'bundled',
+      operationStatus: 'idle',
+      installedVersion: null,
+      bundledVersion: null,
       updatedAt: null,
     };
   }
@@ -167,48 +181,4 @@ export async function isPluginEnabled(pluginId: string | undefined): Promise<boo
   }
   const state = await getPluginState(pluginId);
   return Boolean(state?.installed && state.isEnabled);
-}
-
-export async function updatePluginEnabledState(pluginId: string, isEnabled: boolean) {
-  await syncPluginDefinitions();
-
-  const installed = await getInstalledPlugin(pluginId);
-  if (
-    isEnabled &&
-    (!installed ||
-      installed.lifecycleState === 'uninstalled' ||
-      installed.lifecycleState === 'error')
-  ) {
-    return false;
-  }
-
-  const now = new Date();
-
-  await getDb()('site_settings')
-    .insert({
-      key: pluginSettingKey(pluginId),
-      value: isEnabled ? 'true' : 'false',
-      type: 'boolean',
-      category: 'plugins',
-      description: `Plugin ${pluginId} enabled state`,
-      updated_at: now,
-    })
-    .onConflict('key')
-    .merge({
-      value: isEnabled ? 'true' : 'false',
-      updated_at: now,
-    });
-
-  if (installed) {
-    await getDb()('devholm_plugins')
-      .where({ plugin_id: pluginId })
-      .update({
-        enabled: isEnabled,
-        lifecycle_state: isEnabled ? 'enabled' : 'disabled',
-        disabled_at: isEnabled ? null : now,
-        updated_at: now,
-      });
-  }
-
-  return true;
 }

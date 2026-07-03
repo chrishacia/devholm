@@ -1,13 +1,19 @@
 import { createHash } from 'crypto';
 import type { Knex } from 'knex';
 import { getDb } from './index';
-import type { DevholmPluginManifest, PluginLifecycleState } from '@core/types/plugins';
+import type {
+  DevholmPluginManifest,
+  PluginLifecycleState,
+  PluginOperationStatus,
+} from '@core/types/plugins';
 
 export interface InstalledPluginRecord {
   pluginId: string;
-  installedVersion: string;
+  bundledVersion: string;
+  installedVersion: string | null;
   enabled: boolean;
   lifecycleState: PluginLifecycleState;
+  operationStatus: PluginOperationStatus;
   installedAt: Date | null;
   upgradedAt: Date | null;
   disabledAt: Date | null;
@@ -26,7 +32,9 @@ export function checksumManifest(manifest: DevholmPluginManifest): string {
 export async function upsertPluginLedgerRecord(input: {
   manifest: DevholmPluginManifest;
   state: PluginLifecycleState;
+  operationStatus: PluginOperationStatus;
   enabled: boolean;
+  installedVersion?: string | null;
   installedAt?: Date | null;
   upgradedAt?: Date | null;
   disabledAt?: Date | null;
@@ -34,17 +42,20 @@ export async function upsertPluginLedgerRecord(input: {
 }): Promise<void> {
   const db = getDb();
   const now = new Date();
-  const installedAt = input.installedAt === undefined ? now : input.installedAt;
-  const upgradedAt = input.upgradedAt === undefined ? now : input.upgradedAt;
-  const disabledAt =
-    input.disabledAt === undefined ? (input.enabled ? null : now) : input.disabledAt;
+  const installedAt = input.installedAt === undefined ? null : input.installedAt;
+  const upgradedAt = input.upgradedAt === undefined ? null : input.upgradedAt;
+  const disabledAt = input.disabledAt === undefined ? null : input.disabledAt;
+  const installedVersion =
+    input.installedVersion === undefined ? input.manifest.version : input.installedVersion;
 
   await db('devholm_plugins')
     .insert({
       plugin_id: input.manifest.id,
-      installed_version: input.manifest.version,
+      bundled_version: input.manifest.version,
+      installed_version: installedVersion,
       enabled: input.enabled,
       lifecycle_state: input.state,
+      operation_status: input.operationStatus,
       installed_at: installedAt,
       upgraded_at: upgradedAt,
       disabled_at: disabledAt,
@@ -54,9 +65,11 @@ export async function upsertPluginLedgerRecord(input: {
     })
     .onConflict('plugin_id')
     .merge({
-      installed_version: input.manifest.version,
+      bundled_version: input.manifest.version,
+      installed_version: installedVersion,
       enabled: input.enabled,
       lifecycle_state: input.state,
+      operation_status: input.operationStatus,
       installed_at: installedAt,
       upgraded_at: upgradedAt,
       disabled_at: disabledAt,
@@ -75,9 +88,11 @@ export async function getInstalledPlugin(pluginId: string): Promise<InstalledPlu
 
   return {
     pluginId: row.plugin_id,
+    bundledVersion: row.bundled_version,
     installedVersion: row.installed_version,
     enabled: Boolean(row.enabled),
     lifecycleState: row.lifecycle_state,
+    operationStatus: row.operation_status,
     installedAt: row.installed_at,
     upgradedAt: row.upgraded_at,
     disabledAt: row.disabled_at,
@@ -92,9 +107,11 @@ export async function listInstalledPlugins(): Promise<InstalledPluginRecord[]> {
 
   return rows.map((row) => ({
     pluginId: row.plugin_id,
+    bundledVersion: row.bundled_version,
     installedVersion: row.installed_version,
     enabled: Boolean(row.enabled),
     lifecycleState: row.lifecycle_state,
+    operationStatus: row.operation_status,
     installedAt: row.installed_at,
     upgradedAt: row.upgraded_at,
     disabledAt: row.disabled_at,
@@ -137,6 +154,19 @@ export async function getPluginMigrationLedger(pluginId: string): Promise<
   }>
 > {
   const db = getDb();
+  return getPluginMigrationLedgerWithDb(pluginId, db);
+}
+
+export async function getPluginMigrationLedgerWithDb(
+  pluginId: string,
+  db: Knex
+): Promise<
+  Array<{
+    migrationId: string;
+    checksum: string;
+    pluginVersion: string;
+  }>
+> {
   const rows = await db('devholm_plugin_migrations')
     .select('migration_id', 'checksum', 'plugin_version')
     .where({ plugin_id: pluginId })

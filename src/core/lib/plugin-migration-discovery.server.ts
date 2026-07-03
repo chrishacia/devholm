@@ -25,14 +25,36 @@ export function checksumMigrationContent(content: string): string {
 
 export function loadPluginMigrationRegistry(registryPath: string): PluginRegistryEntry[] {
   if (!fs.existsSync(registryPath)) {
-    return [];
+    throw new Error(`Plugin migration registry not found at ${registryPath}`);
   }
 
   const parsed = JSON.parse(fs.readFileSync(registryPath, 'utf8')) as {
     plugins?: PluginRegistryEntry[];
   };
 
-  return Array.isArray(parsed.plugins) ? parsed.plugins : [];
+  if (!Array.isArray(parsed.plugins)) {
+    throw new Error(`Plugin migration registry is malformed at ${registryPath}`);
+  }
+
+  for (const [index, entry] of parsed.plugins.entries()) {
+    if (!entry || typeof entry !== 'object') {
+      throw new Error(`Plugin migration registry entry ${index} is invalid`);
+    }
+
+    if (!entry.id || !entry.id.trim()) {
+      throw new Error(`Plugin migration registry entry ${index} is missing id`);
+    }
+
+    if (!entry.version || !entry.version.trim()) {
+      throw new Error(`Plugin migration registry entry ${entry.id} is missing version`);
+    }
+
+    if (!entry.migrationDir || !entry.migrationDir.trim()) {
+      throw new Error(`Plugin migration registry entry ${entry.id} is missing migrationDir`);
+    }
+  }
+
+  return parsed.plugins;
 }
 
 export function resolvePluginRegistryPath(rootDir: string): string | null {
@@ -47,16 +69,19 @@ export function resolvePluginRegistryPath(rootDir: string): string | null {
   return candidatePaths.find((candidate) => fs.existsSync(candidate)) ?? null;
 }
 
-export function resolvePluginMigrationDir(
-  rootDir: string,
-  entry: PluginRegistryEntry
-): string | null {
+export function resolvePluginMigrationDir(rootDir: string, entry: PluginRegistryEntry): string {
   const candidates = [entry.migrationDir, entry.productionMigrationDir]
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .map((value) => (path.isAbsolute(value) ? value : path.join(rootDir, value)));
 
   const found = candidates.find((candidate) => fs.existsSync(candidate));
-  return found ?? null;
+  if (!found) {
+    throw new Error(
+      `Migration directory is missing for plugin ${entry.id}. Checked: ${candidates.join(', ')}`
+    );
+  }
+
+  return found;
 }
 
 export function discoverPluginMigrations(
@@ -67,9 +92,6 @@ export function discoverPluginMigrations(
 
   for (const entry of registryEntries) {
     const migrationDir = resolvePluginMigrationDir(rootDir, entry);
-    if (!migrationDir) {
-      continue;
-    }
 
     const files = fs
       .readdirSync(migrationDir)

@@ -3,25 +3,41 @@ import type { Knex } from 'knex';
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('devholm_plugins', (table) => {
     table.string('plugin_id', 128).primary();
-    table.string('installed_version', 64).notNullable();
+    table.string('bundled_version', 64).notNullable();
+    table.string('installed_version', 64).nullable();
     table.boolean('enabled').notNullable().defaultTo(false);
     table
+      .enu('lifecycle_state', ['bundled', 'installed', 'disabled', 'uninstalled'], {
+        useNative: true,
+        enumName: 'devholm_plugin_install_state',
+      })
+      .notNullable()
+      .defaultTo('bundled');
+    table
       .enu(
-        'lifecycle_state',
-        ['pending_install', 'installed', 'enabled', 'disabled', 'uninstalled', 'error'],
+        'operation_status',
+        [
+          'idle',
+          'pending_install',
+          'pending_upgrade',
+          'pending_disable',
+          'pending_uninstall',
+          'pending_purge',
+          'error',
+        ],
         {
           useNative: true,
-          enumName: 'devholm_plugin_lifecycle_state',
+          enumName: 'devholm_plugin_operation_state',
         }
       )
       .notNullable()
-      .defaultTo('pending_install');
+      .defaultTo('idle');
     table.timestamp('installed_at').nullable();
     table.timestamp('upgraded_at').nullable();
     table.timestamp('disabled_at').nullable();
     table.text('last_error').nullable();
     table.string('manifest_checksum', 128).nullable();
-    table.timestamp('updated_at').notNullable().defaultTo(knex.fn.now());
+    table.timestamp('updated_at').notNullable();
   });
 
   await knex.schema.createTable('devholm_plugin_migrations', (table) => {
@@ -44,5 +60,6 @@ export async function up(knex: Knex): Promise<void> {
 export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('devholm_plugin_migrations');
   await knex.schema.dropTableIfExists('devholm_plugins');
-  await knex.raw('DROP TYPE IF EXISTS devholm_plugin_lifecycle_state');
+  await knex.raw('DROP TYPE IF EXISTS devholm_plugin_operation_state');
+  await knex.raw('DROP TYPE IF EXISTS devholm_plugin_install_state');
 }

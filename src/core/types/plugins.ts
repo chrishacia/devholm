@@ -3,13 +3,15 @@ export interface PluginAdminSurface {
   label?: string;
 }
 
-export type PluginLifecycleState =
-  | 'bundled'
+export type PluginLifecycleState = 'bundled' | 'installed' | 'disabled' | 'uninstalled';
+
+export type PluginOperationStatus =
+  | 'idle'
   | 'pending_install'
-  | 'installed'
-  | 'enabled'
-  | 'disabled'
-  | 'uninstalled'
+  | 'pending_upgrade'
+  | 'pending_disable'
+  | 'pending_uninstall'
+  | 'pending_purge'
   | 'error';
 
 export type PluginLifecycleEvent = 'install' | 'upgrade' | 'disable' | 'uninstall' | 'purge';
@@ -103,6 +105,9 @@ export interface PluginRuntimeState {
   installed: boolean;
   isEnabled: boolean;
   lifecycleState: PluginLifecycleState;
+  operationStatus: PluginOperationStatus;
+  installedVersion: string | null;
+  bundledVersion: string | null;
   updatedAt: Date | null;
 }
 
