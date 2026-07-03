@@ -1,12 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { verifyAdmin } from '@/lib/auth-helpers';
-import { listPluginStates, updatePluginEnabledState } from '@/db/plugins';
+import { listPluginStates } from '@/db/plugins';
+import { disablePlugin, enablePlugin } from '@core/lib/plugin-lifecycle.server';
 
 const updateSchema = z.object({
   pluginId: z.string().min(1).max(120),
   isEnabled: z.boolean(),
 });
+
+function mapLifecycleError(error: unknown): { status: number; body: { error: string } } {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.includes('Unknown plugin')) {
+    return { status: 404, body: { error: message } };
+  }
+
+  if (
+    message.includes('not installed') ||
+    message.includes('requires it') ||
+    message.includes('must be enabled')
+  ) {
+    return { status: 409, body: { error: message } };
+  }
+
+  return { status: 500, body: { error: 'Failed to update plugin state' } };
+}
 
 export async function GET(request: NextRequest) {
   const token = await verifyAdmin(request);
@@ -40,16 +59,23 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const updated = await updatePluginEnabledState(parsed.data.pluginId, parsed.data.isEnabled);
+    const initiatedBy =
+      (typeof token.email === 'string' && token.email) ||
+      (typeof token.sub === 'string' && token.sub) ||
+      (typeof token.name === 'string' && token.name) ||
+      undefined;
 
-    if (!updated) {
-      return NextResponse.json({ error: 'Plugin not found' }, { status: 404 });
+    if (parsed.data.isEnabled) {
+      await enablePlugin(parsed.data.pluginId, initiatedBy);
+    } else {
+      await disablePlugin(parsed.data.pluginId, initiatedBy);
     }
 
     const plugins = await listPluginStates();
     return NextResponse.json({ plugins });
   } catch (error) {
     console.error('Failed to update plugin state:', error);
-    return NextResponse.json({ error: 'Failed to update plugin state' }, { status: 500 });
+    const mapped = mapLifecycleError(error);
+    return NextResponse.json(mapped.body, { status: mapped.status });
   }
 }

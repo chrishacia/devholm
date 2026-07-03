@@ -2,6 +2,8 @@
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 import knex from 'knex';
+import fs from 'fs';
+import path from 'path';
 
 type SeedProfile = 'all' | 'bootstrap' | 'demo' | 'user';
 

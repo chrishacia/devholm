@@ -13,6 +13,8 @@ import { listGalleryPublicNavigation } from './gallery';
 import { isPluginEnabled } from './plugins';
 import { mainNavigation, footerNavigation } from '@/config';
 import { devPageDefinitions } from '@user/extensions/pages';
+import { URL_SHORTENER_ROUTE_PREFIX_KEY } from '@user/extensions/plugins/url-shortener/constants';
+import { validateRoutePrefix } from '@user/extensions/plugins/url-shortener/validation/prefix-validation';
 
 // =============================================================================
 // Types
@@ -79,6 +81,77 @@ function stringifyValue(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
+}
+
+async function routePrefixCollisionCandidates(trx: ReturnType<typeof getDb>): Promise<string[]> {
+  const rows = await trx('site_settings')
+    .select('key', 'value')
+    .where('key', 'like', 'plugin:%:route-prefix');
+
+  const pluginRows = await trx('devholm_plugins').select('plugin_id', 'enabled');
+  const enabledById = new Map(
+    pluginRows.map((row: { plugin_id: string; enabled: boolean }) => [
+      row.plugin_id,
+      Boolean(row.enabled),
+    ])
+  );
+
+  const candidates: string[] = [];
+  for (const row of rows) {
+    const key = String((row as { key: string }).key);
+    const match = key.match(/^plugin:(.+):route-prefix$/u);
+    if (!match) {
+      continue;
+    }
+
+    const pluginId = match[1];
+    if (pluginId === 'url-shortener') {
+      continue;
+    }
+
+    if (enabledById.get(pluginId) !== true) {
+      continue;
+    }
+
+    const value = (row as { value: string | null }).value;
+    if (typeof value === 'string' && value.trim()) {
+      candidates.push(value);
+    }
+  }
+
+  const aliasTableExists = await trx.schema.hasTable('u_url_shortener_prefix_aliases');
+  if (aliasTableExists) {
+    const aliasRows = await trx('u_url_shortener_prefix_aliases')
+      .select('prefix')
+      .where({ is_active: true });
+    for (const row of aliasRows) {
+      const value = (row as { prefix: string | null }).prefix;
+      if (typeof value === 'string' && value.trim()) {
+        candidates.push(value);
+      }
+    }
+  }
+
+  return candidates;
+}
+
+async function normalizeSettingMutationValue(
+  trx: ReturnType<typeof getDb>,
+  key: string,
+  value: unknown
+): Promise<unknown> {
+  if (key !== URL_SHORTENER_ROUTE_PREFIX_KEY) {
+    return value;
+  }
+
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`Invalid route prefix value for ${URL_SHORTENER_ROUTE_PREFIX_KEY}`);
+  }
+
+  const candidates = await routePrefixCollisionCandidates(trx);
+  return validateRoutePrefix(value, {
+    additionalDisallowedPrefixes: candidates,
+  });
 }
 
 // =============================================================================
@@ -179,11 +252,12 @@ export async function getSettings(keys: string[]): Promise<SettingsMap> {
  */
 export async function updateSetting(key: string, value: unknown): Promise<boolean> {
   const db = getDb();
+  const normalized = await normalizeSettingMutationValue(db, key, value);
 
   const updated = await db('site_settings')
     .where('key', key)
     .update({
-      value: stringifyValue(value),
+      value: stringifyValue(normalized),
       updated_at: new Date(),
     });
 
@@ -199,10 +273,11 @@ export async function updateSettings(settings: Record<string, unknown>): Promise
 
   await db.transaction(async (trx) => {
     for (const [key, value] of Object.entries(settings)) {
+      const normalized = await normalizeSettingMutationValue(trx, key, value);
       const updated = await trx('site_settings')
         .where('key', key)
         .update({
-          value: stringifyValue(value),
+          value: stringifyValue(normalized),
           updated_at: new Date(),
         });
 
