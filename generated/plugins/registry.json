@@ -3,13 +3,12 @@
     {
       "id": "url-shortener",
       "version": "0.1.0",
-      "migrationDir": "src/user/extensions/plugins/url-shortener/db/migrations",
-      "productionMigrationDir": "plugins/url-shortener/migrations",
+      "migrationDir": "generated/plugins/url-shortener/migrations",
       "seedDir": "src/user/extensions/plugins/url-shortener/db/seeds",
       "migrations": [
         {
           "id": "url-shortener:20260701010000_url_shortener_foundation",
-          "file": "db/migrations/20260701010000_url_shortener_foundation.ts",
+          "file": "url-shortener/migrations/20260701010000_url_shortener_foundation.ts",
           "checksum": "5c660407dde40511d70e119b4324ff3cc5c42a4a17ebf8e831fc7fa10f3cbb0f"
         }
       ]

@@ -17,6 +17,7 @@ export interface InstalledPluginRecord {
   installedAt: Date | null;
   upgradedAt: Date | null;
   disabledAt: Date | null;
+  updatedAt: Date | null;
   lastError: string | null;
   manifestChecksum: string | null;
 }
@@ -34,7 +35,7 @@ export async function upsertPluginLedgerRecord(input: {
   state: PluginLifecycleState;
   operationStatus: PluginOperationStatus;
   enabled: boolean;
-  installedVersion?: string | null;
+  installedVersion: string | null;
   installedAt?: Date | null;
   upgradedAt?: Date | null;
   disabledAt?: Date | null;
@@ -45,14 +46,11 @@ export async function upsertPluginLedgerRecord(input: {
   const installedAt = input.installedAt === undefined ? null : input.installedAt;
   const upgradedAt = input.upgradedAt === undefined ? null : input.upgradedAt;
   const disabledAt = input.disabledAt === undefined ? null : input.disabledAt;
-  const installedVersion =
-    input.installedVersion === undefined ? input.manifest.version : input.installedVersion;
-
   await db('devholm_plugins')
     .insert({
       plugin_id: input.manifest.id,
       bundled_version: input.manifest.version,
-      installed_version: installedVersion,
+      installed_version: input.installedVersion,
       enabled: input.enabled,
       lifecycle_state: input.state,
       operation_status: input.operationStatus,
@@ -66,7 +64,7 @@ export async function upsertPluginLedgerRecord(input: {
     .onConflict('plugin_id')
     .merge({
       bundled_version: input.manifest.version,
-      installed_version: installedVersion,
+      installed_version: input.installedVersion,
       enabled: input.enabled,
       lifecycle_state: input.state,
       operation_status: input.operationStatus,
@@ -96,6 +94,7 @@ export async function getInstalledPlugin(pluginId: string): Promise<InstalledPlu
     installedAt: row.installed_at,
     upgradedAt: row.upgraded_at,
     disabledAt: row.disabled_at,
+    updatedAt: row.updated_at,
     lastError: row.last_error,
     manifestChecksum: row.manifest_checksum,
   };
@@ -115,6 +114,7 @@ export async function listInstalledPlugins(): Promise<InstalledPluginRecord[]> {
     installedAt: row.installed_at,
     upgradedAt: row.upgraded_at,
     disabledAt: row.disabled_at,
+    updatedAt: row.updated_at,
     lastError: row.last_error,
     manifestChecksum: row.manifest_checksum,
   }));

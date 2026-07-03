@@ -6,8 +6,12 @@ export interface PluginRegistryEntry {
   id: string;
   version: string;
   migrationDir: string;
-  productionMigrationDir?: string;
   seedDir?: string;
+  migrations: Array<{
+    id: string;
+    file: string;
+    checksum: string;
+  }>;
 }
 
 export interface PluginMigrationFile {
@@ -58,30 +62,23 @@ export function loadPluginMigrationRegistry(registryPath: string): PluginRegistr
 }
 
 export function resolvePluginRegistryPath(rootDir: string): string | null {
-  const candidatePaths = [
-    path.join(rootDir, 'generated/plugins/registry.json'),
-    path.join(rootDir, 'generated/plugins/migration-registry.json'),
-    path.join(rootDir, 'plugins/registry.json'),
-    path.join(rootDir, 'plugins/migration-registry.json'),
-    path.join(rootDir, 'src/user/extensions/plugins/migration-registry.json'),
-  ];
+  const candidatePaths = [path.join(rootDir, 'generated/plugins/registry.json')];
 
   return candidatePaths.find((candidate) => fs.existsSync(candidate)) ?? null;
 }
 
 export function resolvePluginMigrationDir(rootDir: string, entry: PluginRegistryEntry): string {
-  const candidates = [entry.migrationDir, entry.productionMigrationDir]
-    .filter((value): value is string => typeof value === 'string' && value.length > 0)
-    .map((value) => (path.isAbsolute(value) ? value : path.join(rootDir, value)));
+  const migrationDir = path.isAbsolute(entry.migrationDir)
+    ? entry.migrationDir
+    : path.join(rootDir, entry.migrationDir);
 
-  const found = candidates.find((candidate) => fs.existsSync(candidate));
-  if (!found) {
+  if (!fs.existsSync(migrationDir)) {
     throw new Error(
-      `Migration directory is missing for plugin ${entry.id}. Checked: ${candidates.join(', ')}`
+      `Migration directory is missing for plugin ${entry.id}. Expected: ${migrationDir}`
     );
   }
 
-  return found;
+  return migrationDir;
 }
 
 export function discoverPluginMigrations(
@@ -93,27 +90,71 @@ export function discoverPluginMigrations(
   for (const entry of registryEntries) {
     const migrationDir = resolvePluginMigrationDir(rootDir, entry);
 
-    const files = fs
-      .readdirSync(migrationDir)
-      .filter((file) => file.endsWith('.ts') || file.endsWith('.js'))
-      .sort((a, b) => a.localeCompare(b));
+    const declaredFiles = new Set<string>();
+    const declaredIds = new Set<string>();
+    for (const declared of entry.migrations) {
+      if (!declared.id.startsWith(`${entry.id}:`)) {
+        throw new Error(`Migration ID ${declared.id} must be namespaced to ${entry.id}:*`);
+      }
 
-    for (const file of files) {
-      const absolutePath = path.join(migrationDir, file);
+      if (declaredIds.has(declared.id)) {
+        throw new Error(`Duplicate declared migration ID for ${entry.id}: ${declared.id}`);
+      }
+      declaredIds.add(declared.id);
+
+      const declaredFile = declared.file.replace(/\\/g, '/');
+      if (declaredFiles.has(declaredFile)) {
+        throw new Error(`Duplicate declared migration file for ${entry.id}: ${declaredFile}`);
+      }
+      declaredFiles.add(declaredFile);
+
+      const absolutePath = path.join(rootDir, 'generated/plugins', declaredFile);
+      if (!absolutePath.startsWith(path.join(rootDir, 'generated/plugins'))) {
+        throw new Error(`Migration file path escapes generated plugins root: ${declared.file}`);
+      }
+
+      if (!fs.existsSync(absolutePath)) {
+        throw new Error(`Declared migration file is missing: ${declared.file}`);
+      }
+
+      const expectedFileName = path.basename(declared.file);
+      if (!fs.existsSync(path.join(migrationDir, expectedFileName))) {
+        throw new Error(
+          `Declared migration file ${declared.file} does not exist under ${entry.migrationDir}`
+        );
+      }
+
       const content = fs.readFileSync(absolutePath, 'utf8');
-      const migrationBase = file.replace(/\.(ts|js)$/u, '');
+      const actualChecksum = checksumMigrationContent(content);
+      if (declared.checksum !== actualChecksum) {
+        throw new Error(
+          `Declared checksum mismatch for ${declared.id}: expected ${declared.checksum}, got ${actualChecksum}`
+        );
+      }
+
       discovered.push({
         pluginId: entry.id,
         pluginVersion: entry.version,
-        migrationId: `${entry.id}:${migrationBase}`,
-        file,
+        migrationId: declared.id,
+        file: path.basename(declared.file),
         absolutePath,
-        checksum: checksumMigrationContent(content),
+        checksum: declared.checksum,
       });
+    }
+
+    const packagedFiles = fs
+      .readdirSync(migrationDir)
+      .filter((file) => file.endsWith('.ts') || file.endsWith('.js'))
+      .sort((a, b) => a.localeCompare(b));
+    for (const file of packagedFiles) {
+      const expectedPath = `${entry.id}/migrations/${file}`;
+      if (!declaredFiles.has(expectedPath)) {
+        throw new Error(`Undeclared packaged migration file for ${entry.id}: ${expectedPath}`);
+      }
     }
   }
 
-  return discovered.sort((a, b) => a.migrationId.localeCompare(b.migrationId));
+  return discovered;
 }
 
 export function ensureUniqueMigrationIds(migrations: readonly PluginMigrationFile[]): void {

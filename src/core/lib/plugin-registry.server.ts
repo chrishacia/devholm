@@ -1,7 +1,7 @@
 import packageJson from '../../../package.json';
 import fs from 'fs';
 import path from 'path';
-import { satisfies, valid } from 'semver';
+import { satisfies, valid, validRange } from 'semver';
 import type { DevholmBundledPlugin, DevholmPluginManifest } from '@core/types/plugins';
 import { bundledPlugins } from '@user/extensions/plugins/registry';
 
@@ -32,21 +32,24 @@ export function validateManifest(manifest: DevholmPluginManifest): string[] {
     errors.push(`manifest.version is required for plugin ${manifest.id || '<unknown>'}`);
   }
 
+  if (manifest.version && !valid(manifest.version)) {
+    errors.push(`manifest.version must be valid semver for plugin ${manifest.id || '<unknown>'}`);
+  }
+
   if (!manifest.enablementSettingKey.trim()) {
     errors.push(`enablementSettingKey is required for plugin ${manifest.id || '<unknown>'}`);
   }
 
-  if (
-    manifest.enablementSettingKey &&
-    !manifest.enablementSettingKey.startsWith(`plugin:${manifest.id}:`)
-  ) {
+  const expectedEnablementKey = `plugin:${manifest.id}:enabled`;
+  if (manifest.enablementSettingKey && manifest.enablementSettingKey !== expectedEnablementKey) {
     errors.push(
-      `enablementSettingKey ${manifest.enablementSettingKey} must be namespaced under plugin:${manifest.id}:`
+      `enablementSettingKey ${manifest.enablementSettingKey} must exactly equal ${expectedEnablementKey}`
     );
   }
 
   if (manifest.migrations) {
     const ids = new Set<string>();
+    const files = new Set<string>();
     for (const migration of manifest.migrations) {
       if (!migration.id.startsWith(`${manifest.id}:`)) {
         errors.push(
@@ -57,6 +60,94 @@ export function validateManifest(manifest: DevholmPluginManifest): string[] {
         errors.push(`duplicate migration id ${migration.id} in plugin ${manifest.id}`);
       }
       ids.add(migration.id);
+
+      if (files.has(migration.file)) {
+        errors.push(`duplicate migration file ${migration.file} in plugin ${manifest.id}`);
+      }
+      files.add(migration.file);
+
+      if (!migration.file.startsWith('db/migrations/')) {
+        errors.push(
+          `migration file ${migration.file} must be declared under db/migrations/ for plugin ${manifest.id}`
+        );
+      }
+    }
+  }
+
+  if (manifest.settings) {
+    const seenSettings = new Set<string>();
+    for (const setting of manifest.settings) {
+      if (seenSettings.has(setting.key)) {
+        errors.push(`duplicate setting key ${setting.key} in plugin ${manifest.id}`);
+      }
+      seenSettings.add(setting.key);
+
+      if (!setting.key.startsWith(`plugin:${manifest.id}:`)) {
+        errors.push(`setting key ${setting.key} must be namespaced under plugin:${manifest.id}:`);
+      }
+
+      if (setting.defaultValue !== undefined && setting.defaultValue !== null) {
+        if (setting.type === 'string' && typeof setting.defaultValue !== 'string') {
+          errors.push(`setting ${setting.key} defaultValue must be string`);
+        }
+        if (setting.type === 'number' && typeof setting.defaultValue !== 'number') {
+          errors.push(`setting ${setting.key} defaultValue must be number`);
+        }
+        if (setting.type === 'boolean' && typeof setting.defaultValue !== 'boolean') {
+          errors.push(`setting ${setting.key} defaultValue must be boolean`);
+        }
+        if (
+          setting.type === 'json' &&
+          (typeof setting.defaultValue !== 'object' ||
+            setting.defaultValue === null ||
+            Array.isArray(setting.defaultValue))
+        ) {
+          errors.push(`setting ${setting.key} defaultValue must be JSON object`);
+        }
+      }
+    }
+  }
+
+  if (manifest.publicRouteExtensionIds) {
+    const seen = new Set<string>();
+    for (const extensionId of manifest.publicRouteExtensionIds) {
+      if (seen.has(extensionId)) {
+        errors.push(`duplicate public route extension id ${extensionId} in plugin ${manifest.id}`);
+      }
+      seen.add(extensionId);
+    }
+  }
+
+  if (manifest.adminPageHrefs) {
+    const seen = new Set<string>();
+    for (const href of manifest.adminPageHrefs) {
+      if (seen.has(href)) {
+        errors.push(`duplicate admin page href ${href} in plugin ${manifest.id}`);
+      }
+      seen.add(href);
+    }
+  }
+
+  const lifecycle = manifest.lifecycle;
+  if (lifecycle) {
+    for (const [hookName, hookFn] of Object.entries(lifecycle)) {
+      if (hookFn !== undefined && typeof hookFn !== 'function') {
+        errors.push(`lifecycle.${hookName} must be a function for plugin ${manifest.id}`);
+      }
+    }
+  }
+
+  for (const [dependencyId, range] of Object.entries(manifest.dependencies?.plugins ?? {})) {
+    if (!validRange(range)) {
+      errors.push(
+        `plugin ${manifest.id} declares invalid plugin dependency range ${dependencyId}@${range}`
+      );
+    }
+  }
+
+  for (const [pkg, range] of Object.entries(manifest.dependencies?.packages ?? {})) {
+    if (!validRange(range)) {
+      errors.push(`plugin ${manifest.id} declares invalid runtime package range ${pkg}@${range}`);
     }
   }
 
@@ -84,6 +175,13 @@ export function validatePluginManifestList(manifests: readonly DevholmPluginMani
     errors.push(...validateManifest(manifest));
 
     if (manifest.devholmVersion) {
+      if (!validRange(manifest.devholmVersion)) {
+        errors.push(
+          `plugin ${manifest.id} declares invalid devholmVersion range ${manifest.devholmVersion}`
+        );
+        continue;
+      }
+
       const compatible = isVersionCompatible(packageJson.version, manifest.devholmVersion);
       if (!compatible) {
         errors.push(
@@ -154,16 +252,54 @@ export function validateDependencyGraph(): string[] {
 
 export function validatePackageDependenciesForManifests(
   manifests: readonly DevholmPluginManifest[],
-  installedPackages: Record<string, string>
+  installedPackages: Record<string, string>,
+  rootDependencies: Record<string, string> = (packageJson.dependencies ?? {}) as Record<
+    string,
+    string
+  >,
+  rootDevDependencies: Record<string, string> = (packageJson.devDependencies ?? {}) as Record<
+    string,
+    string
+  >
 ): string[] {
   const errors: string[] = [];
 
   for (const manifest of manifests) {
     const packageDeps = manifest.dependencies?.packages ?? {};
     for (const [pkg, expectedRange] of Object.entries(packageDeps)) {
+      if (!validRange(expectedRange)) {
+        errors.push(
+          `plugin ${manifest.id} declares invalid runtime package range ${pkg}@${expectedRange}`
+        );
+        continue;
+      }
+
+      const inDependencies = Object.prototype.hasOwnProperty.call(rootDependencies, pkg);
+      const inDevDependencies = Object.prototype.hasOwnProperty.call(rootDevDependencies, pkg);
+      if (!inDependencies && inDevDependencies) {
+        errors.push(
+          `plugin ${manifest.id} requires ${pkg} in production dependencies but it is only in devDependencies`
+        );
+        continue;
+      }
+
+      if (!inDependencies && !inDevDependencies) {
+        errors.push(
+          `plugin ${manifest.id} requires ${pkg} in production dependencies but it is transitive-only or missing`
+        );
+        continue;
+      }
+
       const installedVersion = installedPackages[pkg];
       if (!installedVersion) {
-        errors.push(`plugin ${manifest.id} requires missing package dependency ${pkg}`);
+        errors.push(`plugin ${manifest.id} requires installed package metadata for ${pkg}`);
+        continue;
+      }
+
+      if (!valid(installedVersion)) {
+        errors.push(
+          `plugin ${manifest.id} resolved malformed installed package version ${pkg}@${installedVersion}`
+        );
         continue;
       }
 
@@ -180,6 +316,8 @@ export function validatePackageDependenciesForManifests(
 
 export function validatePackageDependencies(): string[] {
   const manifests = getBundledPluginManifests();
+  const rootDependencies = (packageJson.dependencies ?? {}) as Record<string, string>;
+  const rootDevDependencies = (packageJson.devDependencies ?? {}) as Record<string, string>;
   const requiredPackages = new Set<string>();
   for (const manifest of manifests) {
     for (const packageName of Object.keys(manifest.dependencies?.packages ?? {})) {
@@ -202,5 +340,10 @@ export function validatePackageDependencies(): string[] {
     }
   }
 
-  return validatePackageDependenciesForManifests(manifests, installed);
+  return validatePackageDependenciesForManifests(
+    manifests,
+    installed,
+    rootDependencies,
+    rootDevDependencies
+  );
 }

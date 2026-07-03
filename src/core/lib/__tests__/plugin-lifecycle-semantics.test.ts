@@ -72,6 +72,7 @@ describe('plugin lifecycle semantics', () => {
 
     vi.doMock('@core/lib/plugin-migration-runner.server', () => ({
       applyPendingPluginMigrations: vi.fn(async () => undefined),
+      applyPluginMigrationDowns: vi.fn(async () => undefined),
     }));
 
     vi.doMock('@core/db/plugin-lifecycle', () => ({
@@ -315,6 +316,122 @@ describe('plugin lifecycle semantics', () => {
       expect.objectContaining({
         state: 'installed',
         enabled: true,
+      })
+    );
+  });
+
+  it('disable failure records operation error and preserves previous runtime state', async () => {
+    vi.resetModules();
+
+    const upsertSpy = vi.fn(async () => undefined);
+    const db = createDbMock();
+
+    vi.doMock('@core/lib/plugin-registry.server', () => ({
+      getBundledPluginManifests: () => [
+        manifest({
+          lifecycle: {
+            beforeDisable: async () => {
+              throw new Error('forced disable failure');
+            },
+          },
+        }),
+      ],
+      validateDependencyGraph: () => [],
+      validatePackageDependencies: () => [],
+      validateBundledPluginRegistry: () => [],
+    }));
+
+    vi.doMock('@core/lib/plugin-migration-runner.server', () => ({
+      applyPendingPluginMigrations: vi.fn(async () => undefined),
+      applyPluginMigrationDowns: vi.fn(async () => undefined),
+    }));
+
+    vi.doMock('@core/db/plugin-lifecycle', () => ({
+      getInstalledPlugin: vi.fn(async () => ({
+        pluginId: 'plugin-a',
+        bundledVersion: '1.0.0',
+        installedVersion: '1.0.0',
+        enabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedAt: new Date('2026-01-01T00:00:00.000Z'),
+        upgradedAt: null,
+        disabledAt: null,
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        lastError: null,
+        manifestChecksum: null,
+      })),
+      listInstalledPlugins: vi.fn(async () => []),
+      upsertPluginLedgerRecord: upsertSpy,
+    }));
+
+    vi.doMock('@/db', () => ({
+      getDb: vi.fn(() => db),
+    }));
+
+    const { disablePlugin } = await import('@core/lib/plugin-lifecycle.server');
+
+    await expect(disablePlugin('plugin-a')).rejects.toThrow(/forced disable failure/);
+    expect(upsertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operationStatus: 'error',
+        enabled: true,
+        installedVersion: '1.0.0',
+      })
+    );
+  });
+
+  it('purge failure records operation error and keeps installed version', async () => {
+    vi.resetModules();
+
+    const upsertSpy = vi.fn(async () => undefined);
+    const db = createDbMock();
+
+    vi.doMock('@core/lib/plugin-registry.server', () => ({
+      getBundledPluginManifests: () => [manifest()],
+      validateDependencyGraph: () => [],
+      validatePackageDependencies: () => [],
+      validateBundledPluginRegistry: () => [],
+    }));
+
+    vi.doMock('@core/lib/plugin-migration-runner.server', () => ({
+      applyPendingPluginMigrations: vi.fn(async () => undefined),
+      applyPluginMigrationDowns: vi.fn(async () => {
+        throw new Error('forced purge teardown failure');
+      }),
+    }));
+
+    vi.doMock('@core/db/plugin-lifecycle', () => ({
+      getInstalledPlugin: vi.fn(async () => ({
+        pluginId: 'plugin-a',
+        bundledVersion: '1.0.0',
+        installedVersion: '1.0.0',
+        enabled: false,
+        lifecycleState: 'disabled',
+        operationStatus: 'idle',
+        installedAt: new Date('2026-01-01T00:00:00.000Z'),
+        upgradedAt: null,
+        disabledAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        lastError: null,
+        manifestChecksum: null,
+      })),
+      listInstalledPlugins: vi.fn(async () => []),
+      upsertPluginLedgerRecord: upsertSpy,
+    }));
+
+    vi.doMock('@/db', () => ({
+      getDb: vi.fn(() => db),
+    }));
+
+    const { purgePlugin } = await import('@core/lib/plugin-lifecycle.server');
+    await expect(purgePlugin('plugin-a', { confirmPluginId: 'plugin-a' })).rejects.toThrow(
+      /forced purge teardown failure/
+    );
+    expect(upsertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operationStatus: 'error',
+        installedVersion: '1.0.0',
       })
     );
   });

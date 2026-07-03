@@ -3,6 +3,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { createHash } from 'crypto';
 import knex, { type Knex } from 'knex';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -295,6 +296,16 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
     await installPlugin('url-shortener');
 
     const { upgradePlugin } = await importLifecycleModule(() => {
+      vi.doMock('@core/lib/plugin-migration-runner.server', async () => {
+        const actual = await vi.importActual<
+          typeof import('@core/lib/plugin-migration-runner.server')
+        >('@core/lib/plugin-migration-runner.server');
+        return {
+          ...actual,
+          applyPendingPluginMigrations: vi.fn(async () => undefined),
+        };
+      });
+
       vi.doMock('@core/lib/plugin-registry.server', async () => {
         const actual = await vi.importActual<typeof import('@core/lib/plugin-registry.server')>(
           '@core/lib/plugin-registry.server'
@@ -331,6 +342,16 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
     const before = await readPluginRow();
 
     const { upgradePlugin } = await importLifecycleModule(() => {
+      vi.doMock('@core/lib/plugin-migration-runner.server', async () => {
+        const actual = await vi.importActual<
+          typeof import('@core/lib/plugin-migration-runner.server')
+        >('@core/lib/plugin-migration-runner.server');
+        return {
+          ...actual,
+          applyPendingPluginMigrations: vi.fn(async () => undefined),
+        };
+      });
+
       vi.doMock('@core/lib/plugin-registry.server', async () => {
         const actual = await vi.importActual<typeof import('@core/lib/plugin-registry.server')>(
           '@core/lib/plugin-registry.server'
@@ -495,8 +516,8 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
 
   it('13) duplicate migration filename across plugins does not collide', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'phase2-dupe-migrations-'));
-    const pluginADir = path.join(tempDir, 'plugin-a');
-    const pluginBDir = path.join(tempDir, 'plugin-b');
+    const pluginADir = path.join(tempDir, 'generated/plugins/plugin-a/migrations');
+    const pluginBDir = path.join(tempDir, 'generated/plugins/plugin-b/migrations');
     fs.mkdirSync(pluginADir, { recursive: true });
     fs.mkdirSync(pluginBDir, { recursive: true });
     fs.writeFileSync(
@@ -508,12 +529,41 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
       'export const up = async () => {}'
     );
 
+    const checksumA = createHash('sha256')
+      .update(fs.readFileSync(path.join(pluginADir, '20260101000000_init.ts'), 'utf8'))
+      .digest('hex');
+    const checksumB = createHash('sha256')
+      .update(fs.readFileSync(path.join(pluginBDir, '20260101000000_init.ts'), 'utf8'))
+      .digest('hex');
+
     const migrations = discoverPluginMigrations(
       [
-        { id: 'plugin-a', version: '1.0.0', migrationDir: pluginADir },
-        { id: 'plugin-b', version: '1.0.0', migrationDir: pluginBDir },
+        {
+          id: 'plugin-a',
+          version: '1.0.0',
+          migrationDir: 'generated/plugins/plugin-a/migrations',
+          migrations: [
+            {
+              id: 'plugin-a:20260101000000_init',
+              file: 'plugin-a/migrations/20260101000000_init.ts',
+              checksum: checksumA,
+            },
+          ],
+        },
+        {
+          id: 'plugin-b',
+          version: '1.0.0',
+          migrationDir: 'generated/plugins/plugin-b/migrations',
+          migrations: [
+            {
+              id: 'plugin-b:20260101000000_init',
+              file: 'plugin-b/migrations/20260101000000_init.ts',
+              checksum: checksumB,
+            },
+          ],
+        },
       ],
-      process.cwd()
+      tempDir
     );
 
     const ids = migrations.map((item) => item.migrationId).sort();
@@ -593,6 +643,16 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
     });
 
     const { upgradePlugin } = await importLifecycleModule(() => {
+      vi.doMock('@core/lib/plugin-migration-runner.server', async () => {
+        const actual = await vi.importActual<
+          typeof import('@core/lib/plugin-migration-runner.server')
+        >('@core/lib/plugin-migration-runner.server');
+        return {
+          ...actual,
+          applyPendingPluginMigrations: vi.fn(async () => undefined),
+        };
+      });
+
       vi.doMock('@core/lib/plugin-registry.server', async () => {
         const actual = await vi.importActual<typeof import('@core/lib/plugin-registry.server')>(
           '@core/lib/plugin-registry.server'
@@ -637,6 +697,63 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
     expect(added.value).toBe('x');
   });
 
+  it('16b) route-prefix setting update rejects conflicts with enabled plugin prefixes', async () => {
+    const { installPlugin } = await importLifecycleModule();
+    await installPlugin('url-shortener');
+
+    await integrationDb('site_settings').insert({
+      key: 'plugin:other-plugin:route-prefix',
+      value: '/go',
+      type: 'string',
+      category: 'plugins',
+      description: 'other plugin route prefix',
+      updated_at: new Date(),
+    });
+    await integrationDb('devholm_plugins').insert({
+      plugin_id: 'other-plugin',
+      bundled_version: '1.0.0',
+      installed_version: '1.0.0',
+      enabled: true,
+      lifecycle_state: 'installed',
+      operation_status: 'idle',
+      installed_at: new Date(),
+      upgraded_at: null,
+      disabled_at: null,
+      last_error: null,
+      manifest_checksum: null,
+      updated_at: new Date(),
+    });
+
+    const { updateSetting } = await import('@core/db/settings');
+    await expect(updateSetting(URL_SHORTENER_ROUTE_PREFIX_KEY, '/go')).rejects.toThrow(/collides/);
+
+    const current = await integrationDb('site_settings')
+      .where({ key: URL_SHORTENER_ROUTE_PREFIX_KEY })
+      .first();
+    expect(current.value).toBe('/s');
+  });
+
+  it('16c) route-prefix setting update rejects conflicts with active aliases', async () => {
+    const { installPlugin } = await importLifecycleModule();
+    await installPlugin('url-shortener');
+
+    await integrationDb('u_url_shortener_prefix_aliases').insert({
+      prefix: '/legacy',
+      is_active: true,
+      starts_at: new Date(),
+    });
+
+    const { updateSetting } = await import('@core/db/settings');
+    await expect(updateSetting(URL_SHORTENER_ROUTE_PREFIX_KEY, '/legacy')).rejects.toThrow(
+      /collides/
+    );
+
+    const current = await integrationDb('site_settings')
+      .where({ key: URL_SHORTENER_ROUTE_PREFIX_KEY })
+      .first();
+    expect(current.value).toBe('/s');
+  });
+
   it('17) timestamp transitions are coherent across install-enable-disable-upgrade', async () => {
     const { installPlugin, enablePlugin, disablePlugin } = await importLifecycleModule();
     await installPlugin('url-shortener');
@@ -646,6 +763,16 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
     const enabled = await readPluginRow();
 
     const { upgradePlugin } = await importLifecycleModule(() => {
+      vi.doMock('@core/lib/plugin-migration-runner.server', async () => {
+        const actual = await vi.importActual<
+          typeof import('@core/lib/plugin-migration-runner.server')
+        >('@core/lib/plugin-migration-runner.server');
+        return {
+          ...actual,
+          applyPendingPluginMigrations: vi.fn(async () => undefined),
+        };
+      });
+
       vi.doMock('@core/lib/plugin-registry.server', async () => {
         const actual = await vi.importActual<typeof import('@core/lib/plugin-registry.server')>(
           '@core/lib/plugin-registry.server'
@@ -727,7 +854,7 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
     await expect(purgePlugin('url-shortener')).rejects.toThrow(/Purge confirmation required/);
   });
 
-  it('22) purge only affects target plugin-owned domain tables', async () => {
+  it('22) purge removes plugin schema and supports reinstall while preserving unrelated data', async () => {
     const { installPlugin, disablePlugin, purgePlugin } = await importLifecycleModule(() => {
       vi.doMock('@core/lib/plugin-registry.server', async () => {
         const actual = await vi.importActual<typeof import('@core/lib/plugin-registry.server')>(
@@ -771,15 +898,38 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
       initiatedBy: 'integration',
     });
 
-    const urlCount = await integrationDb('u_url_shortener_links')
+    expect(await pluginTableExists('u_url_shortener_links')).toBe(false);
+    expect(await pluginTableExists('u_url_shortener_click_events')).toBe(false);
+    expect(await pluginTableExists('u_url_shortener_daily_stats')).toBe(false);
+    expect(await pluginTableExists('u_url_shortener_public_submissions')).toBe(false);
+    expect(await pluginTableExists('u_url_shortener_audit_records')).toBe(false);
+    expect(await pluginTableExists('u_url_shortener_prefix_aliases')).toBe(false);
+
+    const postPurgeRow = await readPluginRow();
+    expect(postPurgeRow.lifecycle_state).toBe('bundled');
+    expect(postPurgeRow.operation_status).toBe('idle');
+    expect(postPurgeRow.installed_version).toBeNull();
+
+    const migrationLedgerCount = await integrationDb('devholm_plugin_migrations')
+      .where({ plugin_id: 'url-shortener' })
       .count<{ count: string }>('id as count')
       .first();
-    expect(Number(urlCount?.count ?? '0')).toBe(0);
+    expect(Number(migrationLedgerCount?.count ?? '0')).toBe(0);
+
+    const settingCount = await integrationDb('site_settings')
+      .where('key', 'like', 'plugin:url-shortener:%')
+      .count<{ count: string }>('key as count')
+      .first();
+    expect(Number(settingCount?.count ?? '0')).toBe(0);
+
     expect(await pluginTableExists('u_test_other_plugin_data')).toBe(true);
     const otherCount = await integrationDb('u_test_other_plugin_data')
       .count<{ count: string }>('id as count')
       .first();
     expect(Number(otherCount?.count ?? '0')).toBe(1);
+
+    await installPlugin('url-shortener');
+    expect(await pluginTableExists('u_url_shortener_links')).toBe(true);
   });
 
   it('23) prefix collision rejection catches reserved routes', () => {
@@ -844,12 +994,12 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
     expect(registryPath).toBeTruthy();
 
     const dockerfile = fs.readFileSync(path.join(process.cwd(), 'Dockerfile'), 'utf8');
-    expect(dockerfile.includes('plugins/url-shortener/migrations')).toBe(false);
+    expect(dockerfile.includes('/app/generated/plugins')).toBe(true);
 
-    const registryJson = fs.readFileSync(
-      path.join(process.cwd(), 'src/user/extensions/plugins/migration-registry.json'),
-      'utf8'
+    const generatedMigration = path.join(
+      process.cwd(),
+      'generated/plugins/url-shortener/migrations/20260701010000_url_shortener_foundation.ts'
     );
-    expect(registryJson.includes('url-shortener')).toBe(true);
+    expect(fs.existsSync(generatedMigration)).toBe(true);
   });
 });
