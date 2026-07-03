@@ -36,12 +36,17 @@ let integrationDbUrl = '';
 let integrationDbName = '';
 let baseDatabaseUrl = '';
 
+const configuredTestDbUrl = process.env.PHASE2_TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+const shouldRunPostgresIntegration = Boolean(configuredTestDbUrl);
+
 function requireBaseDatabaseUrl(): string {
-  const value =
-    process.env.PHASE2_TEST_DATABASE_URL ??
-    process.env.DATABASE_URL ??
-    'postgresql://postgres:postgres@127.0.0.1:5432/mysite';
-  return value;
+  if (!configuredTestDbUrl) {
+    throw new Error(
+      'plugin-lifecycle-postgres.integration.test requires PHASE2_TEST_DATABASE_URL or DATABASE_URL'
+    );
+  }
+
+  return configuredTestDbUrl;
 }
 
 function withDatabaseName(urlValue: string, dbName: string): string {
@@ -142,7 +147,11 @@ function makeManifest(overrides: Partial<DevholmPluginManifest> = {}): DevholmPl
   };
 }
 
-describe.sequential('plugin lifecycle PostgreSQL integration', () => {
+const postgresIntegrationDescribe = shouldRunPostgresIntegration
+  ? describe.sequential
+  : describe.skip;
+
+postgresIntegrationDescribe('plugin lifecycle PostgreSQL integration', () => {
   beforeAll(async () => {
     baseDatabaseUrl = requireBaseDatabaseUrl();
     integrationDbName = `${getDatabaseName(baseDatabaseUrl)}${TEST_DB_SUFFIX}`;
@@ -178,16 +187,20 @@ describe.sequential('plugin lifecycle PostgreSQL integration', () => {
 
   afterAll(async () => {
     await closeModuleDb();
-    await integrationDb.destroy();
+    if (integrationDb) {
+      await integrationDb.destroy();
+    }
 
-    await adminDb.raw(
-      `SELECT pg_terminate_backend(pid)
-       FROM pg_stat_activity
-       WHERE datname = ? AND pid <> pg_backend_pid()`,
-      [integrationDbName]
-    );
-    await adminDb.raw(`DROP DATABASE IF EXISTS "${integrationDbName}"`);
-    await adminDb.destroy();
+    if (adminDb) {
+      await adminDb.raw(
+        `SELECT pg_terminate_backend(pid)
+         FROM pg_stat_activity
+         WHERE datname = ? AND pid <> pg_backend_pid()`,
+        [integrationDbName]
+      );
+      await adminDb.raw(`DROP DATABASE IF EXISTS "${integrationDbName}"`);
+      await adminDb.destroy();
+    }
   });
 
   beforeEach(async () => {
