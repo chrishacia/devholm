@@ -210,18 +210,62 @@ Result classes:
 - `not-found`
 - `policy-error`
 
-Aggregation requirements:
+Aggregation precedence (highest to lowest):
 
-- Equivalent reordered policies produce equivalent outcomes.
-- Nested `allOf`/`anyOf` compositions must be deterministic.
-- `policy-error` handling is deterministic and fail-closed.
+1. `policy-error`
+2. `forbidden`
+3. `not-found`
+4. `unauthenticated`
+5. `allow`
+
+Normative aggregation rules:
+
+- `allOf`:
+  - Evaluate every branch and aggregate by precedence.
+  - Any non-`allow` branch causes deny; highest-precedence non-`allow` result wins.
+  - Examples required by this proposal:
+    - `allow + unauthenticated` -> `unauthenticated`
+    - `unauthenticated + forbidden` -> `forbidden`
+    - `forbidden + not-found` -> `forbidden`
+    - `policy-error + any` -> `policy-error`
+- `anyOf`:
+  - Evaluate every branch and aggregate by precedence, with success only if every branch is `allow`-compatible and at least one branch is `allow`.
+  - If any branch returns `policy-error`, aggregate result is `policy-error` (fail closed).
+  - Else if any branch returns `allow`, aggregate result is `allow`.
+  - Else aggregate by deny precedence among returned deny classes.
+  - Examples required by this proposal:
+    - `allow + policy-error` -> `policy-error`
+    - `forbidden + unauthenticated` -> `forbidden`
+    - `forbidden + not-found` -> `forbidden`
+    - every branch `not-found` -> `not-found`
+- Nested compositions:
+  - Each nested node resolves to one result class, then parent aggregation applies the same rules.
+  - Equivalent reordered policies produce equivalent outcomes.
+
+Concealment and leakage controls:
+
+- Concealment is a surface-adapter concern applied after semantic aggregation completes.
+- Aggregation result is semantic only; adapters may map `forbidden` to `404` for concealment where configured.
+- Concealment mapping must not leak route/resource existence through differential fallthrough behavior.
+- Claimed public routes never fall through after authorization evaluation (allow, deny, or policy-error).
+
+Policy-error rule rationale:
+
+- Operational authorization failures (`policy-error`) win over `allow` in both `allOf` and `anyOf`.
+- This preserves fail-closed behavior and prevents partial dependency failures from becoming accidental authorization success.
 
 Required test coverage:
 
-- reordered equivalent policies
-- nested `allOf` and `anyOf`
-- evaluator error combined with allow
-- evaluator error combined with deny
+- `allOf`: `allow + unauthenticated` -> `unauthenticated`
+- `allOf`: `unauthenticated + forbidden` -> `forbidden`
+- `allOf`: `forbidden + not-found` -> `forbidden`
+- `allOf`: `policy-error + any` -> `policy-error`
+- `anyOf`: `allow + policy-error` -> `policy-error`
+- `anyOf`: `forbidden + unauthenticated` -> `forbidden`
+- `anyOf`: `forbidden + not-found` -> `forbidden`
+- `anyOf`: all branches `not-found` -> `not-found`
+- nested `allOf` and `anyOf` deterministic equivalence under reordering
+- concealment mapping tests (semantic result preserved before adapter mapping)
 - empty composition rejection
 - unknown evaluator/resolver references
 
@@ -302,18 +346,26 @@ Path matching and authorization should stay separate concerns; identity should n
 
 ## Next.js Runtime-Target Matrix
 
-| Entrypoint/Adapter                       | Browser Client | React Server Component | Node Route/Action | Middleware/Proxy Runtime          | Edge Runtime             | Allowed Imports                                                       | Prohibited Imports                                                   | Node APIs              | DB Access      | Request/Session Context     | Executable Callbacks  |
-| ---------------------------------------- | -------------- | ---------------------- | ----------------- | --------------------------------- | ------------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------- | -------------- | --------------------------- | --------------------- |
-| `@devholm/sdk`                           | Yes            | Yes                    | Yes               | Yes                               | Yes                      | serializable declarations, ids, data-only metadata, type-only helpers | server evaluators, React runtime hooks/components, Node-only modules | No                     | No             | No                          | No                    |
-| `@devholm/sdk/server`                    | No             | RSC server-only usage  | Yes               | Subset only (runtime-constrained) | Runtime-dependent subset | server evaluators/resolvers, policy wrappers, scoped services         | client React hooks/components, browser-only APIs                     | Yes (Node target only) | Scoped only    | Yes                         | Yes                   |
-| `@devholm/sdk/react` / client entrypoint | Yes            | client components only | No                | No                                | Yes (if browser-safe)    | visibility helpers, registration metadata for UI surfaces             | Node-only modules, server evaluators/resolvers, DB handles           | No                     | No             | limited client context only | client callbacks only |
-| `@devholm/sdk/testing`                   | Test runtime   | Test runtime           | Test runtime      | Test runtime                      | Test runtime             | fixtures, assertions, boundary tests                                  | production-only internals without adapters                           | Test-dependent         | Test-dependent | Test-dependent              | Yes (test only)       |
+Enforceable runtime split proposal (names remain proposed):
 
-Runtime constraints:
+- `@devholm/sdk/server` is Node/RSC/route/action server-only.
+- `@devholm/sdk/middleware` is middleware/edge-compatible authorization and public-route primitives.
+- Middleware/edge code cannot import `@devholm/sdk/server`.
 
-- Not every server entrypoint function is valid in middleware/edge environments.
-- Public-route dispatch currently runs through `middleware.ts`, so middleware runtime constraints are part of design.
-- Build/fixture tests must detect Node-only imports in client or incompatible middleware/edge bundles.
+| Entrypoint/Adapter                       | Browser Client | React Server Component | Node Route/Action | Middleware/Proxy Runtime | Edge Runtime          | Allowed Imports                                                       | Prohibited Imports                                                                                            | Node APIs                    | DB Access      | Request/Session Context     | Executable Callbacks  |
+| ---------------------------------------- | -------------- | ---------------------- | ----------------- | ------------------------ | --------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------- | -------------- | --------------------------- | --------------------- |
+| `@devholm/sdk`                           | Yes            | Yes                    | Yes               | Yes                      | Yes                   | serializable declarations, ids, data-only metadata, type-only helpers | server evaluators, React runtime hooks/components, Node-only modules                                          | No                           | No             | No                          | No                    |
+| `@devholm/sdk/server`                    | No             | RSC server-only usage  | Yes               | No                       | No                    | server evaluators/resolvers, policy wrappers, scoped services         | all middleware/edge entrypoints, browser-only APIs                                                            | Yes (Node target only)       | Scoped only    | Yes                         | Yes                   |
+| `@devholm/sdk/middleware`                | No             | No                     | Optional adapter  | Yes                      | Yes (runtime capable) | middleware-safe authorization checks and route-claim primitives       | `@devholm/sdk/server`, Node-only auth deps, DB clients, `fs`, unsupported Node crypto APIs, Node-only imports | No (unless runtime supports) | No             | runtime-compatible only     | middleware-safe only  |
+| `@devholm/sdk/react` / client entrypoint | Yes            | client components only | No                | No                       | Yes (if browser-safe) | visibility helpers, registration metadata for UI surfaces             | Node-only modules, server evaluators/resolvers, DB handles                                                    | No                           | No             | limited client context only | client callbacks only |
+| `@devholm/sdk/testing`                   | Test runtime   | Test runtime           | Test runtime      | Test runtime             | Test runtime          | fixtures, assertions, boundary tests                                  | production-only internals without adapters                                                                    | Test-dependent               | Test-dependent | Test-dependent              | Yes (test only)       |
+
+Runtime boundary requirements:
+
+- Middleware-safe entrypoints must not re-export or transitively import Node-only modules.
+- Package export maps must block unsupported cross-runtime imports.
+- Public-route dispatch must use runtime-compatible entrypoint for the execution environment.
+- Runtime import-safety fixtures must compile/bundle each target independently (client, RSC, node route/action, middleware/edge).
 
 ## Permission and Compatibility Behavior
 

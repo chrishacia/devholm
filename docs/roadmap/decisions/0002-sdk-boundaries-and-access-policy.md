@@ -45,6 +45,9 @@ Adopt composition validation and deterministic aggregation:
 - empty `allOf` and `anyOf` are invalid registrations
 - invalid composition fails validation and fails closed at runtime if encountered
 - deterministic result classes: `allow`, `unauthenticated`, `forbidden`, `not-found`, `policy-error`
+- aggregation precedence is explicit and normative
+- `policy-error` wins over `allow` in both `allOf` and `anyOf` (fail closed)
+- semantic aggregation completes before any surface-level concealment/status mapping
 
 Adopt capability-scoped service construction:
 
@@ -63,7 +66,11 @@ Adopt SDK stability baseline:
 Adopt runtime-target separation:
 
 - runtime compatibility matrix is documented and tested
-- import safety tests detect Node-only server modules in incompatible client/middleware/edge bundles
+- middleware-compatible primitives use a separate runtime boundary (`@devholm/sdk/middleware`, name still proposed)
+- middleware/edge code cannot import the general Node server barrel
+- middleware-safe exports cannot re-export/transitively import Node-only modules
+- package export maps enforce unsupported cross-runtime import blocking
+- import safety tests compile/bundle each runtime target independently
 
 ## Consequences
 
@@ -108,6 +115,7 @@ Rejected because it freezes implementation details and increases long-term maint
 3. Compatibility adapter duration and strictness milestones.
 4. Final plugin data API shape inside capability isolation boundaries.
 5. Final runtime entrypoint naming refinement (`client` vs `react` split details).
+6. Final naming and packaging layout for middleware-safe entrypoints (`@devholm/sdk/middleware` vs equivalent leaf exports).
 
 ## Follow-up
 
