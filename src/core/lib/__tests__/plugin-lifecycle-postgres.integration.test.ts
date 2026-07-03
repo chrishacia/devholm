@@ -37,7 +37,14 @@ let integrationDbName = '';
 let baseDatabaseUrl = '';
 
 const configuredTestDbUrl = process.env.PHASE2_TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+const integrationRequired = process.env.PHASE2_REQUIRE_POSTGRES_INTEGRATION === 'true';
 const shouldRunPostgresIntegration = Boolean(configuredTestDbUrl);
+
+if (integrationRequired && !configuredTestDbUrl) {
+  throw new Error(
+    'PostgreSQL lifecycle integration is required but no test database URL is configured'
+  );
+}
 
 function requireBaseDatabaseUrl(): string {
   if (!configuredTestDbUrl) {
