@@ -1,4 +1,6 @@
 import packageJson from '../../../package.json';
+import fs from 'fs';
+import path from 'path';
 import { satisfies, valid } from 'semver';
 import type { DevholmBundledPlugin, DevholmPluginManifest } from '@core/types/plugins';
 import { bundledPlugins } from '@user/extensions/plugins/registry';
@@ -177,9 +179,28 @@ export function validatePackageDependenciesForManifests(
 }
 
 export function validatePackageDependencies(): string[] {
-  const installed = {
-    ...(packageJson.dependencies ?? {}),
-  } as Record<string, string>;
+  const manifests = getBundledPluginManifests();
+  const requiredPackages = new Set<string>();
+  for (const manifest of manifests) {
+    for (const packageName of Object.keys(manifest.dependencies?.packages ?? {})) {
+      requiredPackages.add(packageName);
+    }
+  }
 
-  return validatePackageDependenciesForManifests(getBundledPluginManifests(), installed);
+  const installed: Record<string, string> = {};
+  for (const packageName of requiredPackages) {
+    const packageJsonPath = path.join(process.cwd(), 'node_modules', packageName, 'package.json');
+    if (!fs.existsSync(packageJsonPath)) {
+      continue;
+    }
+
+    const packagePayload = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
+      version?: string;
+    };
+    if (typeof packagePayload.version === 'string' && packagePayload.version.trim()) {
+      installed[packageName] = packagePayload.version;
+    }
+  }
+
+  return validatePackageDependenciesForManifests(manifests, installed);
 }
