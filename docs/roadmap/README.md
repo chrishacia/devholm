@@ -14,8 +14,8 @@ GitHub issues carry actionable work. The documents here preserve the long-lived 
 - Architectural decisions: [`decisions/`](./decisions/)
 - Completed milestone summaries: [`archive/`](./archive/)
 - Issue #6 design artifacts:
-	- [`sdk-authorization-contract-inventory.md`](./sdk-authorization-contract-inventory.md)
-	- [`sdk-authorization-architecture.md`](./sdk-authorization-architecture.md)
+  - [`sdk-authorization-contract-inventory.md`](./sdk-authorization-contract-inventory.md)
+  - [`sdk-authorization-architecture.md`](./sdk-authorization-architecture.md)
 
 ## Current sequence
 

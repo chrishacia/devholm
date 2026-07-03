@@ -3,71 +3,88 @@
 - Status: proposed
 - Date: 2026-07-03
 - Related issues: #6, #12
-- Related PRs: TBD
+- Related PRs: #26
 
 ## Context
 
-DevHolm currently has useful extension and auth primitives, but downstream contracts are not yet centralized under versioned SDK entrypoints. Downstream code can import selected internal `@core/lib/*` modules directly, and authorization enforcement is not yet described by a single declarative model that applies consistently across pages, APIs, server actions, navigation, admin pages, public routes, and UI actions.
+DevHolm has useful extension and auth primitives, but downstream contracts are not yet centralized under versioned SDK entrypoints. Downstream code can still import internal `@core/lib/*` modules directly, and authorization behavior is inconsistent across middleware, route handlers, and extension dispatch paths.
 
-Issue #6 requires stable, upgrade-safe SDK boundaries and a shared access-policy model while preserving clear framework-owned and site-owned responsibilities.
+Issue #6 requires stable, upgrade-safe SDK boundaries and a shared policy model that applies consistently across pages, APIs, server actions, navigation, admin pages, public routes, slot components, and UI actions.
 
 ## Decision
 
-Propose a four-entrypoint SDK boundary model:
+Adopt a proposed four-entrypoint boundary model:
 
-1. `@devholm/sdk` for shared runtime-neutral contracts and registration helper definitions
-2. `@devholm/sdk/server` for authoritative server-side policy evaluation and enforcement adapters
-3. `@devholm/sdk/client` for visibility-only client helpers
-4. `@devholm/sdk/testing` for downstream contract and upgrade-safety tests
+1. `@devholm/sdk` for runtime-neutral, serializable declarations and registration metadata
+2. `@devholm/sdk/server` for server-only evaluators, resolvers, and authoritative authorization adapters
+3. `@devholm/sdk/client` for client-safe visibility projections only
+4. `@devholm/sdk/testing` for contract, compatibility, and boundary-guard tests
 
-Propose a declarative access-policy model with composable policy shapes:
+Adopt an explicit-policy default for newly registered executable server surfaces:
 
-- everyone
-- anonymous-only
-- authenticated
-- roles
-- permissions
-- ownership
-- custom async callback
-- allOf / anyOf composition
+- access declaration is required
+- omitted policy is invalid for new registrations
+- public behavior must be explicit (`everyone`)
 
-Policy decisions must support consistent unauthenticated/forbidden/not-found outcomes and fail-closed behavior.
+Adopt fail-closed evaluation defaults:
 
-Client evaluation remains advisory for presentation. Server evaluation remains authoritative for all privileged operations.
+- evaluator/resolver exceptions deny execution
+- log operational diagnostics without sensitive details
+- return defined server error outcomes
+
+Adopt declaration/evaluator split:
+
+- serializable policy declarations are runtime-neutral
+- custom callbacks and ownership/resource resolvers are server-only contracts
+- client bundles must never import server evaluators or raw service handles
 
 ## Consequences
 
 ### Positive
 
-- Clear separation between supported SDK imports and internal framework modules
-- Unified authorization semantics across route and UI surfaces
-- Better upgrade safety for downstream developers
-- Shared test tooling for contract compliance
+- Clear separation between supported SDK imports and internal orchestration modules
+- Deterministic security defaults for new executable registrations
+- Better upgrade safety through explicit contracts and testing layers
+- Improved ability to enforce import boundaries across aliases and deep imports
 
-### Costs
+### Compatibility and migration costs
 
-- Requires staged migration from existing ad-hoc route checks
-- Requires compatibility adapters while existing registries are still in use
-- Requires explicit documentation and contract tests to enforce boundaries
+- Existing registrations that rely on implicit behavior require a temporary legacy adapter
+- Legacy adapter must emit development/build warnings and provide migration path
+- Existing one-off route authorization checks will coexist during migration stages
+- Administrator-resolution inconsistency (middleware `isAdmin` path vs helper behavior) must be reconciled explicitly before unified policy replacement
+
+### Operational costs
+
+- Additional adapter layers per surface (pages, APIs, actions, admin pages, public routes)
+- New boundary enforcement configuration (export maps, lint rules, TS/module constraints, fixture tests)
+- Review overhead to ratify unresolved policy defaults
 
 ## Alternatives considered
 
-### Keep current internal imports and document best effort guidance
+### Keep internal imports and rely on documentation guidance
 
-Rejected because it does not create enforceable upgrade-safe contracts and cannot guarantee boundary stability.
+Rejected because guidance alone does not create enforceable, upgrade-safe contracts.
 
-### Move all authorization logic into middleware only
+### Put all authorization logic in middleware
 
-Rejected because middleware alone cannot safely and consistently enforce all server actions, API paths, and ownership checks.
+Rejected because middleware cannot safely/authoritatively enforce every server action, ownership check, or mutation-time decision.
 
-### Expose raw internal modules as public API
+### Expose internal orchestration modules directly as public API
 
-Rejected because it freezes internal implementation details and increases long-term maintenance risk.
+Rejected because it freezes implementation details and increases long-term maintenance and compatibility risk.
+
+## Unresolved decisions (explicit)
+
+1. Canonical administrator semantics during and after compatibility migration.
+2. Surface-level defaults for forbidden vs concealed-not-found outcomes.
+3. Duration and enforcement level of legacy compatibility adapters.
+4. Final scoped service API detail for plugin-owned data/settings operations.
 
 ## Follow-up
 
-- Use the inventory and architecture docs to drive implementation staging:
+- Keep this ADR proposed until independent review confirms unresolved decisions.
+- Use these design artifacts for staged implementation planning:
   - `docs/roadmap/sdk-authorization-contract-inventory.md`
   - `docs/roadmap/sdk-authorization-architecture.md`
-- Keep this ADR in proposed state until independently reviewed.
-- After review, create follow-on implementation tasks that preserve issue boundaries (#11, #7, #8, #9, #10 remain separate).
+- Preserve issue boundaries: #11, #7, #8, #9, and #10 remain separate workstreams.

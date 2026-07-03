@@ -1,18 +1,19 @@
 # SDK and Authorization Contract Inventory (Issue #6)
 
-Status: Draft design and inventory pass
+Status: Draft design and inventory pass (revised after independent review)
 Date: 2026-07-03
 Related issue: #6
+Related PR: #26
 
 ## Scope
 
-This document inventories the current DevHolm contract surfaces and implementation paths before broad SDK work begins.
+This document inventories existing contract surfaces and internal orchestration paths before broad SDK implementation.
 
 This pass is intentionally documentation-only:
 
-- No broad SDK implementation
-- No new registration helpers
-- No middleware rewrites
+- No broad SDK/runtime implementation
+- No framework route rewrites
+- No middleware replacement
 - No plugin conversion work
 - No issue #11, #7, #8, #9, #10 implementation scope absorbed
 
@@ -27,156 +28,168 @@ This pass is intentionally documentation-only:
 - `src/test/setup.ts`
 - `docs/roadmap/**`
 
-## Boundary Inventory
+## Boundary Groups
 
-### Framework-owned versus site-owned
+### 1. Normal downstream development surfaces (continue writing normally)
 
-- Framework-owned paths: `src/core/**`, `src/app/**`, `middleware.ts`
-- Site-owned extension and content paths: `src/user/**`, `devholm.config.ts`
-- Current coupling pattern: site-owned code imports many `@core/*` types and selected runtime helpers.
+These are standard framework usage patterns and are not DevHolm-specific SDK integration points by default:
 
-Cross-boundary evidence:
+- Normal React components and hooks
+- Normal Next.js App Router pages and route handlers
+- Normal TypeScript modules/services
+- Normal external API integrations from downstream code
+- Normal downstream database/business logic in site-owned paths
 
-- `src/user/extensions/api/index.ts` imports `ApiExtension` from `@core/types/extensions.server`
-- `src/user/extensions/public-routes/index.ts` imports `PublicRouteExtension` from `@core/types/extensions.server`
-- `src/user/extensions/plugins/url-shortener/services/prefix-service.ts` imports `getReservedRoutes` from `@core/lib/reserved-routes.server`
-- `src/user/extensions/embeds/index.ts` imports `validateEmbedExtensions` and core embed modules
+### 2. DevHolm integration contracts (SDK-facing)
 
-Assessment:
+These are the points where downstream code connects to framework-owned extension, plugin, and authorization services:
 
-- Type-level coupling appears intentional.
-- Runtime imports from `@core/lib/*` into `src/user/**` are partial and likely accidental long-term contracts.
+- Extension registrations (admin pages, APIs, public routes, embeds, SEO)
+- Slot registration (`SlotsConfig`)
+- View override registration (`ViewOverride`)
+- Plugin definitions/registries/manifests/settings
+- Policy declarations for server-authorized execution
+- Framework-provided auth/session/permission capability contracts
 
-## Supported-versus-Internal Contract Matrix
+### 3. Internal orchestration modules (must not become public contracts)
 
-| Mechanism | Current Source Location | Current Consumers | Intentional or Accidental | Safe as Public Contract | Production/Packaging Constraints | Authorization Implications | Recommended Disposition |
-|---|---|---|---|---|---|---|---|
-| Config root contract | `src/core/types/config.ts`, `devholm.config.ts` | site config wiring | Intentional | Yes | Stable file boundary | None by itself | Preserve as-is |
-| Admin nav registration | `src/core/types/extensions.ts`, `src/user/extensions/admin/index.tsx` | admin layout + config | Intentional | Yes | None significant | Visibility only; server auth still required | Preserve as-is |
-| Admin page registration | `src/core/types/extensions.server.ts`, `src/user/extensions/admin/pages.tsx`, `src/core/lib/extensions.server.ts` | dynamic admin route loader | Intentional | Partial | Registry imported in framework code | Page discoverability vs auth separated | Wrap behind SDK |
-| API extension registration | `src/core/types/extensions.server.ts`, `src/user/extensions/api/index.ts`, `src/app/api/[...path]/route.ts`, `src/core/lib/extensions.server.ts` | catch-all API dispatcher | Intentional | Partial | Dispatcher imports registry directly | No built-in policy metadata; route handlers enforce manually | Replace incrementally with policy-aware wrappers |
-| Public route registration | `src/user/extensions/public-routes/index.ts`, `src/core/lib/public-route-dispatcher*.ts` | middleware dispatch | Intentional | Partial-strong | Works in prod if bundled correctly; two-phase design is safe | Dispatcher enforces plugin enabled checks; no auth model contract yet | Wrap behind SDK |
-| Embed registration | `src/user/extensions/embeds/index.ts`, `src/core/lib/embeds.ts` | markdown embed processors | Intentional | Partial | Depends on centralized registry imports | Mostly content rendering; auth context available but not standardized | Wrap behind SDK |
-| SEO extension registration | `src/user/extensions/seo/index.ts`, `src/core/lib/extensions.server.ts` | metadata/sitemap/robots routes | Intentional | Partial | Registry imports in framework files | Usually public surface; no auth by default | Preserve, then wrap behind SDK facades |
-| Plugin definition contract | `src/core/types/plugins.ts` | plugin authors and lifecycle code | Intentional | Mostly yes | Bundled discovery path must be production-safe | Lifecycle operations are admin-sensitive | Preserve, then formalize exports |
-| Plugin registry wiring | `src/user/extensions/plugins/registry.ts`, `src/core/lib/plugin-registry.server.ts`, `src/core/lib/plugins.ts` | plugin lifecycle and state | Intentional | Partial | Framework imports tenant registry directly | Plugin enablement gates many surfaces | Wrap behind SDK |
-| Plugin settings and runtime state | `src/core/db/plugins.ts`, `src/core/db/settings.ts` | admin plugin route, routing/feature checks | Intentional | Partial | Uses DB settings keys `plugin:<id>:enabled` | Important server enforcement gate | Preserve internals, expose narrow read helpers |
-| Auth/session helpers | `src/auth.ts`, `src/core/lib/auth-helpers.ts`, `middleware.ts` | admin APIs, middleware, route handlers | Intentional core utility | Partial | NextAuth and env assumptions | Mixed route-level checks; helper usage duplicated | Wrap behind SDK |
-| Roles and permissions checks | `src/core/lib/auth-helpers.ts` | admin API handlers and auth flows | Intentional | Partial | Backward compatibility logic in permission checks | Inconsistent adoption across extension routes | Wrap and standardize policy API |
-| Route-level admin checks | many `src/app/api/admin/**` routes | admin APIs | Intentional | Internal pattern, not contract | Repeated per-route calls | Strong server-side enforcement, duplicated implementation | Replace incrementally with policy wrapper |
-| Extension helper bag | `src/core/lib/extension-helpers.server.ts`, `src/core/types/extensions.server.ts` | API/public route/extensions | Intentional | Partial | Exposes `getDb` and `verifyAdmin` directly | Powerful but unopinionated auth semantics | Wrap behind policy-aware contexts |
-| DB access helper | `src/core/db/index.ts` via `getDb` | core + extension helpers | Intentional internal utility | Not as broad contract | Direct table access risk; coupling to schema | No built-in authorization semantics | Keep internal + narrow SDK wrappers |
-| Migration ownership | `src/core/db/migrations`, `src/user/extensions/db/migrations`, plugin migration ledger | framework + plugin lifecycle | Intentional | Internal + partial external | Works in production with packaged migrations | Admin/lifecycle controlled | Preserve as-is |
-| CLI scaffolding | `scripts/devholm-cli.ts` | downstream developers | Intentional | Partial | Local scaffolding; no versioned SDK contract yet | None directly | Wrap behind SDK docs and command contracts |
-| Testing support | `src/test/setup.ts`, core and plugin tests | internal test suites | Partial | Partial | No dedicated downstream contract suite yet | No shared policy test DSL yet | Replace incrementally with SDK testing helpers |
-
-## High-Risk Findings Requested in Issue #6
-
-### Imports from `src/core/**` used by `src/user/**`
-
-Confirmed in multiple files, including runtime helpers:
-
-- `src/user/extensions/plugins/url-shortener/validation/prefix-validation.ts`
-- `src/user/extensions/plugins/url-shortener/services/prefix-service.ts`
-- `src/user/extensions/embeds/index.ts`
-
-Interpretation:
-
-- Some imports are intentional type contracts.
-- Runtime helper imports indicate boundary leakage that should move behind explicit SDK modules.
-
-### Imports from `src/core/**` used by plugins
-
-Confirmed for URL shortener plugin modules in `src/user/extensions/plugins/url-shortener/**`.
-
-### Direct framework imports of specific plugin implementations
-
-Framework and shared loaders import user/plugin registries directly:
-
-- `src/core/lib/extensions.server.ts` imports user extension registries.
-- `src/core/lib/plugins.ts` imports `@user/extensions/plugins`.
-- `src/core/lib/plugin-registry.server.ts` imports `@user/extensions/plugins/registry`.
-
-Interpretation:
-
-- Works today, but requires framework-side import touch points and keeps contracts implicit.
-
-### Registries requiring framework-owned edits
-
-Current extension registries can be changed in `src/user/**`, but framework code still hard-imports those registries. This is workable but not a clean public SDK boundary.
-
-### Duplicated or inconsistent auth helper exposure
-
-- `verifyAdmin` pattern repeats across many `src/app/api/admin/**` route handlers.
-- Middleware has separate admin path enforcement logic.
-- Extension API dispatcher does not enforce shared declarative auth policy.
-
-### Client visibility without independent server enforcement
-
-- Admin navigation visibility can hide plugin/admin entries client-side.
-- Server routes still need explicit checks.
-- Rule preserved: hiding UI is not authorization.
-
-### One-off authorization in route handlers
-
-Confirmed in many `src/app/api/admin/**` files via repeated `verifyAdmin` + 401 responses.
-
-### Development-only discovery vs production packaging risk
-
-- Current registries are static imports, which is production-safe.
-- Any future dynamic source discovery must avoid relying on source paths unavailable in packaged artifacts.
-
-### Public-looking modules that are not stable contracts
-
-Examples:
+These are internal composition/execution modules and should stay non-public:
 
 - `src/core/lib/extensions.server.ts`
 - `src/core/lib/extension-helpers.server.ts`
 - `src/core/lib/plugins.ts`
+- `src/core/lib/public-route-dispatcher*.server.ts`
+- `src/core/lib/plugin-lifecycle.server.ts`
+- framework-internal DB/config orchestration modules
 
-These are currently internal orchestration modules and should not be treated as downstream public APIs.
+## Supported-versus-Internal Matrix
+
+| Surface | Current Source Location | Current Consumers | Current Intent | Public Contract Safety | Packaging/Production Constraints | Authorization Implications | Recommended Disposition |
+|---|---|---|---|---|---|---|---|
+| Named extension slots (`SlotsConfig`) | `src/core/types/extensions.ts`, `devholm.config.ts` | downstream site config + view composition | Intentional compatibility surface | Structural type is safe; behavior policy not fully modeled | Static config is production-safe | Slot visibility can imply access intent but is not auth | Preserve structural type, add policy-aware wrappers/enriched slot registration |
+| View overrides (`ViewOverride`) | `src/core/types/extensions.ts`, `devholm.config.ts`, user view files | downstream page customization | Intentional compatibility surface | Structural type is safe | Static import map is production-safe | Override may include protected data paths; requires server enforcement in implementation | Preserve structural type, add policy and plugin-enable aware wrappers for framework-integrated overrides |
+| Normal physical Next.js/App Router pages | `src/app/**`, `src/user/**` page modules | downstream developers and framework pages | Normal framework behavior | Not a special SDK surface | Standard Next runtime rules apply | Must use server auth for protected operations | Preserve as normal development path (SDK optional) |
+| Registry-backed dynamic admin pages | `src/user/extensions/admin/pages.tsx`, `src/core/lib/extensions.server.ts`, `src/app/admin/[...slug]/page.tsx` | framework dynamic admin route | Intentional extension surface | Partial; currently tied to internal loaders | Registry imports hardwired in framework | Needs unified policy + plugin enabled/install enforcement | Wrap behind SDK registration adapters |
+| CMS and catch-all pages | `src/app/[...slug]/page.tsx`, CMS DB/page loaders | normal site rendering | Intentional | Not SDK-specific by default | Route precedence interactions with plugin routes must be explicit | Protected CMS content requires server policy checks | Preserve normal path; document precedence and explicit policy usage |
+| API extensions | `src/user/extensions/api/index.ts`, `src/app/api/[...path]/route.ts`, `src/core/lib/extensions.server.ts` | extension API dispatcher | Intentional, but currently permissive | Partial; needs explicit-policy defaults | Registry imported by internal module | Currently handler-defined auth; no required declarative policy | Replace incrementally with explicit policy declarations and legacy adapter |
+| Public route extensions | `src/user/extensions/public-routes/index.ts`, `middleware.ts`, `src/core/lib/public-route-dispatcher*.server.ts` | middleware dispatch path | Intentional | Partial; execution contract exists but policy model missing | Must avoid source-only discovery assumptions | Denial/fallthrough semantics are security-sensitive | Wrap with explicit policy + plugin state requirements |
+| Admin navigation | `src/user/extensions/admin/index.tsx`, `src/core/types/extensions.ts`, admin layout | admin shell | Intentional | Structural type safe | Static registration is safe | Visibility only; never authoritative | Preserve compatibility, add policy/enablement-aware registration semantics |
+| Embeds | `src/user/extensions/embeds/index.ts`, `src/core/lib/embeds.ts` | markdown/content rendering pipeline | Intentional | Partial | Registry import coupling to internals | Embed visibility not equal to operation authorization | Wrap behind SDK adapter contracts |
+| SEO/metadata extensions | `src/user/extensions/seo/index.ts`, `src/core/lib/extensions.server.ts`, robots/sitemap/metadata routes | SEO metadata routes | Intentional | Partial | Internal registry orchestration | Usually public, but generation context must not leak protected data | Preserve behavior, wrap with stable registration contracts |
+| Plugin definitions and registries | `src/core/types/plugins.ts`, `src/user/extensions/plugins/index.ts`, `src/user/extensions/plugins/registry.ts`, `src/core/lib/plugin-registry.server.ts`, `src/core/lib/plugins.ts` | lifecycle/install/admin/plugins API | Intentional | Partial (types stable, loaders internal) | Framework imports tenant/plugin registries directly | Enable/install state impacts all plugin-owned surfaces | Preserve type contracts; keep orchestration internal; add SDK registry contract |
+| Plugin settings | `src/core/db/settings.ts`, `src/core/db/plugins.ts`, plugin settings definitions | plugin lifecycle/admin/runtime checks | Intentional | Partial | Keys are namespaced (`plugin:<id>:*`) | Enablement and settings should gate plugin surfaces | Expose namespaced SDK settings capability, keep full settings DB internal |
+| Permission and role primitives | `src/core/lib/auth-helpers.ts`, `src/auth.ts`, `middleware.ts` | middleware + admin APIs + extension helpers | Intentional but inconsistent | Partial | Mixed compatibility logic in separate places | **Inconsistency**: middleware honors `token.isAdmin === true`; `hasAdminAccess()` currently does not | Reconcile as explicit migration decision before unified enforcement |
+| Database access and migration ownership | `src/core/db/index.ts`, core/user migrations, plugin migration ledger | framework + plugin lifecycle + extension helpers | Intentional internal service | Not safe as broad plugin SDK capability | Raw DB exposure would couple private schema | Needs scoped trust boundaries and same-operation auth for writes | Keep core DB internal; expose scoped service contracts only |
+| CLI scaffolding | `scripts/devholm-cli.ts` | downstream dev workflows | Intentional support tooling | Partial | Commands exist but not yet SDK-governed contract | Scaffolding should nudge explicit policy declarations | Preserve and evolve with SDK migration warnings |
+| Test utilities | `src/test/setup.ts`, core tests, plugin tests | internal and plugin tests | Partial | Partial | No dedicated downstream boundary suite yet | Need policy/contract regression test helpers | Expand via `@devholm/sdk/testing` + boundary enforcement layers |
+
+## Required Surface Coverage Notes
+
+### Extension surface coverage requested
+
+The matrix now explicitly covers:
+
+- Named slots (`SlotsConfig`)
+- View overrides (`ViewOverride`)
+- Normal physical App Router pages
+- Registry-backed dynamic admin pages
+- CMS/catch-all pages
+- API extensions
+- Public route extensions
+- Admin navigation
+- Embeds
+- SEO/metadata extensions
+- Plugin definitions/registries
+- Plugin settings
+- Permission/role primitives
+- Database/migration ownership
+- CLI scaffolding
+- Test utilities
+
+## Existing Administrator Resolution Inconsistency (Must Be Reconciled)
+
+Observed behavior:
+
+- `middleware.ts` admin guard considers `token.isAdmin === true` as sufficient.
+- `src/core/lib/auth-helpers.ts::hasAdminAccess()` currently does not include `isAdmin` in its decision path.
+
+Decision status:
+
+- Do not silently choose one behavior.
+- Treat this as a required migration decision before replacing current checks with unified policy enforcement.
+
+Migration requirement:
+
+- Final policy engine and compatibility adapter must explicitly define admin-resolution parity behavior and rollout strategy.
+
+## Additional Risk Findings
+
+### Imports from internal `@core/*` modules in downstream/plugin code
+
+Examples include runtime helper usage under `src/user/extensions/plugins/**` and `src/user/extensions/embeds/**`.
+
+Interpretation:
+
+- Type-level imports can remain as formal SDK exports.
+- Runtime imports from internal orchestration modules must migrate to public SDK contracts.
+
+### Direct framework imports of plugin/extension registries
+
+- Internal core orchestration modules currently import user/plugin registries directly.
+- Works in production today but keeps boundaries implicit and difficult to version.
+
+### One-off authorization in route handlers
+
+- Many admin API handlers manually call `verifyAdmin` and return 401.
+- This pattern is valid for now but should migrate to explicit policy-based wrappers.
+
+### Client visibility not being authorization
+
+- UI/navigation hiding can improve UX.
+- Server-side authorization remains mandatory.
 
 ## Mapping to Issue #6 Required Capabilities
 
-| Issue #6 Capability | Status | Evidence | Notes |
+| Capability | Status | Evidence | Gap/Action |
 |---|---|---|---|
-| Public SDK entrypoints (server/client/testing) | Missing | no stable `@devholm/sdk*` entrypoints | Design needed |
-| `definePage` / `defineApiRoute` / `defineAdminPage` / `definePublicRoute` helpers | Missing | ad-hoc object literal registries | Design needed |
-| Shared access-policy model | Missing | no single policy type model | Design needed |
-| Client visibility helpers + server enforcement | Partial | middleware/admin checks + UI checks exist separately | Needs unified policy model |
-| Auth/session/role/permission helpers via public contracts | Partial | `src/core/lib/auth-helpers.ts`, `src/auth.ts` | Needs explicit SDK contracts |
-| External API integration example | Partial | agent routes exist; no SDK-first documented example | Deferred to implementation phase |
-| Custom DB-backed feature example | Partial | plugin/system DB surfaces exist | Deferred to implementation phase |
-| CLI scaffolding for complete extension | Partial | `scripts/devholm-cli.ts` has scaffolding commands | Needs SDK-aligned scaffolding |
-| Upgrade-contract tests preventing `src/core/**` imports | Missing | no dedicated boundary test suite | Design now, implement later |
-| Docs for supported vs internal imports | Partial | scattered docs + this inventory | Needs formal SDK docs |
+| Public SDK entrypoints (server/client/testing) | Missing | no stable `@devholm/sdk*` export map | Design defined; implementation deferred |
+| Registration helpers (`definePage`, `defineApiRoute`, `defineAdminPage`, `definePublicRoute`, related) | Missing | ad-hoc object registries | Add SDK helper layer with explicit policy requirement |
+| Shared access-policy model | Missing | no single declarative policy model in runtime | Design defined; implementation deferred |
+| Client visibility + authoritative server enforcement | Partial | middleware/admin checks exist, not unified | Build unified policy adapters |
+| Auth/session/role/permission helpers through public contracts | Partial | helper modules exist as internals | Formalize as SDK server contracts |
+| External API integration example | Partial | normal routes can do this today | Add SDK-first acceptance example |
+| Custom DB-backed feature example | Partial | feasible today with internals | Add scoped service contract + acceptance example |
+| CLI scaffolding for complete extension | Partial | `scripts/devholm-cli.ts` scaffolds pieces | Extend to policy-aware templates |
+| Upgrade-contract tests preventing internal imports | Missing | no dedicated boundary suite | Add multi-layer boundary enforcement and tests |
+| Docs distinguishing supported vs internal imports | Partial | this inventory and architecture docs | Expand into public SDK docs when implementation starts |
 
-## Mapping to Issue #6 Acceptance Proof
+## Mapping to Updated Acceptance-Proof Intent
 
-Required sample downstream feature constraints are not yet completed by design (intentionally deferred):
+This design pass intentionally does not claim acceptance proof completion. It defines requirements and migration path for:
 
-- Authenticated custom page: deferred
-- Role/permission-protected API: deferred
-- Anonymous-only component: deferred
-- External API request: deferred
-- DB-backed custom action: deferred
+1. authenticated custom page
+2. role/permission protected API
+3. anonymous-only component visibility
+4. authenticated/selected-role component visibility
+5. external API integration
+6. database-backed custom action
+7. client visibility + server authoritative enforcement
+8. public SDK imports (no arbitrary `src/core/**`/`@core/*`)
+9. contract tests across framework updates
 
-This pass only defines architecture and migration path.
+## Compatibility and Migration Guardrails
+
+- Preserve existing structural registration types where possible (admin nav, slots, view overrides).
+- Introduce wrappers/enriched contracts for policy and plugin enablement behavior.
+- Keep internal orchestration modules non-public.
+- Add compatibility adapters only as temporary migration paths with warnings and deprecation plan.
 
 ## Deferred Scope Guardrails
 
-The following remain out of this pass:
+Still out of scope for this pass:
 
 - Issue #11 events/background jobs/scheduled tasks
-- Issue #7 package/versioning implementation
-- Issue #8 URL shortener functional MVP implementation
-- Calendar/Gallery plugin conversions (#9/#10)
-- Broad SDK/runtime code implementation
-
-## Recommended Disposition Summary
-
-- Preserve as-is now: config typing, migration ownership, current plugin lifecycle ledger
-- Wrap behind SDK: extension type contracts, auth helper contracts, plugin runtime read contracts
-- Replace incrementally: API extension auth model, route-level one-off authorization patterns
-- Keep internal: core orchestration modules under `src/core/lib/*`
-- Remove after migration: direct downstream runtime imports from internal `@core/lib/*`
+- Issue #7 package/version implementation
+- Issue #8 URL Shortener functional MVP
+- Issue #9/#10 Calendar/Gallery conversion work
+- Broad SDK/runtime implementation
