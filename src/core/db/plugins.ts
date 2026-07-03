@@ -50,15 +50,21 @@ export async function listPluginStates(): Promise<PluginAdminRecord[]> {
   await syncPluginDefinitions();
 
   const [rows, installedRows] = await Promise.all([
-    getDb()('site_settings').select('key', 'value', 'updated_at').where('category', 'plugins'),
+    getDb()('site_settings')
+      .select('key', 'value', 'updated_at')
+      .where('category', 'plugins')
+      .andWhere('key', 'like', 'plugin:%:enabled'),
     getDb()('devholm_plugins').select('*'),
   ]);
 
   const stateById = new Map<string, PluginRuntimeState>();
   for (const row of rows) {
-    const id = String(row.key)
-      .replace(/^plugin:/, '')
-      .replace(/:enabled$/, '');
+    const match = /^plugin:([^:]+):enabled$/.exec(String(row.key));
+    if (!match) {
+      continue;
+    }
+
+    const id = match[1];
     stateById.set(id, {
       id,
       bundled: true,

@@ -105,6 +105,10 @@ Deferred to later phases:
 Runtime registration uses explicit bundled plugin registry:
 
 - `src/user/extensions/plugins/registry.ts`
-- `src/user/extensions/plugins/migration-registry.json`
+- `generated/plugins/registry.json`
+- `generated/plugins/<plugin-id>/migrations/`
 
-This avoids runtime filesystem scanning in production standalone images while preserving plugin-local ownership.
+Source plugin manifests and bundled plugin registration generate the packaged runtime registry. In
+production, `generated/plugins/registry.json` is authoritative and migration discovery only loads
+declared assets from `generated/plugins/<plugin-id>/migrations/`; arbitrary source directories are
+not scanned.

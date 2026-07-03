@@ -12,6 +12,7 @@ import {
   validatePluginManifestList,
 } from '@core/lib/plugin-registry.server';
 import {
+  checksumMigrationContent,
   discoverPluginMigrations,
   ensureChecksumsUnchanged,
   ensureUniqueMigrationIds,
@@ -272,6 +273,153 @@ describe('generic plugin foundation', () => {
         },
       ])
     ).toThrow(/Duplicate plugin migration ID/);
+  });
+
+  it('rejects traversal that escapes generated/plugins and supports nested declared assets', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devholm-plugin-containment-'));
+    const generatedRoot = path.join(tempDir, 'generated/plugins');
+    const migrationDir = path.join(generatedRoot, 'safe-plugin/migrations/nested');
+    const siblingPrefixDir = path.join(tempDir, 'generated/plugins-evil/safe-plugin/migrations');
+
+    fs.mkdirSync(migrationDir, { recursive: true });
+    fs.mkdirSync(siblingPrefixDir, { recursive: true });
+
+    const nestedFile = path.join(migrationDir, '20260701010000_nested.ts');
+    fs.writeFileSync(
+      nestedFile,
+      'export const up = async () => {}; export const down = async () => {};',
+      'utf8'
+    );
+    const nestedChecksum = checksumMigrationContent(fs.readFileSync(nestedFile, 'utf8'));
+
+    const siblingFile = path.join(siblingPrefixDir, 'migration.ts');
+    fs.writeFileSync(
+      siblingFile,
+      'export const up = async () => {}; export const down = async () => {};',
+      'utf8'
+    );
+
+    expect(() =>
+      discoverPluginMigrations(
+        [
+          {
+            id: 'safe-plugin',
+            version: '1.0.0',
+            migrationDir: 'generated/plugins/safe-plugin/migrations',
+            migrations: [
+              {
+                id: 'safe-plugin:20260701010000_nested',
+                file: 'safe-plugin/migrations/nested/20260701010000_nested.ts',
+                checksum: nestedChecksum,
+              },
+            ],
+          },
+        ],
+        tempDir
+      )
+    ).not.toThrow();
+
+    expect(() =>
+      discoverPluginMigrations(
+        [
+          {
+            id: 'safe-plugin',
+            version: '1.0.0',
+            migrationDir: 'generated/plugins/safe-plugin/migrations',
+            migrations: [
+              {
+                id: 'safe-plugin:escape-sibling',
+                file: '../plugins-evil/safe-plugin/migrations/migration.ts',
+                checksum: checksumMigrationContent(fs.readFileSync(siblingFile, 'utf8')),
+              },
+            ],
+          },
+        ],
+        tempDir
+      )
+    ).toThrow(/escapes generated plugins root/);
+
+    expect(() =>
+      discoverPluginMigrations(
+        [
+          {
+            id: 'safe-plugin',
+            version: '1.0.0',
+            migrationDir: 'generated/plugins/safe-plugin/migrations',
+            migrations: [
+              {
+                id: 'safe-plugin:escape-parent',
+                file: '../../outside.ts',
+                checksum: 'irrelevant',
+              },
+            ],
+          },
+        ],
+        tempDir
+      )
+    ).toThrow(/escapes generated plugins root/);
+
+    expect(() =>
+      discoverPluginMigrations(
+        [
+          {
+            id: 'safe-plugin',
+            version: '1.0.0',
+            migrationDir: 'generated/plugins/safe-plugin/migrations',
+            migrations: [
+              {
+                id: 'safe-plugin:absolute',
+                file: path.join(tempDir, 'outside.ts'),
+                checksum: 'irrelevant',
+              },
+            ],
+          },
+        ],
+        tempDir
+      )
+    ).toThrow(/escapes generated plugins root/);
+
+    expect(() =>
+      discoverPluginMigrations(
+        [
+          {
+            id: 'safe-plugin',
+            version: '1.0.0',
+            migrationDir: 'generated/plugins/safe-plugin/migrations',
+            migrations: [
+              {
+                id: 'safe-plugin:windows-escape',
+                file: '..\\..\\outside.ts',
+                checksum: 'irrelevant',
+              },
+            ],
+          },
+        ],
+        tempDir
+      )
+    ).toThrow(/escapes generated plugins root/);
+
+    expect(() =>
+      discoverPluginMigrations(
+        [
+          {
+            id: 'safe-plugin',
+            version: '1.0.0',
+            migrationDir: 'generated/plugins/safe-plugin/migrations',
+            migrations: [
+              {
+                id: 'safe-plugin:windows-absolute',
+                file: 'C:\\outside.ts',
+                checksum: 'irrelevant',
+              },
+            ],
+          },
+        ],
+        tempDir
+      )
+    ).toThrow(/escapes generated plugins root/);
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   it('detects checksum mismatch for already-applied migration', () => {

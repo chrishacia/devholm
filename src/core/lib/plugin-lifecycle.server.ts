@@ -15,11 +15,7 @@ import {
   validatePackageDependencies,
   validateBundledPluginRegistry,
 } from '@core/lib/plugin-registry.server';
-import type {
-  DevholmPluginManifest,
-  PluginLifecycleContext,
-  PluginLifecycleState,
-} from '@core/types/plugins';
+import type { DevholmPluginManifest, PluginLifecycleContext } from '@core/types/plugins';
 
 type InstallOptions = {
   initiatedBy?: string;
@@ -218,10 +214,6 @@ async function withPluginLifecycleLock<T>(pluginId: string, work: () => Promise<
   }
 }
 
-function nextInstalledLifecycleState(enabled: boolean): PluginLifecycleState {
-  return enabled ? 'installed' : 'installed';
-}
-
 export async function canDisableOrUninstallPlugin(pluginId: string): Promise<boolean> {
   await ensureDependentsAllowDisable(pluginId);
   return true;
@@ -282,7 +274,7 @@ export async function installPlugin(
       const enabled = options.enable === true;
       await upsertPluginLedgerRecord({
         manifest,
-        state: nextInstalledLifecycleState(enabled),
+        state: 'installed',
         operationStatus: 'idle',
         enabled,
         installedVersion: manifest.version,
