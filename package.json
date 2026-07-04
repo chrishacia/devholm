@@ -40,6 +40,7 @@
     "release:dry": "release-it --dry-run"
   },
   "dependencies": {
+    "@devholm/sdk": "workspace:*",
     "@emotion/cache": "11.13.0",
     "@emotion/react": "11.13.0",
     "@emotion/styled": "11.13.0",
@@ -89,6 +90,7 @@
     "@vitest/coverage-v8": "2.0.0",
     "eslint": "9",
     "eslint-config-next": "16.1.3",
+    "esbuild": "0.25.12",
     "husky": "9.1.7",
     "jsdom": "24.1.0",
     "lint-staged": "16.2.7",
