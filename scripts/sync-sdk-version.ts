@@ -1,28 +1,24 @@
 /**
  * sync-sdk-version.ts
  *
- * Reads the root package.json "version" field and writes the same value into
- * packages/sdk/package.json, ensuring lockstep versioning during every release.
+ * Pure library for syncing SDK package version with root package version.
  *
- * Called by the release-it "after:bump" hook so the SDK manifest is updated
- * atomically in the same release commit as the root manifest.
+ * This module is import-safe: it has no side effects, no logging, no process.exit calls,
+ * and does not execute on import. Use this when you need to test sync logic with fixtures.
  *
- * Usage (direct):
- *   tsx scripts/sync-sdk-version.ts [<root-manifest>] [<sdk-manifest>]
- *
- * If paths are omitted, defaults to repo-relative locations.
- *
- * Exported as syncSdkVersion() for unit testing with fixture paths.
+ * For CLI usage, import sync-sdk-version-cli.ts instead.
  */
 
 import { readFileSync, writeFileSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
 
-// ---------------------------------------------------------------------------
-// Core function (testable with any paths)
-// ---------------------------------------------------------------------------
-
+/**
+ * Reads the root package.json "version" field and writes the same value into
+ * packages/sdk/package.json, ensuring lockstep versioning during every release.
+ *
+ * @param rootManifestPath - Path to root package.json
+ * @param sdkManifestPath - Path to packages/sdk/package.json
+ * @throws If manifests cannot be read, parsed, or lack valid "version" fields
+ */
 export function syncSdkVersion(rootManifestPath: string, sdkManifestPath: string): void {
   // --- Read root manifest ---
   let rootRaw: string;
@@ -73,30 +69,4 @@ export function syncSdkVersion(rootManifestPath: string, sdkManifestPath: string
   // Preserve all other fields and trailing-newline convention.
   sdkManifest['version'] = rootVersion;
   writeFileSync(sdkManifestPath, JSON.stringify(sdkManifest, null, 2) + '\n', 'utf8');
-}
-
-// ---------------------------------------------------------------------------
-// CLI entry point
-// ---------------------------------------------------------------------------
-
-// ESM __dirname equivalent
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const repoRoot = resolve(__dirname, '..');
-const defaultRoot = resolve(repoRoot, 'package.json');
-const defaultSdk = resolve(repoRoot, 'packages', 'sdk', 'package.json');
-
-const rootArg = process.argv[2] ?? defaultRoot;
-const sdkArg = process.argv[3] ?? defaultSdk;
-
-try {
-  syncSdkVersion(rootArg, sdkArg);
-  const { version } = JSON.parse(readFileSync(rootArg, 'utf8')) as {
-    version: string;
-  };
-  console.log(`sync-sdk-version: synced SDK version to ${version}`);
-} catch (err) {
-  console.error((err as Error).message);
-  process.exit(1);
 }

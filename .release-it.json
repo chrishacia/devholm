@@ -36,6 +36,6 @@
   },
   "hooks": {
     "before:init": ["pnpm type-check", "pnpm test"],
-    "after:bump": ["tsx scripts/sync-sdk-version.ts"]
+    "after:bump": ["tsx scripts/sync-sdk-version-cli.ts"]
   }
 }

@@ -83,16 +83,16 @@ function createFailureRegistry() {
   });
 
   registry.registerResolver({
-    id: policyResolverId('site:resolver:throws'),
-    owner: 'site',
+    id: policyResolverId('framework:resolver:throws'),
+    owner: 'framework',
     resolve: () => {
       throw new Error('secret resolver failure');
     },
   });
 
   registry.registerResolver({
-    id: policyResolverId('site:resolver:rejects'),
-    owner: 'site',
+    id: policyResolverId('framework:resolver:rejects'),
+    owner: 'framework',
     resolve: async () => Promise.reject(new Error('secret async resolver failure')),
   });
 
@@ -155,30 +155,35 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(defineAccessDeclaration({ kind: 'everyone' }), {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toEqual({ kind: 'allow' });
 
     await expect(
       registry.evaluateDeclaration(defineAccessDeclaration({ kind: 'anonymous-only' }), {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toEqual({ kind: 'allow' });
 
     await expect(
       registry.evaluateDeclaration(defineAccessDeclaration({ kind: 'anonymous-only' }), {
+        owner: 'framework',
         subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
       })
     ).resolves.toEqual({ kind: 'forbidden' });
 
     await expect(
       registry.evaluateDeclaration(defineAccessDeclaration({ kind: 'authenticated' }), {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toMatchObject({ kind: 'unauthenticated' });
 
     await expect(
       registry.evaluateDeclaration(defineAccessDeclaration({ kind: 'authenticated' }), {
+        owner: 'framework',
         subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
       })
     ).resolves.toEqual({ kind: 'allow' });
@@ -187,6 +192,7 @@ describe('SDK Stage 2 policy engine', () => {
       registry.evaluateDeclaration(
         defineAccessDeclaration({ kind: 'role-any', roles: ['admin', 'editor'] }),
         {
+          owner: 'framework',
           subject: createSubject({ authenticated: true, roles: ['editor'] }),
         }
       )
@@ -196,6 +202,7 @@ describe('SDK Stage 2 policy engine', () => {
       registry.evaluateDeclaration(
         defineAccessDeclaration({ kind: 'role-any', roles: ['admin', 'editor'] }),
         {
+          owner: 'framework',
           subject: createSubject({ authenticated: true, roles: ['viewer'] }),
         }
       )
@@ -208,6 +215,7 @@ describe('SDK Stage 2 policy engine', () => {
           permissions: [permissionId('posts.edit')],
         }),
         {
+          owner: 'framework',
           subject: createSubject({
             authenticated: true,
             permissions: [permissionId('posts.edit')],
@@ -223,6 +231,7 @@ describe('SDK Stage 2 policy engine', () => {
           permissions: [permissionId('posts.edit')],
         }),
         {
+          owner: 'framework',
           subject: createSubject({
             authenticated: true,
             permissions: [permissionId('posts.read')],
@@ -238,7 +247,7 @@ describe('SDK Stage 2 policy engine', () => {
     const emptyRoles = defineAccessDeclaration({ kind: 'role-any', roles: [] });
     const emptyPermissions = defineAccessDeclaration({ kind: 'permission-any', permissions: [] });
 
-    expect(registry.validateDeclaration(emptyRoles)).toEqual({
+    expect(registry.validateDeclaration(emptyRoles, 'framework')).toEqual({
       valid: false,
       issues: [
         {
@@ -249,7 +258,7 @@ describe('SDK Stage 2 policy engine', () => {
       ],
     });
 
-    expect(registry.validateDeclaration(emptyPermissions)).toEqual({
+    expect(registry.validateDeclaration(emptyPermissions, 'framework')).toEqual({
       valid: false,
       issues: [
         {
@@ -262,6 +271,7 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(emptyRoles, {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toMatchObject({
@@ -273,6 +283,7 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(emptyPermissions, {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toMatchObject({
@@ -287,8 +298,8 @@ describe('SDK Stage 2 policy engine', () => {
     const registry = createPolicyRegistry();
 
     registry.registerResolver({
-      id: policyResolverId('site:resolver:resource-owner'),
-      owner: 'site',
+      id: policyResolverId('framework:resolver:resource-owner'),
+      owner: 'framework',
       resolve: ({ resource }) => {
         const ownerId = resource?.ownerId;
 
@@ -311,41 +322,71 @@ describe('SDK Stage 2 policy engine', () => {
     });
 
     await expect(
-      registry.evaluateDeclaration(makeOwnershipDeclaration('resource-owner'), {
-        subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
-        resource: { ownerId: 'user-1' },
-      })
+      registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'ownership',
+          resolverId: policyResolverId('framework:resolver:resource-owner'),
+        }),
+        {
+          owner: 'framework',
+          subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
+          resource: { ownerId: 'user-1' },
+        }
+      )
     ).resolves.toEqual({ kind: 'allow' });
 
     await expect(
-      registry.evaluateDeclaration(makeOwnershipDeclaration('resource-owner'), {
-        subject: createSubject({ authenticated: true, subjectId: 'user-2' }),
-        resource: { ownerId: 'user-1' },
-      })
+      registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'ownership',
+          resolverId: policyResolverId('framework:resolver:resource-owner'),
+        }),
+        {
+          owner: 'framework',
+          subject: createSubject({ authenticated: true, subjectId: 'user-2' }),
+          resource: { ownerId: 'user-1' },
+        }
+      )
     ).resolves.toEqual({ kind: 'forbidden' });
 
     await expect(
-      registry.evaluateDeclaration(makeOwnershipDeclaration('resource-owner'), {
-        subject: createSubject({ authenticated: false }),
-        resource: { ownerId: 'user-1' },
-      })
+      registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'ownership',
+          resolverId: policyResolverId('framework:resolver:resource-owner'),
+        }),
+        {
+          owner: 'framework',
+          subject: createSubject({ authenticated: false }),
+          resource: { ownerId: 'user-1' },
+        }
+      )
     ).resolves.toEqual({ kind: 'unauthenticated' });
 
     await expect(
-      registry.evaluateDeclaration(makeOwnershipDeclaration('resource-owner'), {
-        subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
-        resource: {},
-      })
+      registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'ownership',
+          resolverId: policyResolverId('framework:resolver:resource-owner'),
+        }),
+        {
+          owner: 'framework',
+          subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
+          resource: {},
+        }
+      )
     ).resolves.toEqual({ kind: 'not-found' });
 
     await expect(
       registry.evaluateDeclaration(makeCustomDeclaration('allow'), {
+        owner: 'framework',
         subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
       })
     ).resolves.toEqual({ kind: 'allow' });
 
     await expect(
       registry.evaluateDeclaration(makeCustomDeclaration('forbidden'), {
+        owner: 'framework',
         subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
       })
     ).resolves.toEqual({ kind: 'forbidden' });
@@ -429,7 +470,7 @@ describe('SDK Stage 2 policy engine', () => {
     const missingEvaluator = makeCustomDeclaration('missing');
     const missingResolver = makeOwnershipDeclaration('missing');
 
-    expect(registry.validateDeclaration(missingEvaluator)).toEqual({
+    expect(registry.validateDeclaration(missingEvaluator, 'framework')).toEqual({
       valid: false,
       issues: [
         {
@@ -441,7 +482,7 @@ describe('SDK Stage 2 policy engine', () => {
       ],
     });
 
-    expect(registry.validateDeclaration(missingResolver)).toEqual({
+    expect(registry.validateDeclaration(missingResolver, 'framework')).toEqual({
       valid: false,
       issues: [
         {
@@ -455,6 +496,7 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(missingEvaluator, {
+        owner: 'framework',
         subject: createSubject({ authenticated: true }),
       })
     ).resolves.toMatchObject({
@@ -466,6 +508,7 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(missingResolver, {
+        owner: 'framework',
         subject: createSubject({ authenticated: true }),
       })
     ).resolves.toMatchObject({
@@ -489,12 +532,12 @@ describe('SDK Stage 2 policy engine', () => {
     const validDeclaration = makeCustomDeclaration('shared');
     const missingDeclaration = makeCustomDeclaration('shared');
 
-    expect(firstRegistry.validateDeclaration(validDeclaration)).toEqual({
+    expect(firstRegistry.validateDeclaration(validDeclaration, 'framework')).toEqual({
       valid: true,
       issues: [],
     });
 
-    expect(secondRegistry.validateDeclaration(missingDeclaration)).toEqual({
+    expect(secondRegistry.validateDeclaration(missingDeclaration, 'framework')).toEqual({
       valid: false,
       issues: [
         {
@@ -506,8 +549,8 @@ describe('SDK Stage 2 policy engine', () => {
       ],
     });
 
-    expect(secondRegistry.validateDeclaration(missingDeclaration)).toEqual(
-      secondRegistry.validateDeclaration(missingDeclaration)
+    expect(secondRegistry.validateDeclaration(missingDeclaration, 'framework')).toEqual(
+      secondRegistry.validateDeclaration(missingDeclaration, 'framework')
     );
   });
 
@@ -527,9 +570,11 @@ describe('SDK Stage 2 policy engine', () => {
         });
 
         const allOfResult = await registry.evaluateDeclaration(allOf, {
+          owner: 'framework',
           subject: createSubject(),
         });
         const anyOfResult = await registry.evaluateDeclaration(anyOf, {
+          owner: 'framework',
           subject: createSubject(),
         });
 
@@ -580,12 +625,14 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(nestedOne, {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toEqual({ kind: 'not-found' });
 
     await expect(
       registry.evaluateDeclaration(nestedEquivalent, {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toEqual({ kind: 'not-found' });
@@ -610,12 +657,14 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(reorderedLeft, {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toEqual({ kind: 'forbidden' });
 
     await expect(
       registry.evaluateDeclaration(reorderedRight, {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toEqual({ kind: 'forbidden' });
@@ -627,23 +676,33 @@ describe('SDK Stage 2 policy engine', () => {
     const thrownEvaluator = makeCustomDeclaration('throws');
     const rejectedEvaluator = makeCustomDeclaration('rejects');
 
-    const thrownResolver = makeOwnershipDeclaration('throws');
-    const rejectedResolver = makeOwnershipDeclaration('rejects');
+    const thrownResolver = defineAccessDeclaration({
+      kind: 'ownership',
+      resolverId: policyResolverId('framework:resolver:throws'),
+    });
+    const rejectedResolver = defineAccessDeclaration({
+      kind: 'ownership',
+      resolverId: policyResolverId('framework:resolver:rejects'),
+    });
 
     const thrownEvaluatorResult = await registry.evaluateDeclaration(thrownEvaluator, {
+      owner: 'framework',
       subject: createSubject({ authenticated: true }),
     });
 
     const rejectedEvaluatorResult = await registry.evaluateDeclaration(rejectedEvaluator, {
+      owner: 'framework',
       subject: createSubject({ authenticated: true }),
     });
 
     const thrownResolverResult = await registry.evaluateDeclaration(thrownResolver, {
+      owner: 'framework',
       subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
       resource: { ownerId: 'user-1' },
     });
 
     const rejectedResolverResult = await registry.evaluateDeclaration(rejectedResolver, {
+      owner: 'framework',
       subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
       resource: { ownerId: 'user-1' },
     });
@@ -676,6 +735,7 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(defineAccessDeclaration({ kind: 'allOf', policies: [] }), {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toMatchObject({
@@ -692,6 +752,7 @@ describe('SDK Stage 2 policy engine', () => {
           policies: [leafDeclaration('forbidden'), leafDeclaration('unauthenticated')],
         }),
         {
+          owner: 'framework',
           subject: createSubject(),
         }
       )
@@ -704,6 +765,7 @@ describe('SDK Stage 2 policy engine', () => {
           policies: [leafDeclaration('allow'), leafDeclaration('policy-error')],
         }),
         {
+          owner: 'framework',
           subject: createSubject(),
         }
       )
@@ -712,6 +774,558 @@ describe('SDK Stage 2 policy engine', () => {
       error: {
         code: 'composition-failed',
       },
+    });
+  });
+
+  describe('owner-reference matrix - all 16 owner pairings', () => {
+    // Test declaring/referenced owner combinations
+    // Declaring owners: framework, site, plugin:a, plugin:b
+    // Referenced owners: framework, site, plugin:a, plugin:b
+    // Valid: framework→framework, site→site, plugin:a→plugin:a, plugin:b→plugin:b
+    // Invalid: all cross-owner references
+
+    it('allows framework to reference framework evaluators', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:allow'),
+        owner: 'framework',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'custom',
+            evaluatorId: policyEvaluatorId('framework:evaluator:allow'),
+          }),
+          {
+            owner: 'framework',
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toEqual({ kind: 'allow' });
+    });
+
+    it('allows site to reference site resolvers', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerResolver({
+        id: policyResolverId('site:resolver:owner'),
+        owner: 'site',
+        resolve: () => 'user-1',
+      });
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'ownership',
+            resolverId: policyResolverId('site:resolver:owner'),
+          }),
+          {
+            owner: 'site',
+            subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
+            resource: { ownerId: 'user-1' },
+          }
+        )
+      ).resolves.toEqual({ kind: 'allow' });
+    });
+
+    it('allows plugin:a to reference plugin:a evaluators', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('plugin:a:evaluator:allow'),
+        owner: 'plugin:a',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'custom',
+            evaluatorId: policyEvaluatorId('plugin:a:evaluator:allow'),
+          }),
+          {
+            owner: 'plugin:a',
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toEqual({ kind: 'allow' });
+    });
+
+    it('denies framework from referencing site evaluators', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('site:evaluator:allow'),
+        owner: 'site',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'custom',
+            evaluatorId: policyEvaluatorId('site:evaluator:allow'),
+          }),
+          {
+            owner: 'framework',
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'invalid-registration' },
+      });
+    });
+
+    it('denies framework from referencing plugin:a evaluators', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('plugin:a:evaluator:allow'),
+        owner: 'plugin:a',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'custom',
+            evaluatorId: policyEvaluatorId('plugin:a:evaluator:allow'),
+          }),
+          {
+            owner: 'framework',
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'invalid-registration' },
+      });
+    });
+
+    it('denies site from referencing framework evaluators', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:allow'),
+        owner: 'framework',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'custom',
+            evaluatorId: policyEvaluatorId('framework:evaluator:allow'),
+          }),
+          {
+            owner: 'site',
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'invalid-registration' },
+      });
+    });
+
+    it('denies site from referencing plugin:a resolvers', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerResolver({
+        id: policyResolverId('plugin:a:resolver:owner'),
+        owner: 'plugin:a',
+        resolve: () => 'user-1',
+      });
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'ownership',
+            resolverId: policyResolverId('plugin:a:resolver:owner'),
+          }),
+          {
+            owner: 'site',
+            subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
+            resource: { ownerId: 'user-1' },
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'invalid-registration' },
+      });
+    });
+
+    it('denies plugin:a from referencing plugin:b evaluators', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('plugin:b:evaluator:allow'),
+        owner: 'plugin:b',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'custom',
+            evaluatorId: policyEvaluatorId('plugin:b:evaluator:allow'),
+          }),
+          {
+            owner: 'plugin:a',
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'invalid-registration' },
+      });
+    });
+
+    it('denies plugin:a from referencing framework evaluators', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:allow'),
+        owner: 'framework',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'custom',
+            evaluatorId: policyEvaluatorId('framework:evaluator:allow'),
+          }),
+          {
+            owner: 'plugin:a',
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'invalid-registration' },
+      });
+    });
+
+    it('denies plugin:a from referencing site resolvers', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerResolver({
+        id: policyResolverId('site:resolver:owner'),
+        owner: 'site',
+        resolve: () => 'user-1',
+      });
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'ownership',
+            resolverId: policyResolverId('site:resolver:owner'),
+          }),
+          {
+            owner: 'plugin:a',
+            subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
+            resource: { ownerId: 'user-1' },
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'invalid-registration' },
+      });
+    });
+
+    it('rejects compositions with cross-owner references in allOf', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:allow'),
+        owner: 'framework',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('site:evaluator:forbidden'),
+        owner: 'site',
+        evaluate: () => ({ kind: 'forbidden' }),
+      });
+
+      // Site-declared allOf trying to reference framework evaluator (invalid)
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'allOf',
+            policies: [
+              defineAccessDeclaration({
+                kind: 'custom',
+                evaluatorId: policyEvaluatorId('framework:evaluator:allow'),
+              }),
+              defineAccessDeclaration({
+                kind: 'custom',
+                evaluatorId: policyEvaluatorId('site:evaluator:forbidden'),
+              }),
+            ],
+          }),
+          {
+            owner: 'site',
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'composition-failed' },
+      });
+    });
+
+    it('rejects compositions with cross-owner references in anyOf', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('plugin:a:evaluator:allow'),
+        owner: 'plugin:a',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('plugin:b:evaluator:allow'),
+        owner: 'plugin:b',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      // plugin:a-declared anyOf trying to reference plugin:b evaluator (invalid)
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'anyOf',
+            policies: [
+              defineAccessDeclaration({
+                kind: 'custom',
+                evaluatorId: policyEvaluatorId('plugin:a:evaluator:allow'),
+              }),
+              defineAccessDeclaration({
+                kind: 'custom',
+                evaluatorId: policyEvaluatorId('plugin:b:evaluator:allow'),
+              }),
+            ],
+          }),
+          {
+            owner: 'plugin:a',
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'composition-failed' },
+      });
+    });
+
+    it('validates owner values at runtime - rejects missing owner', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:allow'),
+        owner: 'framework',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'custom',
+            evaluatorId: policyEvaluatorId('framework:evaluator:allow'),
+          }),
+          {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            owner: undefined as any,
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'invalid-declaration' },
+      });
+    });
+
+    it('validates owner values at runtime - rejects malformed owner', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:allow'),
+        owner: 'framework',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      // Testing runtime validation with malformed owner
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'custom',
+            evaluatorId: policyEvaluatorId('framework:evaluator:allow'),
+          }),
+          {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            owner: 'invalid-owner' as any,
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'invalid-declaration' },
+      });
+    });
+
+    it('validates owner values at runtime - rejects malformed plugin ID', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:allow'),
+        owner: 'framework',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      // Testing runtime validation with malformed plugin ID
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'custom',
+            evaluatorId: policyEvaluatorId('framework:evaluator:allow'),
+          }),
+          {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            owner: 'plugin:' as any,
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'invalid-declaration' },
+      });
+    });
+
+    it('validates owner values at runtime - rejects plugin ID with invalid characters', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:allow'),
+        owner: 'framework',
+        evaluate: () => ({ kind: 'allow' }),
+      });
+
+      // Testing runtime validation with invalid plugin ID characters
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'custom',
+            evaluatorId: policyEvaluatorId('framework:evaluator:allow'),
+          }),
+          {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            owner: 'plugin:foo@bar' as any,
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'invalid-declaration' },
+      });
+    });
+
+    it('hardens canonicalization - rejects evaluator getters on kind', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:malicious'),
+        owner: 'framework',
+        evaluate: () => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result: any = {
+            get kind() {
+              throw new Error('secret getter failure');
+            },
+          };
+          return result;
+        },
+      });
+
+      await expect(
+        registry.evaluateDeclaration(
+          defineAccessDeclaration({
+            kind: 'custom',
+            evaluatorId: policyEvaluatorId('framework:evaluator:malicious'),
+          }),
+          {
+            owner: 'framework',
+            subject: createSubject(),
+          }
+        )
+      ).resolves.toMatchObject({
+        kind: 'policy-error',
+        error: { code: 'invalid-result' },
+      });
+    });
+
+    it('hardens canonicalization - rejects evaluator objects with extra properties', async () => {
+      const registry = createPolicyRegistry();
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:leaky'),
+        owner: 'framework',
+        evaluate: () => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result: any = {
+            kind: 'allow',
+            secret: 'must-disappear',
+            apiKey: 'exposed',
+          };
+          return result;
+        },
+      });
+
+      const result = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:leaky'),
+        }),
+        {
+          owner: 'framework',
+          subject: createSubject(),
+        }
+      );
+
+      expect(result).toEqual({ kind: 'allow' });
+      expect(result).not.toHaveProperty('secret');
+      expect(result).not.toHaveProperty('apiKey');
+    });
+
+    it('hardens canonicalization - never returns evaluator object by reference', async () => {
+      const registry = createPolicyRegistry();
+      const evaluatorResult = { kind: 'allow' as const };
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:return-same'),
+        owner: 'framework',
+        evaluate: () => evaluatorResult,
+      });
+
+      const result1 = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:return-same'),
+        }),
+        {
+          owner: 'framework',
+          subject: createSubject(),
+        }
+      );
+
+      expect(result1).not.toBe(evaluatorResult);
+      expect(result1).toEqual({ kind: 'allow' });
     });
   });
 });

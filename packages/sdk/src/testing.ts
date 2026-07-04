@@ -1,5 +1,6 @@
 import { SDK_RUNTIME_TESTING } from './internal/runtime-tags';
 import type { AccessDeclaration } from './contracts';
+import { supportedSdkImportPaths } from './contracts';
 
 export const sdkRuntimeTesting = SDK_RUNTIME_TESTING;
 
@@ -140,12 +141,4 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-export function supportedSdkImportPaths(): readonly string[] {
-  return [
-    '@devholm/sdk',
-    '@devholm/sdk/server',
-    '@devholm/sdk/middleware',
-    '@devholm/sdk/react',
-    '@devholm/sdk/testing',
-  ];
-}
+export { supportedSdkImportPaths };

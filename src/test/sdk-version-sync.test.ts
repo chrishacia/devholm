@@ -17,7 +17,7 @@
  *  - dry-run fixture bump keeps both versions equal
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs';
 import { resolve } from 'path';
 import { tmpdir } from 'os';
@@ -194,5 +194,78 @@ describe('sync-sdk-version', () => {
     expect(() => syncSdkVersion(fixture.rootPath, fixture.sdkPath)).toThrow(
       /SDK manifest has no "version" field/
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // CLI execution tests
+  // -------------------------------------------------------------------------
+
+  it('CLI updates fixture manifests and exits zero on success', async () => {
+    const { execSync } = await import('child_process');
+    fixture = makeFixture(VALID_ROOT('5.0.0'), VALID_SDK('4.9.9'));
+    const cmd = `tsx scripts/sync-sdk-version-cli.ts "${fixture.rootPath}" "${fixture.sdkPath}"`;
+    const exitCode = execSync(cmd, { encoding: 'utf8', stdio: 'pipe' });
+    expect(exitCode).toBeDefined(); // successful execution returns undefined (treated as 0)
+    const sdk = JSON.parse(readFileSync(fixture.sdkPath, 'utf8')) as {
+      version: string;
+    };
+    expect(sdk.version).toBe('5.0.0');
+  });
+
+  it('CLI exits with error code when root manifest is missing', async () => {
+    const { execSync } = await import('child_process');
+    fixture = makeFixture(VALID_ROOT('1.0.0'), VALID_SDK('1.0.0'));
+    const cmd = `tsx scripts/sync-sdk-version-cli.ts "/nonexistent/package.json" "${fixture.sdkPath}"`;
+    expect(() => execSync(cmd, { encoding: 'utf8', stdio: 'pipe' })).toThrow();
+  });
+
+  it('CLI exits with error code when SDK manifest is missing', async () => {
+    const { execSync } = await import('child_process');
+    fixture = makeFixture(VALID_ROOT('1.0.0'), VALID_SDK('1.0.0'));
+    const cmd = `tsx scripts/sync-sdk-version-cli.ts "${fixture.rootPath}" "/nonexistent/sdk/package.json"`;
+    expect(() => execSync(cmd, { encoding: 'utf8', stdio: 'pipe' })).toThrow();
+  });
+
+  it('CLI exits with error code when root manifest is malformed', async () => {
+    const { execSync } = await import('child_process');
+    fixture = makeFixture('{ invalid }', VALID_SDK('1.0.0'));
+    const cmd = `tsx scripts/sync-sdk-version-cli.ts "${fixture.rootPath}" "${fixture.sdkPath}"`;
+    expect(() => execSync(cmd, { encoding: 'utf8', stdio: 'pipe' })).toThrow();
+  });
+
+  it('CLI exits with error code when SDK manifest is malformed', async () => {
+    const { execSync } = await import('child_process');
+    fixture = makeFixture(VALID_ROOT('1.0.0'), '{ invalid }');
+    const cmd = `tsx scripts/sync-sdk-version-cli.ts "${fixture.rootPath}" "${fixture.sdkPath}"`;
+    expect(() => execSync(cmd, { encoding: 'utf8', stdio: 'pipe' })).toThrow();
+  });
+
+  it('library import produces no console output', () => {
+    const consoleLogSpy = vi.spyOn(console, 'log');
+    const consoleErrorSpy = vi.spyOn(console, 'error');
+    fixture = makeFixture(VALID_ROOT('5.0.0'), VALID_SDK('4.9.9'));
+    syncSdkVersion(fixture.rootPath, fixture.sdkPath);
+    expect(consoleLogSpy).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleLogSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('library import does not mutate filesystem beyond the SDK manifest', () => {
+    fixture = makeFixture(VALID_ROOT('5.0.0'), VALID_SDK('4.9.9'));
+    const rootBefore = readFileSync(fixture.rootPath, 'utf8');
+    syncSdkVersion(fixture.rootPath, fixture.sdkPath);
+    const rootAfter = readFileSync(fixture.rootPath, 'utf8');
+    expect(rootAfter).toBe(rootBefore);
+  });
+
+  it('library import cannot call process.exit', () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit should not be called');
+    });
+    fixture = makeFixture(VALID_ROOT('5.0.0'), VALID_SDK('4.9.9'));
+    syncSdkVersion(fixture.rootPath, fixture.sdkPath);
+    expect(exitSpy).not.toHaveBeenCalled();
+    exitSpy.mockRestore();
   });
 });

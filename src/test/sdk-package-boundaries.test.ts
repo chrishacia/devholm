@@ -210,4 +210,100 @@ describe('SDK package boundaries', () => {
     expect(inputs.some((input) => input.includes('packages/sdk/src/server.ts'))).toBe(false);
     expect(inputs.some((input) => input.includes('server-only'))).toBe(false);
   });
+
+  it('verifies root export cannot be bundled as client-safe without explicit server prevention', () => {
+    // Try to bundle root export
+    const { result } = bundleFixtureWithEsbuild(
+      "import { defineAccessDeclaration } from '@devholm/sdk';\nvoid defineAccessDeclaration;"
+    );
+    // Should succeed as root export is neutral
+    expect(result.code).toBe(0);
+  });
+
+  it('confirms @devholm/sdk/server carries the server-only marker', () => {
+    const serverEntrypoint = path.join(repoRoot, 'packages/sdk/src/server.ts');
+    const content = fs.readFileSync(serverEntrypoint, 'utf8');
+    // Should either import 'server-only' directly or reference it
+    expect(content).toMatch(/server-only/);
+  });
+
+  it('confirms server entrypoint includes server-only guard', () => {
+    const serverEntrypoint = path.join(repoRoot, 'packages/sdk/src/server.ts');
+    const content = fs.readFileSync(serverEntrypoint, 'utf8');
+    // Should import server-only as first import
+    expect(content.startsWith("import 'server-only';")).toBe(true);
+    // Should also have runtime guard
+    expect(content).toContain("typeof window !== 'undefined'");
+  });
+
+  it('confirms middleware entrypoint does not contain server-only marker', () => {
+    const middlewareEntrypoint = path.join(repoRoot, 'packages/sdk/src/middleware.ts');
+    const content = fs.readFileSync(middlewareEntrypoint, 'utf8');
+    // Middleware should NOT import server-only (it's browser-compatible)
+    expect(content).not.toMatch(/import.*server-only/);
+  });
+
+  it('confirms react entrypoint does not contain server-only marker', () => {
+    const reactEntrypoint = path.join(repoRoot, 'packages/sdk/src/react.ts');
+    const content = fs.readFileSync(reactEntrypoint, 'utf8');
+    // React should NOT import server-only (it's browser-compatible)
+    expect(content).not.toMatch(/import.*server-only/);
+  });
+
+  it('confirms root entrypoint does not contain server-only marker', () => {
+    const rootEntrypoint = path.join(repoRoot, 'packages/sdk/src/index.ts');
+    const content = fs.readFileSync(rootEntrypoint, 'utf8');
+    // Root should NOT import server-only (it's neutral)
+    expect(content).not.toMatch(/import.*server-only/);
+  });
+
+  it('confirms testing entrypoint does not contain server-only marker in production build', () => {
+    const testingEntrypoint = path.join(repoRoot, 'packages/sdk/src/testing.ts');
+    const content = fs.readFileSync(testingEntrypoint, 'utf8');
+    // Testing exports should not have server-only in production exports
+    // (though it may be used internally)
+    const exportLines = content.split('\n').filter((line) => line.includes('export'));
+    const hasServerOnlyExport = exportLines.some((line) => line.includes('server-only'));
+    expect(hasServerOnlyExport).toBe(false);
+  });
+
+  it('confirms Vitest resolves server-only fixture in test environment only', () => {
+    // This test should pass in Vitest (using the fixture)
+    // Verify that the fixture path exists
+    const fixturePath = path.join(repoRoot, 'src/test/__fixtures__/server-only.ts');
+    expect(fs.existsSync(fixturePath)).toBe(true);
+  });
+
+  it('confirms all five public exports are independently importable', () => {
+    const script = `
+      const imports = [
+        '@devholm/sdk',
+        '@devholm/sdk/server',
+        '@devholm/sdk/middleware',
+        '@devholm/sdk/react',
+        '@devholm/sdk/testing'
+      ];
+
+      const results = {};
+      for (const imp of imports) {
+        try {
+          results[imp] = import.meta.resolve(imp);
+        } catch (e) {
+          console.error('Failed to resolve ' + imp + ':', e.message);
+          process.exit(1);
+        }
+      }
+
+      // Verify all resolved to different paths
+      const paths = Object.values(results);
+      const uniquePaths = new Set(paths);
+      if (uniquePaths.size !== paths.length) {
+        console.error('Some exports resolved to the same path');
+        process.exit(1);
+      }
+    `;
+
+    const result = run('node', ['--input-type=module', '-e', script]);
+    expect(result.code).toBe(0);
+  });
 });

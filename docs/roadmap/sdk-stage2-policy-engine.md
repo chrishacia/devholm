@@ -1,6 +1,6 @@
 # SDK Stage 2: Deterministic Policy Engine and Registries
 
-Status: Planned
+Status: Under Verification  
 Date: 2026-07-04
 Related issue: #31
 Related parent workstream: #6
