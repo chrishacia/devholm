@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.9.0](https://github.com/chrishacia/devholm/compare/v3.8.2...v3.9.0) (2026-07-04)
+
+### Features
+
+- implement deterministic sdk policy engine ([07a9055](https://github.com/chrishacia/devholm/commit/07a90555928073a4731c16e5e412970186e68e46)), closes [#31](https://github.com/chrishacia/devholm/issues/31) [#31](https://github.com/chrishacia/devholm/issues/31) [#6](https://github.com/chrishacia/devholm/issues/6)
+
 ## [3.8.2](https://github.com/chrishacia/devholm/compare/v3.8.1...v3.8.2) (2026-07-04)
 
 ### Bug Fixes
