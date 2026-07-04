@@ -16,6 +16,7 @@ GitHub issues carry actionable work. The documents here preserve the long-lived 
 - Issue #6 design artifacts:
   - [`sdk-authorization-contract-inventory.md`](./sdk-authorization-contract-inventory.md)
   - [`sdk-authorization-architecture.md`](./sdk-authorization-architecture.md)
+  - [`sdk-authorization-implementation-plan.md`](./sdk-authorization-implementation-plan.md)
 
 ## Current sequence
 
