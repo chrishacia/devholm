@@ -13,7 +13,9 @@ Issue #6 requires upgrade-safe public contracts, explicit authorization defaults
 
 Repository evidence used in ratification:
 
-- single-package workspace (`pnpm-workspace.yaml` includes only `.`)
+- current state is a single-package workspace (`pnpm-workspace.yaml` includes only `.`)
+- root package identity is `devholm` (`package.json`)
+- no dedicated `@devholm/sdk` package currently exists
 - deep framework aliases (`@core/*`, `@user/*`) in `tsconfig.json`
 - middleware currently imports server dispatcher modules (`middleware.ts`)
 - helper/middleware admin interpretation mismatch risk (`src/core/lib/auth-helpers.ts` vs `middleware.ts`)
@@ -22,9 +24,15 @@ Repository evidence used in ratification:
 
 ## Decision
 
-### 1) Runtime-separated public boundary model
+### 1) Runtime-separated public boundary model and package identity
 
-Adopt explicit subpath boundaries in a single package:
+Adopt a multi-package pnpm workspace target where Stage 1 introduces a dedicated SDK package:
+
+- Root application package remains `devholm` and remains the Next.js framework/application package.
+- Stage 1 introduces `packages/sdk` with package name `@devholm/sdk`.
+- Root application consumes SDK via workspace dependency (`@devholm/sdk`: `workspace:*`).
+
+Supported public SDK exports from `@devholm/sdk`:
 
 1. `@devholm/sdk` for runtime-neutral serializable contracts only
 2. `@devholm/sdk/server` for Node/RSC/route/action server-only capabilities
@@ -33,6 +41,14 @@ Adopt explicit subpath boundaries in a single package:
 5. `@devholm/sdk/testing` for fixture and contract-test utilities
 
 `@devholm/sdk/middleware` is a dedicated enforceable boundary; middleware/edge code cannot import `@devholm/sdk/server`.
+
+Hard dependency-direction rules:
+
+- Root application may depend on `@devholm/sdk`.
+- `@devholm/sdk` must not depend on root application package.
+- `@devholm/sdk` must not import arbitrary root internals (`src/core/**`, `src/app/**`, `src/user/**`).
+- Circular package dependencies are prohibited.
+- Framework integration adapters may live in root and consume SDK contracts.
 
 ### 2) Canonical administrator semantics
 
@@ -109,12 +125,20 @@ Adopt minimum capability-scoped service contract for staged rollout:
 
 Detailed query ergonomics remain implementation-level and may be refined later without changing these ownership constraints.
 
+### 7) Versioning and distribution scope during issue #6
+
+- SDK starts as workspace-local package used by DevHolm and downstream code in repository.
+- SDK contracts remain lockstep versioned with DevHolm during issue #6.
+- NPM publication, package pinning, release channels, and downstream update policy are deferred to issue #7.
+- Public SDK means supported programming contract; registry publication is not required for Stage 1.
+
 ## Consequences
 
 ### Positive
 
 - Architecture-level blockers for staged implementation are resolved
 - Runtime boundary enforcement can be validated independently before behavior migration
+- Package identity ambiguity between root app and SDK is removed
 - Canonical admin semantics reduce long-term drift between middleware and server helpers
 - Compatibility window is explicitly time-bounded and versioned
 

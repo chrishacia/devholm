@@ -44,12 +44,18 @@ Current repository evidence indicates a single-package Next.js application (not 
 
 Planning implication:
 
-- Stages should land as incremental refactors and public-contract additions inside the existing single package first.
-- Packaging/export hard boundaries should be introduced via explicit subpath exports and fixture checks before any broad runtime replacement.
+- Current state is single-package, but Stage 1 should introduce a dedicated SDK workspace package (`packages/sdk`) rather than pretending a second package identity can be created from root export-map aliases alone.
+- Packaging/export hard boundaries should be introduced as real package boundaries plus fixture checks before any broad runtime replacement.
 
 ## Final entrypoint/package recommendation
 
-Recommended export graph (single package, explicit subpaths):
+Recommended package/workspace model:
+
+- Root package remains `devholm` (framework/application package).
+- Stage 1 introduces `packages/sdk` named `@devholm/sdk`.
+- Root consumes SDK via workspace dependency (`@devholm/sdk`: `workspace:*`).
+
+Supported public SDK imports:
 
 - `@devholm/sdk` (runtime-neutral contracts only)
 - `@devholm/sdk/server` (Node/RSC/route/action server-only APIs)
@@ -62,6 +68,22 @@ Design intent:
 - `react` is not treated as a vague synonym for all client code; it is specifically React-facing helper surface.
 - `middleware` is dedicated to edge-compatible code and must not transitively import Node-only dependencies.
 
+Dependency-direction rules:
+
+- Root application may depend on `@devholm/sdk`.
+- `@devholm/sdk` must not depend on root application package.
+- `@devholm/sdk` must not import arbitrary root `src/core/**`, `src/app/**`, or `src/user/**` modules.
+- Neutral contracts remain standalone and data-only.
+- Server/middleware/react helpers must be self-contained or use explicit DI/public adapter contracts.
+- Circular package dependencies are prohibited.
+
+Publication/version scope for issue #6:
+
+- SDK starts as workspace-local package and supported contract.
+- SDK remains lockstep-versioned with DevHolm during issue #6.
+- Publication/pinning/update-channel policy remains issue #7.
+- Stage 1 does not require npm publication.
+
 ## Staged implementation sequence
 
 ### Stage 1 - Public boundary and neutral contracts
@@ -72,9 +94,13 @@ Goal:
 
 Expected file areas:
 
-- `package.json` export map/subpaths
-- new SDK boundary folders under `src/core` (contract declarations only)
-- TS and lint boundary configuration for deep-import restrictions
+- `pnpm-workspace.yaml` workspace expansion for `packages/sdk`
+- root `package.json` workspace dependency on `@devholm/sdk`
+- `packages/sdk/package.json` with SDK export map
+- `packages/sdk/src/index.ts`
+- runtime-specific SDK entrypoints (or equivalent package-internal structure)
+- package-boundary tests and import restrictions
+- TS and lint boundary configuration preventing SDK imports from root internals
 - compile-time runtime-target fixtures and fixture wiring under test folders
 
 Explicit non-goals:
@@ -95,9 +121,15 @@ Security invariants:
 
 Required tests:
 
-- export-map resolution tests for each subpath
+- package-resolution tests proving `@devholm/sdk` resolves as real package
+- export resolution tests for `.`, `./server`, `./middleware`, `./react`, `./testing`
+- tests proving unexported SDK internals cannot be imported
+- tests proving SDK cannot import root internals
+- root-integration tests proving root app can consume workspace SDK
 - compile or bundle fixtures per runtime target (server, middleware, react/client, testing)
 - deep-import restriction tests (including `@core/*` alias bypass attempts)
+- middleware export graph tests preventing Node-only imports
+- react export graph tests preventing server-only imports
 
 Migration risk:
 
@@ -105,11 +137,13 @@ Migration risk:
 
 Rollback strategy:
 
-- Revert export-map boundary changes and fixture enforcement together
+- Revert workspace package introduction and root workspace dependency together with boundary/fixture enforcement changes
 
 Acceptance gate:
 
 - Runtime-target fixtures pass
+- `@devholm/sdk` and all five exports resolve from real package
+- SDK import direction rules are enforced
 - No existing runtime authorization behavior changed
 - Import restrictions provably enforce intended public boundaries
 
@@ -386,7 +420,7 @@ Issue #6 checklist impact:
 
 ## ADR dependency and ratification requirement
 
-Implementation beyond planning should not proceed past Stage 0 (planning) unless ADR-0002 is accepted with resolved architecture-level decisions.
+Implementation must not begin until this planning and ratification PR is independently reviewed, ADR-0002 is accepted, and Stage 1 scope is approved.
 
 This plan recommends ADR acceptance in the same ratification cycle as this document.
 
