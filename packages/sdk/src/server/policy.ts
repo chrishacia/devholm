@@ -77,6 +77,29 @@ const resultPrecedence: Record<PolicyResultKind, number> = {
   'policy-error': 4,
 };
 
+function isValidOwnerId(value: unknown): value is OwnerId {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  if (value === 'framework' || value === 'site') {
+    return true;
+  }
+
+  if (!value.startsWith('plugin:')) {
+    return false;
+  }
+
+  // Validate plugin ID: alphanumeric and reasonably sized (1-128 chars)
+  const pluginId = value.slice(7); // Remove 'plugin:' prefix
+  if (pluginId.length === 0 || pluginId.length > 128) {
+    return false;
+  }
+
+  // Allow alphanumeric, dash, underscore
+  return /^[a-zA-Z0-9_-]+$/.test(pluginId);
+}
+
 function canOwnerReferencePath(referencingOwner: OwnerId, referencedOwner: OwnerId): boolean {
   if (referencingOwner === 'framework') {
     return referencedOwner === 'framework';
@@ -126,6 +149,14 @@ export function createPolicyRegistry(): PolicyRegistry {
     },
     validateDeclaration(declaration: AccessDeclaration, owner: OwnerId): PolicyValidationResult {
       const issues: PolicyValidationIssue[] = [];
+
+      // Validate owner at entry point
+      if (!isValidOwnerId(owner)) {
+        return {
+          valid: false,
+          issues: [invalidIssue('invalid-declaration', '$', declaration.kind)],
+        };
+      }
 
       validateDeclarationNode(declaration, '$', owner, evaluators, resolvers, issues);
 
@@ -191,7 +222,7 @@ function validateDeclarationNode(
 
       const resolver = resolvers.get(declaration.resolverId);
       if (resolver && !canOwnerReferencePath(declaringOwner, resolver.owner)) {
-        issues.push(invalidIssue('invalid-declaration', path, 'ownership'));
+        issues.push(invalidIssue('invalid-registration', path, 'ownership'));
       }
 
       return;
@@ -204,7 +235,7 @@ function validateDeclarationNode(
 
       const evaluator = evaluators.get(declaration.evaluatorId);
       if (evaluator && !canOwnerReferencePath(declaringOwner, evaluator.owner)) {
-        issues.push(invalidIssue('invalid-declaration', path, 'custom'));
+        issues.push(invalidIssue('invalid-registration', path, 'custom'));
       }
 
       return;
