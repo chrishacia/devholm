@@ -1,6 +1,6 @@
 # SDK and Authorization Implementation Plan (Issue #6)
 
-Status: Proposed staged implementation plan
+Status: Planned
 Date: 2026-07-03
 Related issue: #6
 Related ADR: `docs/roadmap/decisions/0002-sdk-boundaries-and-access-policy.md`
