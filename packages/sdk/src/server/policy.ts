@@ -83,7 +83,7 @@ function canOwnerReferencePath(referencingOwner: OwnerId, referencedOwner: Owner
   }
 
   if (referencingOwner === 'site') {
-    return referencingOwner === 'site';
+    return referencedOwner === 'site';
   }
 
   if (referencingOwner.startsWith('plugin:')) {
@@ -238,6 +238,11 @@ async function evaluateDeclarationNode(
   evaluators: ReadonlyMap<string, PolicyEvaluatorRegistration>,
   resolvers: ReadonlyMap<string, OwnershipResolverRegistration>
 ): Promise<PolicyResult> {
+  // Validate owner at entry point to fail closed on invalid/missing owners
+  if (!isValidOwnerId(declaringOwner)) {
+    return policyError('invalid-declaration', { path, declarationKind: declaration.kind });
+  }
+
   switch (declaration.kind) {
     case 'everyone':
       return allowResult;
@@ -277,7 +282,7 @@ async function evaluateDeclarationNode(
       }
 
       if (!canOwnerReferencePath(declaringOwner, resolver.owner)) {
-        return policyError('invalid-declaration', {
+        return policyError('invalid-registration', {
           path,
           referenceId: declaration.resolverId,
           declarationKind: declaration.kind,
@@ -326,7 +331,7 @@ async function evaluateDeclarationNode(
       }
 
       if (!canOwnerReferencePath(declaringOwner, evaluator.owner)) {
-        return policyError('invalid-declaration', {
+        return policyError('invalid-registration', {
           path,
           referenceId: declaration.evaluatorId,
           declarationKind: declaration.kind,
@@ -480,87 +485,152 @@ function missingReferenceIssue(
 }
 
 function canonicalizePolicyResult(value: unknown): PolicyResult | null {
-  if (typeof value !== 'object' || value === null) {
-    return null;
-  }
-
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    return null;
-  }
-
-  const kind = (value as Record<string, unknown>).kind;
-
-  if (!VALID_POLICY_RESULT_KINDS.has(kind as PolicyResultKind)) {
-    return null;
-  }
-
-  if (kind === 'allow') {
-    return allowResult;
-  }
-
-  if (kind === 'unauthenticated') {
-    return unauthenticatedResult;
-  }
-
-  if (kind === 'forbidden') {
-    return forbiddenResult;
-  }
-
-  if (kind === 'not-found') {
-    return notFoundResult;
-  }
-
-  if (kind === 'policy-error') {
-    const error = (value as Record<string, unknown>).error;
-
-    if (typeof error !== 'object' || error === null) {
+  try {
+    if (typeof value !== 'object' || value === null) {
       return null;
     }
 
-    const errorPrototype = Object.getPrototypeOf(error);
-    if (errorPrototype !== Object.prototype && errorPrototype !== null) {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
       return null;
     }
 
-    const errorCode = (error as Record<string, unknown>).code;
-    if (!VALID_POLICY_ERROR_CODES.has(errorCode as PolicyErrorCode)) {
+    // Check 'kind' descriptor before accessing
+    const kindDescriptor = Object.getOwnPropertyDescriptor(value, 'kind');
+    if (!kindDescriptor || kindDescriptor.get || kindDescriptor.set || !kindDescriptor.enumerable) {
       return null;
     }
 
-    const path = (error as Record<string, unknown>).path;
-    const owner = (error as Record<string, unknown>).owner;
-    const referenceId = (error as Record<string, unknown>).referenceId;
-    const declarationKind = (error as Record<string, unknown>).declarationKind;
+    const kind = kindDescriptor.value;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sanitizedErrorObj: Record<string, any> = {
-      code: errorCode as PolicyErrorCode,
-    };
-
-    if (typeof path === 'string' && path.length > 0 && path.length < 512) {
-      sanitizedErrorObj.path = path;
+    if (!VALID_POLICY_RESULT_KINDS.has(kind as PolicyResultKind)) {
+      return null;
     }
 
-    if (typeof owner === 'string' && isValidOwnerId(owner)) {
-      sanitizedErrorObj.owner = owner as OwnerId;
+    if (kind === 'allow') {
+      return allowResult;
     }
 
-    if (typeof referenceId === 'string' && referenceId.length > 0 && referenceId.length < 256) {
-      sanitizedErrorObj.referenceId = referenceId;
+    if (kind === 'unauthenticated') {
+      return unauthenticatedResult;
     }
 
-    if (isValidDeclarationKind(declarationKind)) {
-      sanitizedErrorObj.declarationKind = declarationKind as AccessDeclaration['kind'];
+    if (kind === 'forbidden') {
+      return forbiddenResult;
     }
 
-    return {
-      kind: 'policy-error',
-      error: sanitizedErrorObj as PolicyErrorDetail,
-    };
+    if (kind === 'not-found') {
+      return notFoundResult;
+    }
+
+    if (kind === 'policy-error') {
+      // Check 'error' descriptor before accessing
+      const errorDescriptor = Object.getOwnPropertyDescriptor(value, 'error');
+      if (
+        !errorDescriptor ||
+        errorDescriptor.get ||
+        errorDescriptor.set ||
+        !errorDescriptor.enumerable
+      ) {
+        return null;
+      }
+
+      const error = errorDescriptor.value;
+
+      if (typeof error !== 'object' || error === null) {
+        return null;
+      }
+
+      const errorPrototype = Object.getPrototypeOf(error);
+      if (errorPrototype !== Object.prototype && errorPrototype !== null) {
+        return null;
+      }
+
+      // Check 'code' descriptor before accessing
+      const codeDescriptor = Object.getOwnPropertyDescriptor(error, 'code');
+      if (
+        !codeDescriptor ||
+        codeDescriptor.get ||
+        codeDescriptor.set ||
+        !codeDescriptor.enumerable
+      ) {
+        return null;
+      }
+
+      const errorCode = codeDescriptor.value;
+      if (!VALID_POLICY_ERROR_CODES.has(errorCode as PolicyErrorCode)) {
+        return null;
+      }
+
+      // Check other optional fields - they must be data properties if present
+      let path: unknown = undefined;
+      const pathDescriptor = Object.getOwnPropertyDescriptor(error, 'path');
+      if (pathDescriptor) {
+        if (pathDescriptor.get || pathDescriptor.set || !pathDescriptor.enumerable) {
+          return null;
+        }
+        path = pathDescriptor.value;
+      }
+
+      let owner: unknown = undefined;
+      const ownerDescriptor = Object.getOwnPropertyDescriptor(error, 'owner');
+      if (ownerDescriptor) {
+        if (ownerDescriptor.get || ownerDescriptor.set || !ownerDescriptor.enumerable) {
+          return null;
+        }
+        owner = ownerDescriptor.value;
+      }
+
+      let referenceId: unknown = undefined;
+      const refIdDescriptor = Object.getOwnPropertyDescriptor(error, 'referenceId');
+      if (refIdDescriptor) {
+        if (refIdDescriptor.get || refIdDescriptor.set || !refIdDescriptor.enumerable) {
+          return null;
+        }
+        referenceId = refIdDescriptor.value;
+      }
+
+      let declarationKind: unknown = undefined;
+      const declKindDescriptor = Object.getOwnPropertyDescriptor(error, 'declarationKind');
+      if (declKindDescriptor) {
+        if (declKindDescriptor.get || declKindDescriptor.set || !declKindDescriptor.enumerable) {
+          return null;
+        }
+        declarationKind = declKindDescriptor.value;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sanitizedErrorObj: Record<string, any> = {
+        code: errorCode as PolicyErrorCode,
+      };
+
+      if (typeof path === 'string' && path.length > 0 && path.length < 512) {
+        sanitizedErrorObj.path = path;
+      }
+
+      if (typeof owner === 'string' && isValidOwnerId(owner)) {
+        sanitizedErrorObj.owner = owner as OwnerId;
+      }
+
+      if (typeof referenceId === 'string' && referenceId.length > 0 && referenceId.length < 256) {
+        sanitizedErrorObj.referenceId = referenceId;
+      }
+
+      if (isValidDeclarationKind(declarationKind)) {
+        sanitizedErrorObj.declarationKind = declarationKind as AccessDeclaration['kind'];
+      }
+
+      return {
+        kind: 'policy-error',
+        error: sanitizedErrorObj as PolicyErrorDetail,
+      };
+    }
+
+    return null;
+  } catch {
+    // Fail closed on any unexpected error during canonicalization
+    return null;
   }
-
-  return null;
 }
 
 function isValidOwnerId(value: unknown): value is OwnerId {
