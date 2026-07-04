@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.8.1](https://github.com/chrishacia/devholm/compare/v3.8.0...v3.8.1) (2026-07-04)
+
+### Bug Fixes
+
+- align sdk stage 1 closeout ([5c551e2](https://github.com/chrishacia/devholm/commit/5c551e29c004a905a66e93177af6152a3345e04a))
+- align sdk stage 1 versioning ([3027e79](https://github.com/chrishacia/devholm/commit/3027e790bea5671221f5ccecf56e91da33c98905))
+
 ## [3.8.0](https://github.com/chrishacia/devholm/compare/v3.7.0...v3.8.0) (2026-07-04)
 
 ### Features
