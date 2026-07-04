@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.8.0](https://github.com/chrishacia/devholm/compare/v3.7.0...v3.8.0) (2026-07-04)
+
+### Features
+
+- add plugin lifecycle foundation and URL Shortener skeleton ([1ff17aa](https://github.com/chrishacia/devholm/commit/1ff17aad4ffafc12ac1ec3eea0a7f11c871c9c37))
+- establish @devholm/sdk package boundaries ([af5978b](https://github.com/chrishacia/devholm/commit/af5978b7357d9c500c6ae2c304ad893e825f6e05))
+
+### Bug Fixes
+
+- enforce serialization assertion in sdk testing helper ([46492ca](https://github.com/chrishacia/devholm/commit/46492cab4f919ead49f4631c66a4567a00cb54e5))
+
+### Documentation
+
+- establish structured DevHolm roadmap ([aa65e56](https://github.com/chrishacia/devholm/commit/aa65e56383bee0edbe3cb42b40ebe50916ea0adb))
+- inventory sdk and authorization contracts for issue [#6](https://github.com/chrishacia/devholm/issues/6) ([3c7f9d7](https://github.com/chrishacia/devholm/commit/3c7f9d7c62d2b6eb7c26ad4f07496846c0c56b70))
+- ratify sdk decisions and stage issue [#6](https://github.com/chrishacia/devholm/issues/6) implementation ([991689d](https://github.com/chrishacia/devholm/commit/991689d2cbe38d4a57eb5a405044cf40ebf11376))
+
 ## [3.7.0](https://github.com/chrishacia/devholm/compare/v3.6.0...v3.7.0) (2026-07-02)
 
 ### Features
