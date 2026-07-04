@@ -3,7 +3,7 @@
 - Status: accepted
 - Date: 2026-07-03
 - Related issues: #6, #12
-- Related PRs: #26, docs/sdk-implementation-staging ratification PR
+- Related PRs: #26, #27
 
 ## Context
 
