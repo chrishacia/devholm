@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.8.2](https://github.com/chrishacia/devholm/compare/v3.8.1...v3.8.2) (2026-07-04)
+
+### Bug Fixes
+
+- keep sdk version lockstep during releases ([#33](https://github.com/chrishacia/devholm/issues/33)) ([0d89163](https://github.com/chrishacia/devholm/commit/0d89163b531a84cd5337c481940b3d0e259ac303)), closes [#32](https://github.com/chrishacia/devholm/issues/32) [#6](https://github.com/chrishacia/devholm/issues/6) [#31](https://github.com/chrishacia/devholm/issues/31)
+
 ## [3.8.1](https://github.com/chrishacia/devholm/compare/v3.8.0...v3.8.1) (2026-07-04)
 
 ### Bug Fixes
