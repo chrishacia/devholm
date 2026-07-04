@@ -83,16 +83,16 @@ function createFailureRegistry() {
   });
 
   registry.registerResolver({
-    id: policyResolverId('site:resolver:throws'),
-    owner: 'site',
+    id: policyResolverId('framework:resolver:throws'),
+    owner: 'framework',
     resolve: () => {
       throw new Error('secret resolver failure');
     },
   });
 
   registry.registerResolver({
-    id: policyResolverId('site:resolver:rejects'),
-    owner: 'site',
+    id: policyResolverId('framework:resolver:rejects'),
+    owner: 'framework',
     resolve: async () => Promise.reject(new Error('secret async resolver failure')),
   });
 
@@ -155,30 +155,35 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(defineAccessDeclaration({ kind: 'everyone' }), {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toEqual({ kind: 'allow' });
 
     await expect(
       registry.evaluateDeclaration(defineAccessDeclaration({ kind: 'anonymous-only' }), {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toEqual({ kind: 'allow' });
 
     await expect(
       registry.evaluateDeclaration(defineAccessDeclaration({ kind: 'anonymous-only' }), {
+        owner: 'framework',
         subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
       })
     ).resolves.toEqual({ kind: 'forbidden' });
 
     await expect(
       registry.evaluateDeclaration(defineAccessDeclaration({ kind: 'authenticated' }), {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toMatchObject({ kind: 'unauthenticated' });
 
     await expect(
       registry.evaluateDeclaration(defineAccessDeclaration({ kind: 'authenticated' }), {
+        owner: 'framework',
         subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
       })
     ).resolves.toEqual({ kind: 'allow' });
@@ -187,6 +192,7 @@ describe('SDK Stage 2 policy engine', () => {
       registry.evaluateDeclaration(
         defineAccessDeclaration({ kind: 'role-any', roles: ['admin', 'editor'] }),
         {
+          owner: 'framework',
           subject: createSubject({ authenticated: true, roles: ['editor'] }),
         }
       )
@@ -196,6 +202,7 @@ describe('SDK Stage 2 policy engine', () => {
       registry.evaluateDeclaration(
         defineAccessDeclaration({ kind: 'role-any', roles: ['admin', 'editor'] }),
         {
+          owner: 'framework',
           subject: createSubject({ authenticated: true, roles: ['viewer'] }),
         }
       )
@@ -208,6 +215,7 @@ describe('SDK Stage 2 policy engine', () => {
           permissions: [permissionId('posts.edit')],
         }),
         {
+          owner: 'framework',
           subject: createSubject({
             authenticated: true,
             permissions: [permissionId('posts.edit')],
@@ -223,6 +231,7 @@ describe('SDK Stage 2 policy engine', () => {
           permissions: [permissionId('posts.edit')],
         }),
         {
+          owner: 'framework',
           subject: createSubject({
             authenticated: true,
             permissions: [permissionId('posts.read')],
@@ -238,7 +247,7 @@ describe('SDK Stage 2 policy engine', () => {
     const emptyRoles = defineAccessDeclaration({ kind: 'role-any', roles: [] });
     const emptyPermissions = defineAccessDeclaration({ kind: 'permission-any', permissions: [] });
 
-    expect(registry.validateDeclaration(emptyRoles)).toEqual({
+    expect(registry.validateDeclaration(emptyRoles, 'framework')).toEqual({
       valid: false,
       issues: [
         {
@@ -249,7 +258,7 @@ describe('SDK Stage 2 policy engine', () => {
       ],
     });
 
-    expect(registry.validateDeclaration(emptyPermissions)).toEqual({
+    expect(registry.validateDeclaration(emptyPermissions, 'framework')).toEqual({
       valid: false,
       issues: [
         {
@@ -262,6 +271,7 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(emptyRoles, {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toMatchObject({
@@ -273,6 +283,7 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(emptyPermissions, {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toMatchObject({
@@ -287,8 +298,8 @@ describe('SDK Stage 2 policy engine', () => {
     const registry = createPolicyRegistry();
 
     registry.registerResolver({
-      id: policyResolverId('site:resolver:resource-owner'),
-      owner: 'site',
+      id: policyResolverId('framework:resolver:resource-owner'),
+      owner: 'framework',
       resolve: ({ resource }) => {
         const ownerId = resource?.ownerId;
 
@@ -311,41 +322,71 @@ describe('SDK Stage 2 policy engine', () => {
     });
 
     await expect(
-      registry.evaluateDeclaration(makeOwnershipDeclaration('resource-owner'), {
-        subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
-        resource: { ownerId: 'user-1' },
-      })
+      registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'ownership',
+          resolverId: policyResolverId('framework:resolver:resource-owner'),
+        }),
+        {
+          owner: 'framework',
+          subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
+          resource: { ownerId: 'user-1' },
+        }
+      )
     ).resolves.toEqual({ kind: 'allow' });
 
     await expect(
-      registry.evaluateDeclaration(makeOwnershipDeclaration('resource-owner'), {
-        subject: createSubject({ authenticated: true, subjectId: 'user-2' }),
-        resource: { ownerId: 'user-1' },
-      })
+      registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'ownership',
+          resolverId: policyResolverId('framework:resolver:resource-owner'),
+        }),
+        {
+          owner: 'framework',
+          subject: createSubject({ authenticated: true, subjectId: 'user-2' }),
+          resource: { ownerId: 'user-1' },
+        }
+      )
     ).resolves.toEqual({ kind: 'forbidden' });
 
     await expect(
-      registry.evaluateDeclaration(makeOwnershipDeclaration('resource-owner'), {
-        subject: createSubject({ authenticated: false }),
-        resource: { ownerId: 'user-1' },
-      })
+      registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'ownership',
+          resolverId: policyResolverId('framework:resolver:resource-owner'),
+        }),
+        {
+          owner: 'framework',
+          subject: createSubject({ authenticated: false }),
+          resource: { ownerId: 'user-1' },
+        }
+      )
     ).resolves.toEqual({ kind: 'unauthenticated' });
 
     await expect(
-      registry.evaluateDeclaration(makeOwnershipDeclaration('resource-owner'), {
-        subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
-        resource: {},
-      })
+      registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'ownership',
+          resolverId: policyResolverId('framework:resolver:resource-owner'),
+        }),
+        {
+          owner: 'framework',
+          subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
+          resource: {},
+        }
+      )
     ).resolves.toEqual({ kind: 'not-found' });
 
     await expect(
       registry.evaluateDeclaration(makeCustomDeclaration('allow'), {
+        owner: 'framework',
         subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
       })
     ).resolves.toEqual({ kind: 'allow' });
 
     await expect(
       registry.evaluateDeclaration(makeCustomDeclaration('forbidden'), {
+        owner: 'framework',
         subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
       })
     ).resolves.toEqual({ kind: 'forbidden' });
@@ -429,7 +470,7 @@ describe('SDK Stage 2 policy engine', () => {
     const missingEvaluator = makeCustomDeclaration('missing');
     const missingResolver = makeOwnershipDeclaration('missing');
 
-    expect(registry.validateDeclaration(missingEvaluator)).toEqual({
+    expect(registry.validateDeclaration(missingEvaluator, 'framework')).toEqual({
       valid: false,
       issues: [
         {
@@ -441,7 +482,7 @@ describe('SDK Stage 2 policy engine', () => {
       ],
     });
 
-    expect(registry.validateDeclaration(missingResolver)).toEqual({
+    expect(registry.validateDeclaration(missingResolver, 'framework')).toEqual({
       valid: false,
       issues: [
         {
@@ -455,6 +496,7 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(missingEvaluator, {
+        owner: 'framework',
         subject: createSubject({ authenticated: true }),
       })
     ).resolves.toMatchObject({
@@ -466,6 +508,7 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(missingResolver, {
+        owner: 'framework',
         subject: createSubject({ authenticated: true }),
       })
     ).resolves.toMatchObject({
@@ -489,12 +532,12 @@ describe('SDK Stage 2 policy engine', () => {
     const validDeclaration = makeCustomDeclaration('shared');
     const missingDeclaration = makeCustomDeclaration('shared');
 
-    expect(firstRegistry.validateDeclaration(validDeclaration)).toEqual({
+    expect(firstRegistry.validateDeclaration(validDeclaration, 'framework')).toEqual({
       valid: true,
       issues: [],
     });
 
-    expect(secondRegistry.validateDeclaration(missingDeclaration)).toEqual({
+    expect(secondRegistry.validateDeclaration(missingDeclaration, 'framework')).toEqual({
       valid: false,
       issues: [
         {
@@ -506,8 +549,8 @@ describe('SDK Stage 2 policy engine', () => {
       ],
     });
 
-    expect(secondRegistry.validateDeclaration(missingDeclaration)).toEqual(
-      secondRegistry.validateDeclaration(missingDeclaration)
+    expect(secondRegistry.validateDeclaration(missingDeclaration, 'framework')).toEqual(
+      secondRegistry.validateDeclaration(missingDeclaration, 'framework')
     );
   });
 
@@ -527,9 +570,11 @@ describe('SDK Stage 2 policy engine', () => {
         });
 
         const allOfResult = await registry.evaluateDeclaration(allOf, {
+          owner: 'framework',
           subject: createSubject(),
         });
         const anyOfResult = await registry.evaluateDeclaration(anyOf, {
+          owner: 'framework',
           subject: createSubject(),
         });
 
@@ -580,12 +625,14 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(nestedOne, {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toEqual({ kind: 'not-found' });
 
     await expect(
       registry.evaluateDeclaration(nestedEquivalent, {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toEqual({ kind: 'not-found' });
@@ -610,12 +657,14 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(reorderedLeft, {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toEqual({ kind: 'forbidden' });
 
     await expect(
       registry.evaluateDeclaration(reorderedRight, {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toEqual({ kind: 'forbidden' });
@@ -627,23 +676,33 @@ describe('SDK Stage 2 policy engine', () => {
     const thrownEvaluator = makeCustomDeclaration('throws');
     const rejectedEvaluator = makeCustomDeclaration('rejects');
 
-    const thrownResolver = makeOwnershipDeclaration('throws');
-    const rejectedResolver = makeOwnershipDeclaration('rejects');
+    const thrownResolver = defineAccessDeclaration({
+      kind: 'ownership',
+      resolverId: policyResolverId('framework:resolver:throws'),
+    });
+    const rejectedResolver = defineAccessDeclaration({
+      kind: 'ownership',
+      resolverId: policyResolverId('framework:resolver:rejects'),
+    });
 
     const thrownEvaluatorResult = await registry.evaluateDeclaration(thrownEvaluator, {
+      owner: 'framework',
       subject: createSubject({ authenticated: true }),
     });
 
     const rejectedEvaluatorResult = await registry.evaluateDeclaration(rejectedEvaluator, {
+      owner: 'framework',
       subject: createSubject({ authenticated: true }),
     });
 
     const thrownResolverResult = await registry.evaluateDeclaration(thrownResolver, {
+      owner: 'framework',
       subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
       resource: { ownerId: 'user-1' },
     });
 
     const rejectedResolverResult = await registry.evaluateDeclaration(rejectedResolver, {
+      owner: 'framework',
       subject: createSubject({ authenticated: true, subjectId: 'user-1' }),
       resource: { ownerId: 'user-1' },
     });
@@ -676,6 +735,7 @@ describe('SDK Stage 2 policy engine', () => {
 
     await expect(
       registry.evaluateDeclaration(defineAccessDeclaration({ kind: 'allOf', policies: [] }), {
+        owner: 'framework',
         subject: createSubject(),
       })
     ).resolves.toMatchObject({
@@ -692,6 +752,7 @@ describe('SDK Stage 2 policy engine', () => {
           policies: [leafDeclaration('forbidden'), leafDeclaration('unauthenticated')],
         }),
         {
+          owner: 'framework',
           subject: createSubject(),
         }
       )
@@ -704,6 +765,7 @@ describe('SDK Stage 2 policy engine', () => {
           policies: [leafDeclaration('allow'), leafDeclaration('policy-error')],
         }),
         {
+          owner: 'framework',
           subject: createSubject(),
         }
       )
