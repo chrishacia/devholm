@@ -1131,8 +1131,6 @@ describe('SDK Stage 2 policy engine', () => {
         evaluate: () => ({ kind: 'allow' }),
       });
 
-      // @ts-expect-error - Testing runtime validation with undefined owner
-
       await expect(
         registry.evaluateDeclaration(
           defineAccessDeclaration({
