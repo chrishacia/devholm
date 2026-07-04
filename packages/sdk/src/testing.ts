@@ -4,7 +4,13 @@ import type { AccessDeclaration } from './index';
 export const sdkRuntimeTesting = SDK_RUNTIME_TESTING;
 
 export function assertAccessDeclarationSerializable(value: AccessDeclaration): string {
-  return JSON.stringify(value);
+  const serialized = JSON.stringify(value);
+
+  if (typeof serialized !== 'string') {
+    throw new Error('Access declaration must be JSON serializable to a string payload.');
+  }
+
+  return serialized;
 }
 
 export function supportedSdkImportPaths(): readonly string[] {
