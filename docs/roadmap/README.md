@@ -17,6 +17,7 @@ GitHub issues carry actionable work. The documents here preserve the long-lived 
   - [`sdk-authorization-contract-inventory.md`](./sdk-authorization-contract-inventory.md)
   - [`sdk-authorization-architecture.md`](./sdk-authorization-architecture.md)
   - [`sdk-authorization-implementation-plan.md`](./sdk-authorization-implementation-plan.md)
+  - [`sdk-stage1-package-boundaries.md`](./sdk-stage1-package-boundaries.md)
 
 ## Current sequence
 
