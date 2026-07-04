@@ -77,29 +77,6 @@ const resultPrecedence: Record<PolicyResultKind, number> = {
   'policy-error': 4,
 };
 
-function isValidOwnerId(value: unknown): value is OwnerId {
-  if (typeof value !== 'string') {
-    return false;
-  }
-
-  if (value === 'framework' || value === 'site') {
-    return true;
-  }
-
-  if (!value.startsWith('plugin:')) {
-    return false;
-  }
-
-  // Validate plugin ID: alphanumeric and reasonably sized (1-128 chars)
-  const pluginId = value.slice(7); // Remove 'plugin:' prefix
-  if (pluginId.length === 0 || pluginId.length > 128) {
-    return false;
-  }
-
-  // Allow alphanumeric, dash, underscore
-  return /^[a-zA-Z0-9_-]+$/.test(pluginId);
-}
-
 function canOwnerReferencePath(referencingOwner: OwnerId, referencedOwner: OwnerId): boolean {
   if (referencingOwner === 'framework') {
     return referencedOwner === 'framework';
