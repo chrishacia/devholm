@@ -67,6 +67,23 @@ function bundleFixtureWithEsbuild(entryImport: string) {
 }
 
 describe('SDK package boundaries', () => {
+  it('keeps the root and SDK package versions in lockstep during issue #6', () => {
+    const rootPackage = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')
+    ) as {
+      version?: string;
+    };
+    const sdkPackage = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, 'packages/sdk/package.json'), 'utf8')
+    ) as {
+      version?: string;
+    };
+
+    expect(rootPackage.version).toBeDefined();
+    expect(sdkPackage.version).toBeDefined();
+    expect(sdkPackage.version).toBe(rootPackage.version);
+  });
+
   it('resolves all supported public exports', () => {
     const script = `
       const targets = [
