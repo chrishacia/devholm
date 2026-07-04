@@ -33,6 +33,7 @@
     "db:setup": "pnpm db:migrate && pnpm db:seed:bootstrap",
     "plugins:generate": "tsx scripts/plugins-generate-registry.ts",
     "plugins:check": "tsx scripts/plugins-check-registry.ts",
+    "sdk:version-sync": "tsx scripts/sync-sdk-version.ts",
     "seed:admin": "tsx src/db/seed-admin.ts",
     "debug:smoke": "node scripts/debug-smoke.js",
     "prepare": "husky",
