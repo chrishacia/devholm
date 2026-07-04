@@ -17,7 +17,7 @@
  *  - dry-run fixture bump keeps both versions equal
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs';
 import { resolve } from 'path';
 import { tmpdir } from 'os';

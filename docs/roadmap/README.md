@@ -18,6 +18,7 @@ GitHub issues carry actionable work. The documents here preserve the long-lived 
   - [`sdk-authorization-architecture.md`](./sdk-authorization-architecture.md)
   - [`sdk-authorization-implementation-plan.md`](./sdk-authorization-implementation-plan.md)
   - [`sdk-stage1-package-boundaries.md`](./sdk-stage1-package-boundaries.md)
+  - [`sdk-stage2-policy-engine.md`](./sdk-stage2-policy-engine.md)
 
 ## Current sequence
 
