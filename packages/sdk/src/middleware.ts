@@ -1,5 +1,5 @@
 import { SDK_RUNTIME_MIDDLEWARE } from './internal/runtime-tags';
-import type { AccessDeclaration, OwnerId } from './index';
+import type { AccessDeclaration, OwnerId } from './contracts';
 
 export interface MiddlewareRouteContract {
   readonly routeId: string;

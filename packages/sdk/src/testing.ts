@@ -1,5 +1,5 @@
 import { SDK_RUNTIME_TESTING } from './internal/runtime-tags';
-import type { AccessDeclaration } from './index';
+import type { AccessDeclaration } from './contracts';
 
 export const sdkRuntimeTesting = SDK_RUNTIME_TESTING;
 

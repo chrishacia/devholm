@@ -1,7 +1,13 @@
-import 'server-only';
-
 import { SDK_RUNTIME_SERVER } from './internal/runtime-tags';
-import type { AccessDeclaration, OwnerId, PermissionId } from './index';
+import type { AccessDeclaration, OwnerId, PermissionId } from './contracts';
+
+export * from './server/policy';
+
+if (typeof window !== 'undefined') {
+  throw new Error(
+    'This module cannot be imported from a Client Component module. It should only be used from a Server Component.'
+  );
+}
 
 export interface ServerRegistrationContract {
   readonly id: string;

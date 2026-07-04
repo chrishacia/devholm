@@ -1,7 +1,7 @@
 'use client';
 
 import { SDK_RUNTIME_REACT } from './internal/runtime-tags';
-import type { AccessDeclaration, OwnerId } from './index';
+import type { AccessDeclaration, OwnerId } from './contracts';
 
 export interface ReactVisibilityContract {
   readonly id: string;
