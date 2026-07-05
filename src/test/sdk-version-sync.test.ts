@@ -21,11 +21,15 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs';
 import { resolve } from 'path';
 import { tmpdir } from 'os';
+import { spawnSync } from 'child_process';
+import { fileURLToPath } from 'url';
 import { syncSdkVersion } from '../../scripts/sync-sdk-version.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
+
+const repoRoot = resolve(fileURLToPath(import.meta.url), '../../..');
 
 interface Fixture {
   dir: string;
@@ -197,47 +201,152 @@ describe('sync-sdk-version', () => {
   });
 
   // -------------------------------------------------------------------------
-  // CLI execution tests
+  // CLI execution tests (spawnSync – checks actual exit codes in child process)
   // -------------------------------------------------------------------------
 
-  it('CLI updates fixture manifests and exits zero on success', async () => {
-    const { execSync } = await import('child_process');
+  it('CLI exits zero and synchronizes versions on success', () => {
     fixture = makeFixture(VALID_ROOT('5.0.0'), VALID_SDK('4.9.9'));
-    const cmd = `tsx scripts/sync-sdk-version-cli.ts "${fixture.rootPath}" "${fixture.sdkPath}"`;
-    const exitCode = execSync(cmd, { encoding: 'utf8', stdio: 'pipe' });
-    expect(exitCode).toBeDefined(); // successful execution returns undefined (treated as 0)
-    const sdk = JSON.parse(readFileSync(fixture.sdkPath, 'utf8')) as {
-      version: string;
-    };
+    const result = spawnSync(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        resolve(repoRoot, 'scripts/sync-sdk-version-cli.ts'),
+        fixture.rootPath,
+        fixture.sdkPath,
+      ],
+      { encoding: 'utf8', cwd: repoRoot }
+    );
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const sdk = JSON.parse(readFileSync(fixture.sdkPath, 'utf8')) as { version: string };
     expect(sdk.version).toBe('5.0.0');
   });
 
-  it('CLI exits with error code when root manifest is missing', async () => {
-    const { execSync } = await import('child_process');
+  it('CLI exits non-zero when root manifest is missing', () => {
     fixture = makeFixture(VALID_ROOT('1.0.0'), VALID_SDK('1.0.0'));
-    const cmd = `tsx scripts/sync-sdk-version-cli.ts "/nonexistent/package.json" "${fixture.sdkPath}"`;
-    expect(() => execSync(cmd, { encoding: 'utf8', stdio: 'pipe' })).toThrow();
+    const result = spawnSync(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        resolve(repoRoot, 'scripts/sync-sdk-version-cli.ts'),
+        '/nonexistent/package.json',
+        fixture.sdkPath,
+      ],
+      { encoding: 'utf8', cwd: repoRoot }
+    );
+    expect(result.status).not.toBe(0);
   });
 
-  it('CLI exits with error code when SDK manifest is missing', async () => {
-    const { execSync } = await import('child_process');
+  it('CLI exits non-zero when SDK manifest is missing', () => {
     fixture = makeFixture(VALID_ROOT('1.0.0'), VALID_SDK('1.0.0'));
-    const cmd = `tsx scripts/sync-sdk-version-cli.ts "${fixture.rootPath}" "/nonexistent/sdk/package.json"`;
-    expect(() => execSync(cmd, { encoding: 'utf8', stdio: 'pipe' })).toThrow();
+    const result = spawnSync(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        resolve(repoRoot, 'scripts/sync-sdk-version-cli.ts'),
+        fixture.rootPath,
+        '/nonexistent/sdk/package.json',
+      ],
+      { encoding: 'utf8', cwd: repoRoot }
+    );
+    expect(result.status).not.toBe(0);
   });
 
-  it('CLI exits with error code when root manifest is malformed', async () => {
-    const { execSync } = await import('child_process');
+  it('CLI exits non-zero when root manifest is malformed JSON', () => {
     fixture = makeFixture('{ invalid }', VALID_SDK('1.0.0'));
-    const cmd = `tsx scripts/sync-sdk-version-cli.ts "${fixture.rootPath}" "${fixture.sdkPath}"`;
-    expect(() => execSync(cmd, { encoding: 'utf8', stdio: 'pipe' })).toThrow();
+    const result = spawnSync(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        resolve(repoRoot, 'scripts/sync-sdk-version-cli.ts'),
+        fixture.rootPath,
+        fixture.sdkPath,
+      ],
+      { encoding: 'utf8', cwd: repoRoot }
+    );
+    expect(result.status).not.toBe(0);
   });
 
-  it('CLI exits with error code when SDK manifest is malformed', async () => {
-    const { execSync } = await import('child_process');
+  it('CLI exits non-zero when SDK manifest is malformed JSON', () => {
     fixture = makeFixture(VALID_ROOT('1.0.0'), '{ invalid }');
-    const cmd = `tsx scripts/sync-sdk-version-cli.ts "${fixture.rootPath}" "${fixture.sdkPath}"`;
-    expect(() => execSync(cmd, { encoding: 'utf8', stdio: 'pipe' })).toThrow();
+    const result = spawnSync(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        resolve(repoRoot, 'scripts/sync-sdk-version-cli.ts'),
+        fixture.rootPath,
+        fixture.sdkPath,
+      ],
+      { encoding: 'utf8', cwd: repoRoot }
+    );
+    expect(result.status).not.toBe(0);
+  });
+
+  it('CLI produces success message on stdout and exits zero', () => {
+    fixture = makeFixture(VALID_ROOT('5.0.0'), VALID_SDK('4.9.9'));
+    const result = spawnSync(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        resolve(repoRoot, 'scripts/sync-sdk-version-cli.ts'),
+        fixture.rootPath,
+        fixture.sdkPath,
+      ],
+      { encoding: 'utf8', cwd: repoRoot }
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('5.0.0');
+    expect(result.stderr).toBe('');
+  });
+
+  it('importing the library module in a fresh child process performs no sync, writes no output', () => {
+    fixture = makeFixture(VALID_ROOT('5.0.0'), VALID_SDK('4.9.9'));
+    const rootBefore = readFileSync(fixture.rootPath, 'utf8');
+    const sdkBefore = readFileSync(fixture.sdkPath, 'utf8');
+
+    // Write a temp script that imports the library but calls nothing
+    const scriptPath = resolve(fixture.dir, 'import-only.ts');
+    writeFileSync(
+      scriptPath,
+      `import { syncSdkVersion } from '${resolve(repoRoot, 'scripts/sync-sdk-version.ts').replace(/\\/g, '/')}'; void (syncSdkVersion satisfies unknown);\n`,
+      'utf8'
+    );
+
+    const result = spawnSync('pnpm', ['exec', 'tsx', scriptPath], {
+      encoding: 'utf8',
+      cwd: repoRoot,
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe('');
+    // Files must be unchanged
+    expect(readFileSync(fixture.rootPath, 'utf8')).toBe(rootBefore);
+    expect(readFileSync(fixture.sdkPath, 'utf8')).toBe(sdkBefore);
+  });
+
+  it('sync-sdk-version.ts library source has no top-level process.exit or console calls', () => {
+    const src = readFileSync(resolve(repoRoot, 'scripts/sync-sdk-version.ts'), 'utf8');
+    // Strip JSDoc/line comments before checking for executable calls
+    const codeOnly = src
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('*') && !line.trim().startsWith('//'))
+      .join('\n');
+    expect(codeOnly).not.toMatch(/process\.exit\s*\(/);
+    expect(codeOnly).not.toMatch(/console\.(log|warn|error)\s*\(/);
+  });
+
+  it('.release-it.json after:bump hook calls sync-sdk-version-cli.ts', () => {
+    const releaseIt = JSON.parse(readFileSync(resolve(repoRoot, '.release-it.json'), 'utf8')) as {
+      hooks?: Record<string, string[]>;
+    };
+    const afterBump = releaseIt.hooks?.['after:bump'] ?? [];
+    expect(afterBump.some((cmd) => cmd.includes('sync-sdk-version-cli.ts'))).toBe(true);
   });
 
   it('library import produces no console output', () => {
