@@ -66,6 +66,35 @@ function bundleFixtureWithEsbuild(entryImport: string) {
   };
 }
 
+function bundleAndRunFixtureOnServer(entryContent: string) {
+  const fixture = withTempProject({
+    'entry.ts': entryContent,
+  });
+
+  const outputFile = path.join(fixture.tempRoot, 'bundle.mjs');
+
+  const bundleResult = run('pnpm', [
+    'exec',
+    'esbuild',
+    path.join(fixture.tempRoot, 'entry.ts'),
+    '--bundle',
+    '--platform=node',
+    '--format=esm',
+    '--conditions=react-server',
+    '--log-level=error',
+    `--outfile=${outputFile}`,
+  ]);
+
+  let runResult = { code: -1, stdout: '', stderr: '' };
+  if (bundleResult.code === 0) {
+    runResult = run('node', [outputFile]);
+  }
+
+  fixture.cleanup();
+
+  return { bundleResult, runResult };
+}
+
 describe('SDK package boundaries', () => {
   it('keeps the root and SDK package versions in lockstep during issue #6', () => {
     const rootPackage = JSON.parse(
@@ -235,33 +264,30 @@ describe('SDK package boundaries', () => {
     expect(result.stderr).toMatch(/browser.*null|disabled by the package author/i);
   });
 
-  it('@devholm/sdk/server is successfully importable in a Node.js/server context', () => {
-    // Verify that the server export CAN be resolved successfully in Node contexts.
-    // The conditional export must allow server consumers to resolve the entry point.
-    const script = `
-      // Verify the export path resolves for Node/import conditions
-      const resolved = import.meta.resolve('@devholm/sdk/server');
-      
-      if (!resolved) {
-        console.error('Failed to resolve @devholm/sdk/server');
-        process.exit(1);
-      }
-      
-      // Verify it resolves to the server.ts source file
-      if (!resolved.includes('server.ts')) {
-        console.error('Resolved path does not include server.ts:', resolved);
-        process.exit(1);
-      }
-      
-      console.log('Server export resolved successfully');
-    `;
+  it('@devholm/sdk/server bundles and executes successfully on a Node.js/server target', () => {
+    // Prove the server entrypoint can be bundled for a Node.js server target using react-server
+    // conditions and that the resulting bundle executes successfully with real exports available.
+    // This uses the same esbuild bundling path a production server consumer would use.
+    const entryContent = [
+      "import { createPolicyRegistry } from '@devholm/sdk/server';",
+      '',
+      "if (typeof createPolicyRegistry !== 'function') {",
+      "  throw new Error('createPolicyRegistry is unavailable');",
+      '}',
+      '',
+      "console.log('server-import-ok');",
+    ].join('\n');
 
-    const result = run('node', ['--input-type=module', '-e', script]);
+    const { bundleResult, runResult } = bundleAndRunFixtureOnServer(entryContent);
 
-    // Node resolution should succeed
-    expect(result.code).toBe(0);
-    // Verify the export was resolved correctly
-    expect(result.stdout).toContain('Server export resolved successfully');
+    // Bundle must succeed on Node.js server target using react-server conditions
+    expect(bundleResult.code).toBe(0);
+    expect(bundleResult.stderr).toBe('');
+
+    // Execution must succeed with the expected output
+    expect(runResult.code).toBe(0);
+    expect(runResult.stdout.trim()).toContain('server-import-ok');
+    expect(runResult.stderr).toBe('');
   });
 
   it('confirms @devholm/sdk/server carries the server-only marker', () => {
