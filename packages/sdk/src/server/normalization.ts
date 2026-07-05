@@ -83,7 +83,8 @@ export interface RawAuthorizationSubject {
  * - Non-string elements in permissions array are filtered out
  * - Duplicate permissions are deduplicated and sorted
  * - Empty string permissions are filtered out
- * - Non-boolean isAdmin is coerced to false
+ * - Non-boolean isAdmin is strictly required to be true; any other value (including truthy
+ *   non-booleans such as strings or numbers) is treated as false for security.
  *
  * @param raw - Raw input subject (may be null, undefined, or malformed)
  * @param options - Normalization options (reserved for future policy extensions)
@@ -144,10 +145,13 @@ function extractString(value: unknown): string | null {
 }
 
 /**
- * Safely extract boolean value with coercion to false for invalid inputs.
+ * Safely extract boolean value.
+ * Only literal `true` is accepted as true; any other value (including truthy
+ * non-booleans such as 'true', 1, or 'yes') returns false.
+ * This prevents privilege escalation via type coercion of the isAdmin field.
  */
 function extractBoolean(value: unknown): boolean {
-  return Boolean(value);
+  return value === true;
 }
 
 /**

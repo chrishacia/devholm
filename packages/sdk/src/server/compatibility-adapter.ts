@@ -45,9 +45,6 @@ export interface CompatibilityAdapterOptions {
   /** Enable diagnostic output (default: false for production) */
   diagnosticsEnabled?: boolean;
 
-  /** Enable fallback to legacy behavior if canonical evaluation fails (default: true) */
-  legacyFallbackEnabled?: boolean;
-
   /** Administrator rule implementation: which fields determine admin status */
   adminDeterminationRule?: 'legacy' | 'canonical' | 'union';
 }

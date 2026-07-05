@@ -75,7 +75,9 @@ test.describe('Admin Navigation', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Stage 3 SDK authorization: production surface enforcement', () => {
-  test('GET /api/admin/dashboard returns 401 without authentication token', async ({ request }) => {
+  test('PATCH /api/admin/dashboard returns 401 without authentication token', async ({
+    request,
+  }) => {
     // Anonymous request must be rejected by Stage 3 authorization
     const response = await request.get('/api/admin/dashboard');
     // Stage 3 unauthenticated result maps to 401

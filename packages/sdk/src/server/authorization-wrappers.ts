@@ -84,9 +84,7 @@ export interface AuthorizationEvaluationOptions {
 
   /** Compatibility adapter options for subject extraction */
   compatibilityOptions?: CompatibilityAdapterOptions;
-}
-
-/**
+} /**
  * Convert a CanonicalAuthorizationSubject to NormalizedPolicySubject for Stage 2 evaluation.
  *
  * Permissions are individually converted to branded PermissionId values using permissionId().

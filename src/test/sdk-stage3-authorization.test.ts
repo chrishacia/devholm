@@ -180,13 +180,17 @@ describe('normalizeAuthorizationSubject', () => {
     expect(result.roles).not.toContain('prototype');
   });
 
-  it('coerces isAdmin truthy values to boolean true', () => {
-    expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: 'yes' }).isAdmin).toBe(true);
+  it('only literal boolean true is accepted as isAdmin=true', () => {
+    // Only === true is accepted; truthy non-booleans are treated as false (security invariant)
+    expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: true }).isAdmin).toBe(true);
+    expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: 'yes' }).isAdmin).toBe(false);
+    expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: 1 }).isAdmin).toBe(false);
   });
 
   it('coerces isAdmin falsy values to false', () => {
     expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: 0 }).isAdmin).toBe(false);
     expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: null }).isAdmin).toBe(false);
+    expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: false }).isAdmin).toBe(false);
   });
 
   it('rejects non-object raw input', () => {

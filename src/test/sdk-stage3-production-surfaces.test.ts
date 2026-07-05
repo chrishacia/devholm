@@ -297,12 +297,12 @@ describe('Surface 2: Permission-based access — parity tests', () => {
     expect(stage3Result.result).toBe(AuthorizationTransportResult.ALLOW);
   });
 
-  it('PARITY: allows admin role token (via admin.access legacy path in permission-any)', async () => {
+  it('BEHAVIORAL DIFFERENCE: admin-role token without explicit admin.access permission is denied in Stage 3 (legacy allowed via hasAdminAccess)', async () => {
     // Legacy: admin role → hasAdminAccess → true, allows access to users.manage
     // Stage 3: admin role token has no admin.access permission explicitly
-    // NOTE: This is a known behavioral difference: Stage 3 uses explicit permissions.
-    //       An admin role WITHOUT admin.access in their permissions list is denied.
-    //       Migration path: explicitly grant admin.access permission to admin role users.
+    // This is an intentional migration difference: Stage 3 uses explicit permissions.
+    // An admin role WITHOUT admin.access in their permissions list is denied.
+    // Migration path: explicitly grant admin.access permission to admin role users.
     const legacyResult = evaluateLegacyPermission(adminRoleToken, 'users.manage');
     const stage3Result = await evaluateStage3(
       adminRoleToken,

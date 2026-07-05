@@ -66,9 +66,9 @@
 // - canonicalSubjectFromSession(): Extract canonical subject from session
 //
 // Admin determination has three configurable strategies:
-// - 'legacy': Use database/token isAdmin field (current behavior)
-// - 'canonical': Derive from roles=['admin']/'superadmin' (new strict)
-// - 'union': Allow either legacy OR roles-based (permissive during migration)
+// - 'legacy': isAdmin field AND role/roles in ['admin','superadmin'] are both considered
+// - 'canonical': only the explicit isAdmin=true field is accepted
+// - 'union': either legacy (isAdmin, role/roles) OR canonical rule grants admin
 //
 // Used by: Authorization wrappers to extract subject with optional
 // legacy compatibility path for gradual migration.
@@ -78,17 +78,15 @@
 // Server enforcement for API routes and server actions.
 //
 // Key functions:
-// - evaluateApiAuthorization(session, policyName, options)
+// - evaluateApiAuthorization(session, declaration, owner, registry, options?)
 // Returns: AuthorizationResult with HTTP mapping
-// Does: Normalizes subject, looks up policy, calls Stage 2 engine,
+// Does: Normalizes subject, evaluates real Stage 2 engine with provided registry,
 // maps result to HTTP status
+// Registry and declaration are injected by the caller (no global state)
 //
-// - mapPolicyToAuthorizationResult(policyResult, subject, options)
+// - mapPolicyToAuthorizationResult(policyResult, subject, options?)
 // Maps Stage 2 PolicyResult kinds to AuthorizationTransportResult
-// Enforces fail-closed: policy-error → 500, never 403
-//
-// - authorizedApiResponse(authResult, allowedHandler)
-// Helper for common pattern: check auth, then handle if allowed
+// Enforces fail-closed: policy-error → 500 or 503, never 403
 //
 // Result types:
 // - ALLOW (200): Policy evaluated to allow
@@ -97,66 +95,37 @@
 // - CONCEALED (404): Resource hidden from this subject
 // - POLICY_ERROR (500/503): Policy evaluation failed; fail closed
 
-// 4. POLICY REGISTRY INSTANCE (packages/sdk/src/server/policy-registry-instance.ts)
-// =================================================================================
-// Manages the global PolicyRegistry singleton.
+// 4. APPLICATION AUTHORIZATION ADAPTER (src/core/lib/sdk-authorization.ts)
+// =========================================================================
+// Application-owned policy registry — NOT a global SDK singleton.
+// The SDK exports createPolicyRegistry() only; the application owns its instance.
 //
-// Functions:
-// - getPolicyRegistry(): Get or create the global registry
-// - setPolicyRegistry(registry): Set for testing
-// - resetPolicyRegistry(): Clear for testing
-//
-// Purpose: Provide a centralized registry that can be configured at
-// application startup and shared across all authorization checks.
-
-// 5. POLICY DECLARATIONS (packages/sdk/src/server/policy-declarations.ts)
-// ======================================================================
-// Registry of policy names to AccessDeclaration mappings.
-//
-// Functions:
-// - registerPolicyDeclaration(name, declaration, owner)
-// Register a policy by name for later lookup
-//
-// - getPolicyDeclaration(name): Find a policy by name
-// - isPolicyRegistered(name): Check if registered
-// - getRegisteredPolicies(): List all registered policies
-// - clearPolicyDeclarations(): Flush all (testing only)
-//
-// Usage:
-// `ts
-// registerPolicyDeclaration(
-//   'admin:access',
-//   defineAccessDeclaration({ kind: 'role-any', roles: ['admin'] }),
-//   'framework'
-// );
-// `
+// Contents:
+// - appRegistry: application PolicyRegistry instance
+// - adminAccessDeclaration: anyOf[role-any[admin,superadmin], permission-any[admin.access]]
+// - usersManageDeclaration: permission-any[users.manage, admin.access]
+// - authorizeRequest(): JWT token → canonical subject → policy evaluation
 
 // =============================================================================
 // DATA FLOW: From Session to Authorization Decision
 // =============================================================================
 //
-// 1. Application calls: evaluateApiAuthorization(session, 'my-policy')
+// 1. Application calls: evaluateApiAuthorization(session, declaration, owner, registry)
 //
 // 2. Stage 3 normalizes session:
 // canonicalSubjectFromSession(session, options)
 // → CanonicalAuthorizationSubject
 // → Protected against null/undefined/malformed
 //
-// 3. Look up policy by name:
-// getPolicyDeclaration('my-policy')
-// → AccessDeclaration
+// 3. Convert to Stage 2 format:
+// canonicalSubjectToNormalizedPolicySubject(subject)
+// → NormalizedPolicySubject with branded PermissionId values
 //
-// 4. Create evaluation context:
-// {
-// subject: NormalizedPolicySubject (mapped from canonical),
-// owner: 'framework' or 'site',
-// }
-//
-// 5. Call Stage 2 policy engine:
+// 4. Call Stage 2 policy engine:
 // registry.evaluateDeclaration(declaration, context)
 // → PolicyResult (kind: allow|forbidden|unauthenticated|not-found|policy-error)
 //
-// 6. Map result to HTTP:
+// 5. Map result to HTTP:
 // mapPolicyToAuthorizationResult(policyResult, subject)
 // → AuthorizationResult {
 // result: ALLOW|FORBIDDEN|UNAUTHENTICATED|CONCEALED|POLICY_ERROR,
@@ -166,7 +135,7 @@
 // diagnostics?: (if enabled)
 // }
 //
-// 7. Application handles result:
+// 6. Application handles result:
 // if (authResult.result !== AuthorizationTransportResult.ALLOW) {
 // return NextResponse(status: authResult.httpStatus);
 // }
@@ -184,6 +153,7 @@
 // 4. Result types are real Stage 2 PolicyResult kinds
 // 5. All PolicyEvaluatorRegistrations must be registered before evaluation
 // 6. Fail-closed semantics follow Stage 2 precedence exactly
+// 7. No global mutable state: registry passed by caller
 //
 // Test file: src/test/sdk-stage3-real-integration.test.ts
 // - Registers real Stage 2 evaluators
@@ -247,22 +217,21 @@
 // =============================================================================
 //
 // New files:
-// - packages/sdk/src/server/policy-registry-instance.ts
-// - packages/sdk/src/server/policy-declarations.ts
+// - packages/sdk/src/server/normalization.ts
+// - packages/sdk/src/server/compatibility-adapter.ts
+// - packages/sdk/src/server/authorization-wrappers.ts
+// - src/core/lib/sdk-authorization.ts (application layer, NOT SDK)
+// - src/test/sdk-stage3-authorization.test.ts
+// - src/test/sdk-stage3-integration.test.ts
 // - src/test/sdk-stage3-real-integration.test.ts
-// - docs/stage3-production-surface-migration.md
-// - docs/stage3-example-admin-profile-api.ts
-// - docs/stage3-example-posts-api.ts
+// - src/test/sdk-stage3-production-surfaces.test.ts
 //
 // Modified files:
-// - packages/sdk/src/server/authorization-wrappers.ts
-// - Replaced PolicyEvaluationResult with real PolicyResult
-// - Replaced placeholder evaluateApiAuthorization() with real Stage 2 call
-// - Updated mapPolicyToAuthorizationResult() to handle real PolicyResult kinds
-//
-// - packages/sdk/src/server.ts
-// - Added exports for policy-registry-instance
-// - Added exports for policy-declarations
+// - packages/sdk/src/server.ts: exports normalization, compatibility-adapter, authorization-wrappers
+// - src/app/api/admin/dashboard/route.ts: migrated to Stage 3 adminAccessDeclaration
+// - src/app/api/admin/auth/users/route.ts: migrated to Stage 3 usersManageDeclaration
+// - e2e/admin.spec.ts: added Stage 3 surface enforcement tests
+// - eslint.config.mjs: added playwright-report/** and test-results/** to ignores
 
 // =============================================================================
 // VALIDATION
@@ -289,5 +258,3 @@
 // Issue #6: Governance workstream (parent)
 // ADR-0002: SDK boundaries and access policy
 // PR #38: Stage 2 post-merge review closeout (merged)
-
-export {};
