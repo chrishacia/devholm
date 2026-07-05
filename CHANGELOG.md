@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.9.2](https://github.com/chrishacia/devholm/compare/v3.9.1...v3.9.2) (2026-07-05)
+
+### Bug Fixes
+
+- finish sdk Stage 2 verification after direct push ([#36](https://github.com/chrishacia/devholm/issues/36)) ([554837a](https://github.com/chrishacia/devholm/commit/554837a6a6917cbe3e5baa64b64c74b9174e294b))
+
 ## [3.9.1](https://github.com/chrishacia/devholm/compare/v3.9.0...v3.9.1) (2026-07-05)
 
 ### Bug Fixes
