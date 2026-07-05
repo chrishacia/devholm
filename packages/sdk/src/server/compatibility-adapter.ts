@@ -18,11 +18,13 @@ import {
   type CanonicalAuthorizationSubject,
   type RawAuthorizationSubject,
   normalizeAuthorizationSubject,
-  _safeReadOwnProperty,
-  _safeOwnString,
-  _safeOwnBoolean,
-  _safeOwnStringArray,
 } from './normalization';
+import {
+  safeReadOwnProperty,
+  safeOwnString,
+  safeOwnBoolean,
+  safeOwnStringArray,
+} from './_normalization-helpers';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -69,13 +71,24 @@ export interface LegacyAuthorizationSubject {
 // ---------------------------------------------------------------------------
 
 /**
- * Safely convert an unknown value to a non-null object or null.
- * Rejects null, undefined, non-objects, arrays, Dates, functions.
+ * Safely convert an unknown value to a non-null plain object or null.
+ *
+ * Rejects: null, undefined, non-objects, arrays, Date objects, and functions.
+ * Date objects are rejected because they are not plain key-value records.
+ * Exceptions from `instanceof Date` on a proxy are caught and treated as safe
+ * (i.e., the object is accepted — the proxy check is best-effort).
  */
 function toSafeObject(val: unknown): object | null {
   if (val === null || val === undefined) return null;
   if (typeof val !== 'object') return null;
   if (Array.isArray(val)) return null;
+  // Reject Date objects (not plain records). instanceof may invoke proxy
+  // [[GetPrototypeOf]] trap; catch and accept on failure (conservative).
+  try {
+    if (val instanceof Date) return null;
+  } catch {
+    // Proxy trap threw — treat as acceptable plain object
+  }
   return val as object;
 }
 
@@ -107,17 +120,17 @@ export function adaptLegacyToCanonical(
   // Extract fields using descriptor-safe helpers.
   // These do NOT invoke accessor getters on the source object.
   const legacyUserId = legacyObj
-    ? _safeOwnString(legacyObj, 'id') ?? _safeOwnString(legacyObj, 'userId')
+    ? safeOwnString(legacyObj, 'id') ?? safeOwnString(legacyObj, 'userId')
     : null;
-  const legacyEmail = legacyObj ? _safeOwnString(legacyObj, 'email') : null;
-  const legacyRole = legacyObj ? _safeOwnString(legacyObj, 'role') : null;
+  const legacyEmail = legacyObj ? safeOwnString(legacyObj, 'email') : null;
+  const legacyRole = legacyObj ? safeOwnString(legacyObj, 'role') : null;
   const legacyRoles = legacyObj
-    ? _safeOwnStringArray(legacyObj, 'roles')
+    ? safeOwnStringArray(legacyObj, 'roles')
     : (Object.freeze([]) as readonly string[]);
   const legacyPermissions = legacyObj
-    ? _safeOwnStringArray(legacyObj, 'permissions')
+    ? safeOwnStringArray(legacyObj, 'permissions')
     : (Object.freeze([]) as readonly string[]);
-  const legacyIsAdmin = legacyObj ? _safeOwnBoolean(legacyObj, 'isAdmin') : false;
+  const legacyIsAdmin = legacyObj ? safeOwnBoolean(legacyObj, 'isAdmin') : false;
 
   // Determine administrator status according to the configured rule.
   // The legacy/union rules match the pre-migration `hasAdminAccess` behavior:
@@ -136,7 +149,7 @@ export function adaptLegacyToCanonical(
   }
 
   // Build RawAuthorizationSubject and normalize through the standard path.
-  // All arrays here are already validated strings (frozen by _safeOwnStringArray).
+  // All arrays here are already validated strings (frozen by safeOwnStringArray).
   const raw: RawAuthorizationSubject = {
     userId: legacyUserId,
     email: legacyEmail,
@@ -172,22 +185,22 @@ export function canonicalSubjectFromSession(
 ): { subject: CanonicalAuthorizationSubject; diagnostics?: CompatibilityAdapterDiagnostics } {
   // Safely extract user from session — no optional-chaining read.
   const sessionObj = toSafeObject(session);
-  const rawUser = sessionObj ? _safeReadOwnProperty(sessionObj, 'user') : undefined;
+  const rawUser = sessionObj ? safeReadOwnProperty(sessionObj, 'user') : undefined;
   const userObj = toSafeObject(rawUser);
 
   // Build legacy subject using descriptor-safe extraction from userObj.
   const legacy: LegacyAuthorizationSubject =
     userObj !== null
       ? {
-          id: _safeOwnString(userObj, 'id') ?? undefined,
-          userId: _safeOwnString(userObj, 'userId') ?? undefined,
-          email: _safeOwnString(userObj, 'email') ?? undefined,
-          name: _safeOwnString(userObj, 'name') ?? undefined,
-          role: _safeOwnString(userObj, 'role') ?? undefined,
-          roles: [..._safeOwnStringArray(userObj, 'roles')] as string[],
-          permissions: [..._safeOwnStringArray(userObj, 'permissions')] as string[],
-          isAdmin: _safeOwnBoolean(userObj, 'isAdmin'),
-          installCompleted: _safeOwnBoolean(userObj, 'installCompleted'),
+          id: safeOwnString(userObj, 'id') ?? undefined,
+          userId: safeOwnString(userObj, 'userId') ?? undefined,
+          email: safeOwnString(userObj, 'email') ?? undefined,
+          name: safeOwnString(userObj, 'name') ?? undefined,
+          role: safeOwnString(userObj, 'role') ?? undefined,
+          roles: [...safeOwnStringArray(userObj, 'roles')] as string[],
+          permissions: [...safeOwnStringArray(userObj, 'permissions')] as string[],
+          isAdmin: safeOwnBoolean(userObj, 'isAdmin'),
+          installCompleted: safeOwnBoolean(userObj, 'installCompleted'),
         }
       : {};
 
@@ -208,15 +221,15 @@ export function canonicalSubjectFromToken(
   const legacy: LegacyAuthorizationSubject =
     tokenObj !== null
       ? {
-          id: _safeOwnString(tokenObj, 'id') ?? undefined,
-          userId: _safeOwnString(tokenObj, 'userId') ?? undefined,
-          email: _safeOwnString(tokenObj, 'email') ?? undefined,
-          name: _safeOwnString(tokenObj, 'name') ?? undefined,
-          role: _safeOwnString(tokenObj, 'role') ?? undefined,
-          roles: [..._safeOwnStringArray(tokenObj, 'roles')] as string[],
-          permissions: [..._safeOwnStringArray(tokenObj, 'permissions')] as string[],
-          isAdmin: _safeOwnBoolean(tokenObj, 'isAdmin'),
-          installCompleted: _safeOwnBoolean(tokenObj, 'installCompleted'),
+          id: safeOwnString(tokenObj, 'id') ?? undefined,
+          userId: safeOwnString(tokenObj, 'userId') ?? undefined,
+          email: safeOwnString(tokenObj, 'email') ?? undefined,
+          name: safeOwnString(tokenObj, 'name') ?? undefined,
+          role: safeOwnString(tokenObj, 'role') ?? undefined,
+          roles: [...safeOwnStringArray(tokenObj, 'roles')] as string[],
+          permissions: [...safeOwnStringArray(tokenObj, 'permissions')] as string[],
+          isAdmin: safeOwnBoolean(tokenObj, 'isAdmin'),
+          installCompleted: safeOwnBoolean(tokenObj, 'installCompleted'),
         }
       : {};
 

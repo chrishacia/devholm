@@ -202,10 +202,12 @@ if (process.env.SDK_STAGE3_ENABLED === 'true') {
 
 ## Deferred Work
 
-The following are explicitly **not implemented** in Stage 3:
+The following SDK authorization capabilities are explicitly **not implemented** in Stage 3.
+Issue numbers are references to the `chrishacia/devholm` issue tracker; verify current
+issue state before starting work, as issue purpose may evolve.
 
-- Stage 4: Middleware integration (issue #7)
-- Stage 5: React visibility hooks (issue #8)
-- Stage 6: Acceptance proof (issue #9)
-- Capability service implementation (issue #10)
-- Plugin publication (issue #11)
+- Stage 4: Middleware integration — not implemented
+- Stage 5: React visibility hooks — not implemented
+- Stage 6: Acceptance proof — not implemented
+- Capability service implementation — not implemented
+- Plugin publication — not implemented

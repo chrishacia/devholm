@@ -153,10 +153,12 @@ export async function authorizeRequest(
  * ```ts
  * 'use server';
  * import { authorizeServerAction, adminAccessDeclaration, adminAccessOwner } from '@/lib/sdk-authorization';
+ * import type { NextRequest } from 'next/server';
  *
- * export async function deletePost(postId: string) {
- *   // For server actions that have a NextRequest, use authorizeServerAction
- *   // For session-based auth (auth() from NextAuth), use evaluateServerActionAuthorization directly
+ * // authorizeServerAction requires a NextRequest (available in Server Actions
+ * // invoked from route handlers). For session-based actions without a request,
+ * // call evaluateServerActionAuthorization() directly with auth().
+ * export async function dismissOnboarding(request: NextRequest) {
  *   const auth = await authorizeServerAction(request, adminAccessDeclaration, adminAccessOwner);
  *   if (!auth.allowed) return { success: false, error: auth.errorMessage };
  *   // proceed...
