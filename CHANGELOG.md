@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.9.3](https://github.com/chrishacia/devholm/compare/v3.9.2...v3.9.3) (2026-07-05)
+
+### Bug Fixes
+
+- complete remaining sdk Stage 2 verification ([#37](https://github.com/chrishacia/devholm/issues/37)) ([bcc2f01](https://github.com/chrishacia/devholm/commit/bcc2f01cf11fc0b5bf89b8c16071f92f440749b3))
+
+### Documentation
+
+- mark sdk Stage 2 as completed with evidence ([fa7c998](https://github.com/chrishacia/devholm/commit/fa7c998c6636a96cdf60e043b754505dad36fbd2)), closes [#36](https://github.com/chrishacia/devholm/issues/36) [#37](https://github.com/chrishacia/devholm/issues/37)
+
 ## [3.9.2](https://github.com/chrishacia/devholm/compare/v3.9.1...v3.9.2) (2026-07-05)
 
 ### Bug Fixes
