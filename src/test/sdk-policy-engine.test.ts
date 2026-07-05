@@ -1328,4 +1328,448 @@ describe('SDK Stage 2 policy engine', () => {
       expect(result1).toEqual({ kind: 'allow' });
     });
   });
+
+  describe('comprehensive owner validation', () => {
+    it('validates undefined owner at declaration time', () => {
+      const registry = createPolicyRegistry();
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:allow'),
+        owner: 'framework',
+        evaluate: () => ({ kind: 'allow' as const }),
+      });
+
+      const result = registry.validateDeclaration(
+        defineAccessDeclaration({ kind: 'everyone' }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        undefined as any
+      );
+
+      expect(result.valid).toBe(false);
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({ code: 'invalid-declaration' })
+      );
+    });
+
+    it('validates null owner at declaration time', () => {
+      const registry = createPolicyRegistry();
+      const result = registry.validateDeclaration(
+        defineAccessDeclaration({ kind: 'everyone' }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        null as any
+      );
+
+      expect(result.valid).toBe(false);
+    });
+
+    it('validates non-string owner at declaration time', () => {
+      const registry = createPolicyRegistry();
+      const result = registry.validateDeclaration(
+        defineAccessDeclaration({ kind: 'everyone' }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        12345 as any
+      );
+
+      expect(result.valid).toBe(false);
+    });
+
+    it('validates unknown owner string at declaration time', () => {
+      const registry = createPolicyRegistry();
+      const result = registry.validateDeclaration(
+        defineAccessDeclaration({ kind: 'everyone' }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        'invalid-owner' as any
+      );
+
+      expect(result.valid).toBe(false);
+    });
+
+    it('validates empty plugin ID at declaration time', () => {
+      const registry = createPolicyRegistry();
+      const result = registry.validateDeclaration(
+        defineAccessDeclaration({ kind: 'everyone' }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        'plugin:' as any
+      );
+
+      expect(result.valid).toBe(false);
+    });
+
+    it('validates invalid plugin ID characters at declaration time', () => {
+      const registry = createPolicyRegistry();
+      const result = registry.validateDeclaration(
+        defineAccessDeclaration({ kind: 'everyone' }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        'plugin:foo@bar' as any
+      );
+
+      expect(result.valid).toBe(false);
+    });
+
+    it('rejects undefined owner at evaluation time', async () => {
+      const registry = createPolicyRegistry();
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:allow'),
+        owner: 'framework',
+        evaluate: () => ({ kind: 'allow' as const }),
+      });
+
+      const result = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:allow'),
+        }),
+        {
+          subject: createSubject(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          owner: undefined as any,
+        }
+      );
+
+      expect(result).toEqual({
+        kind: 'policy-error',
+        error: { code: 'invalid-declaration' },
+      });
+    });
+
+    it('rejects invalid owner at evaluation time', async () => {
+      const registry = createPolicyRegistry();
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:allow'),
+        owner: 'framework',
+        evaluate: () => ({ kind: 'allow' as const }),
+      });
+
+      const result = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:allow'),
+        }),
+        {
+          subject: createSubject(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          owner: 'not-a-real-owner' as any,
+        }
+      );
+
+      expect(result.kind).toBe('policy-error');
+      if (result.kind === 'policy-error') {
+        expect(result.error.code).toBe('invalid-declaration');
+      }
+    });
+  });
+
+  describe('complete 4x4 owner-reference matrix', () => {
+    const owners = ['framework', 'site', 'plugin:a', 'plugin:b'] as const;
+
+    for (const declaringOwner of owners) {
+      for (const registeredOwner of owners) {
+        const shouldAllow = declaringOwner === registeredOwner;
+        const testName = shouldAllow
+          ? `allows ${declaringOwner} → ${registeredOwner} (same owner)`
+          : `denies ${declaringOwner} → ${registeredOwner} (cross-owner)`;
+
+        it(testName, async () => {
+          const registry = createPolicyRegistry();
+          let evaluatorInvoked = false;
+
+          registry.registerEvaluator({
+            id: policyEvaluatorId(`${registeredOwner}:evaluator:test`),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            owner: registeredOwner as any,
+            evaluate: () => {
+              evaluatorInvoked = true;
+              return { kind: 'allow' as const };
+            },
+          });
+
+          const result = await registry.evaluateDeclaration(
+            defineAccessDeclaration({
+              kind: 'custom',
+              evaluatorId: policyEvaluatorId(`${registeredOwner}:evaluator:test`),
+            }),
+            {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              owner: declaringOwner as any,
+              subject: createSubject(),
+            }
+          );
+
+          if (shouldAllow) {
+            expect(result).toEqual({ kind: 'allow' });
+            expect(evaluatorInvoked).toBe(true);
+          } else {
+            expect(result).toEqual({
+              kind: 'policy-error',
+              error: { code: 'invalid-registration' },
+            });
+            expect(evaluatorInvoked).toBe(false);
+          }
+        });
+
+        it(`resolver: ${declaringOwner} → ${registeredOwner} (${shouldAllow ? 'allow' : 'deny'})`, async () => {
+          const registry = createPolicyRegistry();
+          let resolverInvoked = false;
+
+          registry.registerResolver({
+            id: policyResolverId(`${registeredOwner}:resolver:test`),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            owner: registeredOwner as any,
+            resolve: () => {
+              resolverInvoked = true;
+              return 'resource-owner';
+            },
+          });
+
+          const result = await registry.evaluateDeclaration(
+            defineAccessDeclaration({
+              kind: 'ownership',
+              resolverId: policyResolverId(`${registeredOwner}:resolver:test`),
+            }),
+            {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              owner: declaringOwner as any,
+              subject: createSubject({ authenticated: true, subjectId: 'resource-owner' }),
+            }
+          );
+
+          if (shouldAllow) {
+            expect(result).toEqual({ kind: 'allow' });
+            expect(resolverInvoked).toBe(true);
+          } else {
+            expect(result).toEqual({
+              kind: 'policy-error',
+              error: { code: 'invalid-registration' },
+            });
+            expect(resolverInvoked).toBe(false);
+          }
+        });
+      }
+    }
+  });
+
+  describe('hostile evaluator result canonicalization comprehensive', () => {
+    it('rejects undefined as evaluator result', async () => {
+      const registry = createPolicyRegistry();
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:returns-undefined'),
+        owner: 'framework',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        evaluate: () => undefined as any,
+      });
+
+      const result = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:returns-undefined'),
+        }),
+        { owner: 'framework', subject: createSubject() }
+      );
+
+      expect(result).toEqual({
+        kind: 'policy-error',
+        error: { code: 'invalid-result' },
+      });
+    });
+
+    it('rejects null as evaluator result', async () => {
+      const registry = createPolicyRegistry();
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:returns-null'),
+        owner: 'framework',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        evaluate: () => null as any,
+      });
+
+      const result = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:returns-null'),
+        }),
+        { owner: 'framework', subject: createSubject() }
+      );
+
+      expect(result.kind).toBe('policy-error');
+      if (result.kind === 'policy-error') {
+        expect(result.error.code).toBe('invalid-result');
+      }
+    });
+
+    it('rejects string as evaluator result', async () => {
+      const registry = createPolicyRegistry();
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:returns-string'),
+        owner: 'framework',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        evaluate: () => 'allow' as any,
+      });
+
+      const result = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:returns-string'),
+        }),
+        { owner: 'framework', subject: createSubject() }
+      );
+
+      expect(result.kind).toBe('policy-error');
+    });
+
+    it('rejects array as evaluator result', async () => {
+      const registry = createPolicyRegistry();
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:returns-array'),
+        owner: 'framework',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        evaluate: () => ['allow'] as any,
+      });
+
+      const result = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:returns-array'),
+        }),
+        { owner: 'framework', subject: createSubject() }
+      );
+
+      expect(result.kind).toBe('policy-error');
+    });
+
+    it('rejects class instance as evaluator result', async () => {
+      const registry = createPolicyRegistry();
+
+      class CustomResult {
+        kind = 'allow' as const;
+      }
+
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:returns-class'),
+        owner: 'framework',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        evaluate: () => new CustomResult() as any,
+      });
+
+      const result = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:returns-class'),
+        }),
+        { owner: 'framework', subject: createSubject() }
+      );
+
+      expect(result.kind).toBe('policy-error');
+      if (result.kind === 'policy-error') {
+        expect(result.error.code).toBe('invalid-result');
+      }
+    });
+
+    it('rejects unknown result kind', async () => {
+      const registry = createPolicyRegistry();
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:unknown-kind'),
+        owner: 'framework',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        evaluate: () => ({ kind: 'unknown-result' }) as any,
+      });
+
+      const result = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:unknown-kind'),
+        }),
+        { owner: 'framework', subject: createSubject() }
+      );
+
+      expect(result.kind).toBe('policy-error');
+      if (result.kind === 'policy-error') {
+        expect(result.error.code).toBe('invalid-result');
+      }
+    });
+
+    it('rejects policy-error without error object', async () => {
+      const registry = createPolicyRegistry();
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:malformed-error'),
+        owner: 'framework',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        evaluate: () => ({ kind: 'policy-error' }) as any,
+      });
+
+      const result = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:malformed-error'),
+        }),
+        { owner: 'framework', subject: createSubject() }
+      );
+
+      expect(result.kind).toBe('policy-error');
+      if (result.kind === 'policy-error') {
+        expect(result.error.code).toBe('invalid-result');
+      }
+    });
+
+    it('rejects unknown error code', async () => {
+      const registry = createPolicyRegistry();
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:bad-code'),
+        owner: 'framework',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        evaluate: () => ({ kind: 'policy-error', error: { code: 'unknown-code' } }) as any,
+      });
+
+      const result = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:bad-code'),
+        }),
+        { owner: 'framework', subject: createSubject() }
+      );
+
+      expect(result.kind).toBe('policy-error');
+      if (result.kind === 'policy-error') {
+        expect(result.error.code).toBe('invalid-result');
+      }
+    });
+
+    it('ensures public error result does not expose diagnostic fields', async () => {
+      const registry = createPolicyRegistry();
+      registry.registerEvaluator({
+        id: policyEvaluatorId('framework:evaluator:with-diagnostics'),
+        owner: 'framework',
+        evaluate: () => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result: any = {
+            kind: 'policy-error',
+            error: {
+              code: 'invalid-result',
+              path: '$.test',
+              owner: 'framework',
+              referenceId: 'eval:123',
+              declarationKind: 'custom',
+            },
+          };
+          return result;
+        },
+      });
+
+      const result = await registry.evaluateDeclaration(
+        defineAccessDeclaration({
+          kind: 'custom',
+          evaluatorId: policyEvaluatorId('framework:evaluator:with-diagnostics'),
+        }),
+        { owner: 'framework', subject: createSubject() }
+      );
+
+      expect(result).toEqual({
+        kind: 'policy-error',
+        error: { code: 'invalid-result' },
+      });
+      if (result.kind === 'policy-error') {
+        expect(result.error).not.toHaveProperty('path');
+        expect(result.error).not.toHaveProperty('owner');
+        expect(result.error).not.toHaveProperty('referenceId');
+        expect(result.error).not.toHaveProperty('declarationKind');
+      }
+    });
+  });
 });
