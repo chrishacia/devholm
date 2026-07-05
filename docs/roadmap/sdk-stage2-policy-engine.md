@@ -1,24 +1,72 @@
 # SDK Stage 2: Deterministic Policy Engine and Registries
 
-Status: **Correction under review**
+Status: **Completed ✅**
 Date: 2026-07-05
 Related issue: #31
 Related parent workstream: #6
 Related ADR: `docs/roadmap/decisions/0002-sdk-boundaries-and-access-policy.md`
 
-## Correction notice
+## Governance history
 
-PR #37 (squash `bcc2f01`) was merged with five unresolved Copilot review findings. The roadmap was
-marked completed prematurely in commit `fa7c998` (a direct push to main). Issues #31 and #32 have
-been reopened. Final closure and documentation update will occur only after the correction PR
-(`fix/sdk-stage2-post-merge-review-closeout`) is reviewed, fully green, and squash-merged through
-GitHub. This section will be replaced with accurate evidence at that point.
+Stage 2 was delivered through three governed PRs plus one corrective PR:
+
+- **PR #36** (squash `554837a`, v3.9.2): Governance remediation. Established public API security boundary.
+- **PR #37** (squash `bcc2f01`, merged 2026-07-05T06:05:47Z): Primary Stage 2 implementation — policy engine, registries, version sync, canonical imports. Merged with five unresolved Copilot review findings.
+- **Direct push `fa7c998`** (2026-07-05): Premature documentation push directly to main before review findings were resolved. This violated the governed merge process. Issues #31 and #32 were reopened as a result.
+- **PR #38** (`fix/sdk-stage2-post-merge-review-closeout`): Corrective PR. Addressed all eight unresolved review threads (PR #36: 2, PR #37: 5, PR #38: 1), replaced a non-production-equivalent boundary test with a real esbuild bundle-and-execute proof, removed fake marker module approach, and implemented the real `"browser": null` conditional-export boundary. All governance irregularities are now remediated.
+
+The squash SHA, merge timestamp, resulting main SHA, and release version will be recorded in issues #6, #31, and #32 after PR #38 is merged.
+
+## Stage 2 completion evidence
+
+### Implementation
+
+- Boundary mechanism: `"browser": null` in `packages/sdk/package.json` server export — no fake marker, no Vitest alias for production behavior.
+- Browser-negative proof: esbuild with `--platform=browser` fails with error matching `"browser": null` condition disabled by package author.
+- Server-positive proof: esbuild with `--platform=node --conditions=react-server` bundles and executes successfully; Node exits 0, stdout contains `server-import-ok`, stderr empty.
+
+### Code-validation CI
+
+- Head: `2087c07d1028472397fdbf40f5ad6b9741444577`
+- Run: `28734689827` — conclusion: **success**
+- Lint & Type Check: success
+- Unit Tests: success
+- Security Scan: success
+- Build Application: success
+- E2E Tests: success
+- Docker publish / production deployment: skipped as expected
+
+### Test counts (all local, final head)
+
+| Suite                  | Passed                     |
+| ---------------------- | -------------------------- |
+| sdk-package-boundaries | 20                         |
+| sdk-canonical-imports  | 10                         |
+| sdk-policy-engine      | 193                        |
+| sdk-version-sync       | 29                         |
+| **Whole suite**        | **544 passed, 28 skipped** |
+| Test files             | 38 passed, 1 skipped       |
+
+### Review threads
+
+| PR  | Unresolved before | Unresolved after |
+| --- | ----------------- | ---------------- |
+| #36 | 2                 | 0                |
+| #37 | 5                 | 0                |
+| #38 | 1                 | 0                |
+
+### Versions and lockfile
+
+- Root `package.json` version: `3.9.3`
+- `packages/sdk/package.json` version: `3.9.3`
+- `pnpm-lock.yaml`: identical to main (no correction-related churn)
+- `vitest.config.ts`: identical to main (no correction-related churn)
 
 ## History
 
 - **PR #36** (squash `554837a`, v3.9.2): Governance remediation. Established public API security boundary.
 - **PR #37** (squash `bcc2f01`, merged 2026-07-05T06:05:47Z): Partial Stage 2 verification. Contains five unresolved review findings addressed in the correction PR.
-- **Correction PR**: In progress — addresses review findings from PR #37 and PR #36, strengthens tests, and delivers correct documentation.
+- **PR #38** (corrective, squash SHA pending): Addresses all review findings, real boundary proof, final documentation. Squash SHA and release to be recorded in issues after merge.
 
 ## Stage 3 Status
 
