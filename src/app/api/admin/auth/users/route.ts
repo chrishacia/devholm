@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { listAuthRoles, listAuthUsers, updateAuthUserAccess } from '@/db/auth';
 import { checkRateLimit, getClientIp, rateLimitHeaders, RateLimits } from '@/lib/rate-limiter';
-import { verifyPermission } from '@/lib/auth-helpers';
+import { AuthorizationTransportResult } from '@devholm/sdk/server';
+import {
+  authorizeRequest,
+  usersManageDeclaration,
+  usersManageOwner,
+} from '@/lib/sdk-authorization';
 
 const updateUserSchema = z.object({
   userId: z.string().uuid(),
@@ -11,9 +16,9 @@ const updateUserSchema = z.object({
 });
 
 async function authenticate(request: NextRequest) {
-  const token = await verifyPermission(request, 'users.manage');
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const authResult = await authorizeRequest(request, usersManageDeclaration, usersManageOwner);
+  if (authResult.result !== AuthorizationTransportResult.ALLOW) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: authResult.httpStatus });
   }
 
   const rateLimit = await checkRateLimit({
@@ -29,7 +34,7 @@ async function authenticate(request: NextRequest) {
     );
   }
 
-  return { token, rateLimit };
+  return { subject: authResult.subject, rateLimit };
 }
 
 export async function GET(request: NextRequest) {
@@ -72,7 +77,7 @@ export async function PATCH(request: NextRequest) {
 
     const user = await updateAuthUserAccess({
       ...parsed.data,
-      actingUserId: (authResult.token.sub as string | undefined) ?? undefined,
+      actingUserId: authResult.subject.userId ?? undefined,
     });
     if (!user) {
       return NextResponse.json(
