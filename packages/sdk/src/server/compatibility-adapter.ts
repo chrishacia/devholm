@@ -3,16 +3,13 @@
  * ==========================================
  *
  * Explicit adapter that maps current DevHolm authorization behavior into the canonical SDK model.
- * This layer is NOT embedded in the policy engine; it is explicitly used during staged migration.
  *
- * Design principles:
- * - Legacy behavior remains available during migration
- * - Compatibility is not silent; callers know which path they're using
- * - Diagnostics are sanitized and configuration-controlled
- * - No secrets, raw exceptions, stack traces, or database objects cross the boundary
- * - Compatibility diagnostics never change authorization results
- * - Malformed inputs fail closed
- * - Rollback to existing legacy checks is possible without reverting SDK foundation
+ * Accessor-safe design (mirrors normalization.ts):
+ * - All property reads from untrusted source objects use descriptor-safe helpers
+ *   exported from normalization.ts.
+ * - Accessor properties on source objects are never invoked.
+ * - Proxy-trap exceptions are caught and fail closed.
+ * - No optional-chaining field reads on `Record<string, unknown>` inputs.
  *
  * Related: ADR-0002, Stage 2 policy engine, Stage 3 implementation
  */
@@ -21,37 +18,39 @@ import {
   type CanonicalAuthorizationSubject,
   type RawAuthorizationSubject,
   normalizeAuthorizationSubject,
+  _safeReadOwnProperty,
+  _safeOwnString,
+  _safeOwnBoolean,
+  _safeOwnStringArray,
 } from './normalization';
 
-/**
- * Diagnostics from compatibility adapter evaluation.
- * Sanitized to never leak secrets, raw exceptions, or internal details.
- */
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+/** Diagnostics from compatibility adapter evaluation. */
 export interface CompatibilityAdapterDiagnostics {
-  /** Whether compatibility path was used (true) or canonical path (false) */
+  /** Whether compatibility path was used */
   usedCompatibilityPath: boolean;
-
-  /** Human-readable description of which path and why */
+  /** Human-readable path description */
   pathDescription: string;
-
-  /** Normalized subject before policy evaluation */
+  /** Normalized subject (if diagnostics enabled) */
   normalizedSubject?: CanonicalAuthorizationSubject;
 }
 
-/**
- * Options for compatibility adapter behavior.
- */
+/** Options for compatibility adapter behavior. */
 export interface CompatibilityAdapterOptions {
-  /** Enable diagnostic output (default: false for production) */
+  /** Enable diagnostic output (default: false) */
   diagnosticsEnabled?: boolean;
-
-  /** Administrator rule implementation: which fields determine admin status */
+  /** Administrator determination rule: which fields determine admin status */
   adminDeterminationRule?: 'legacy' | 'canonical' | 'union';
 }
 
 /**
- * Current DevHolm authorization subject shape (may be malformed at runtime).
- * This represents the existing token/session shape in the framework.
+ * Typed shape of a DevHolm legacy authorization subject.
+ * Note: the LegacyAuthorizationSubject adapter accepts this type,
+ * but actual objects passed at runtime may not conform — all fields
+ * are extracted defensively.
  */
 export interface LegacyAuthorizationSubject {
   id?: string;
@@ -65,18 +64,35 @@ export interface LegacyAuthorizationSubject {
   installCompleted?: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 /**
- * Adapt legacy DevHolm authorization subject to canonical form.
- * Provides optional diagnostics to help track the migration.
+ * Safely convert an unknown value to a non-null object or null.
+ * Rejects null, undefined, non-objects, arrays, Dates, functions.
+ */
+function toSafeObject(val: unknown): object | null {
+  if (val === null || val === undefined) return null;
+  if (typeof val !== 'object') return null;
+  if (Array.isArray(val)) return null;
+  return val as object;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Adapt a legacy DevHolm authorization subject to canonical form.
  *
- * Legacy behavior:
- * - Primary userId comes from 'id' or 'userId' field
- * - Primary role comes from 'role' field
- * - Administrator is determined by: isAdmin === true, role === 'admin' or 'superadmin', roles includes admin/superadmin
+ * Admin determination strategies:
+ * - 'legacy' (default): isAdmin=true OR role in ['admin','superadmin'] OR roles contains those
+ * - 'canonical': only explicit isAdmin=true
+ * - 'union': either legacy OR canonical rule
  *
- * @param legacy - Legacy DevHolm subject (may be null or malformed)
- * @param options - Adapter options for diagnostics and fallback behavior
- * @returns Canonical subject and optional diagnostics
+ * All fields are extracted defensively. Accessor properties on `legacy` are never
+ * invoked; proxy exceptions fail closed.
  */
 export function adaptLegacyToCanonical(
   legacy: LegacyAuthorizationSubject | null | undefined,
@@ -85,23 +101,29 @@ export function adaptLegacyToCanonical(
   const diagnosticsEnabled = options?.diagnosticsEnabled ?? false;
   const adminRule = options?.adminDeterminationRule ?? 'legacy';
 
-  // Extract fields from legacy subject with defensive validation
-  const legacyUserId =
-    typeof legacy?.id === 'string'
-      ? legacy.id
-      : typeof legacy?.userId === 'string'
-        ? legacy.userId
-        : null;
-  const legacyEmail = typeof legacy?.email === 'string' ? legacy.email : null;
-  const legacyRole = typeof legacy?.role === 'string' ? legacy.role : null;
-  const legacyRoles = Array.isArray(legacy?.roles) ? legacy.roles : [];
-  const legacyPermissions = Array.isArray(legacy?.permissions) ? legacy.permissions : [];
-  const legacyIsAdmin = legacy?.isAdmin === true;
+  // Convert to safe object — rejects null/undefined/non-objects/arrays
+  const legacyObj = toSafeObject(legacy);
 
-  // Determine administrator status according to the configured rule
+  // Extract fields using descriptor-safe helpers.
+  // These do NOT invoke accessor getters on the source object.
+  const legacyUserId = legacyObj
+    ? _safeOwnString(legacyObj, 'id') ?? _safeOwnString(legacyObj, 'userId')
+    : null;
+  const legacyEmail = legacyObj ? _safeOwnString(legacyObj, 'email') : null;
+  const legacyRole = legacyObj ? _safeOwnString(legacyObj, 'role') : null;
+  const legacyRoles = legacyObj
+    ? _safeOwnStringArray(legacyObj, 'roles')
+    : (Object.freeze([]) as readonly string[]);
+  const legacyPermissions = legacyObj
+    ? _safeOwnStringArray(legacyObj, 'permissions')
+    : (Object.freeze([]) as readonly string[]);
+  const legacyIsAdmin = legacyObj ? _safeOwnBoolean(legacyObj, 'isAdmin') : false;
+
+  // Determine administrator status according to the configured rule.
+  // The legacy/union rules match the pre-migration `hasAdminAccess` behavior:
+  //   isAdmin === true OR role is 'admin'/'superadmin' OR roles contains those values.
   let isAdmin = false;
   if (adminRule === 'legacy' || adminRule === 'union') {
-    // Legacy rule: isAdmin OR role in ['admin', 'superadmin'] OR roles includes admin/superadmin
     isAdmin =
       legacyIsAdmin ||
       legacyRole === 'admin' ||
@@ -110,92 +132,93 @@ export function adaptLegacyToCanonical(
       legacyRoles.includes('superadmin');
   }
   if (adminRule === 'canonical') {
-    // Canonical rule: only explicit isAdmin field (for future strict mode)
     isAdmin = legacyIsAdmin;
   }
 
-  // Build raw subject for canonical normalization
+  // Build RawAuthorizationSubject and normalize through the standard path.
+  // All arrays here are already validated strings (frozen by _safeOwnStringArray).
   const raw: RawAuthorizationSubject = {
     userId: legacyUserId,
     email: legacyEmail,
     role: legacyRole,
-    roles: legacyRoles,
-    permissions: legacyPermissions,
+    roles: [...legacyRoles], // spread to produce a plain mutable array for RawAuthorizationSubject
+    permissions: [...legacyPermissions],
     isAdmin,
   };
 
-  // Normalize to canonical form
   const subject = normalizeAuthorizationSubject(raw);
 
-  // Build diagnostics if enabled
-  let diagnostics: CompatibilityAdapterDiagnostics | undefined;
-  if (diagnosticsEnabled) {
-    diagnostics = {
-      usedCompatibilityPath: true,
-      pathDescription: `Legacy DevHolm subject adapted to canonical form. Admin determined by ${adminRule} rule.`,
-      normalizedSubject: subject,
-    };
-  }
+  const diagnostics: CompatibilityAdapterDiagnostics | undefined = diagnosticsEnabled
+    ? {
+        usedCompatibilityPath: true,
+        pathDescription: `Legacy DevHolm subject adapted to canonical form. Admin determined by ${adminRule} rule.`,
+        normalizedSubject: subject,
+      }
+    : undefined;
 
   return { subject, diagnostics };
 }
 
 /**
- * Build canonical subject from current DevHolm NextAuth session.
- * Wrapper around adaptLegacyToCanonical for session-based usage.
+ * Build canonical subject from a DevHolm NextAuth session object.
  *
- * @param session - NextAuth session object (may be null or incomplete)
- * @param options - Adapter options
- * @returns Canonical subject and optional diagnostics
+ * Extracts the `user` property using descriptor-safe reading to avoid invoking
+ * any getter traps on the session object. All nested field reads are also
+ * descriptor-safe.
  */
 export function canonicalSubjectFromSession(
   session: { user?: Record<string, unknown> } | null | undefined,
   options?: CompatibilityAdapterOptions
 ): { subject: CanonicalAuthorizationSubject; diagnostics?: CompatibilityAdapterDiagnostics } {
-  const user = session?.user || null;
+  // Safely extract user from session — no optional-chaining read.
+  const sessionObj = toSafeObject(session);
+  const rawUser = sessionObj ? _safeReadOwnProperty(sessionObj, 'user') : undefined;
+  const userObj = toSafeObject(rawUser);
 
-  const legacy: LegacyAuthorizationSubject = {
-    // user is Record<string, unknown> | null; cast each field defensively.
-    // adaptLegacyToCanonical validates all fields, so unsafe casts here are safe.
-    id: user?.id as string | undefined,
-    userId: user?.id as string | undefined,
-    email: user?.email as string | null | undefined,
-    name: user?.name as string | null | undefined,
-    role: user?.role as string | null | undefined,
-    roles: user?.roles as string[] | undefined,
-    permissions: user?.permissions as string[] | undefined,
-    isAdmin: user?.isAdmin as boolean | undefined,
-    installCompleted: user?.installCompleted as boolean | undefined,
-  };
+  // Build legacy subject using descriptor-safe extraction from userObj.
+  const legacy: LegacyAuthorizationSubject =
+    userObj !== null
+      ? {
+          id: _safeOwnString(userObj, 'id') ?? undefined,
+          userId: _safeOwnString(userObj, 'userId') ?? undefined,
+          email: _safeOwnString(userObj, 'email') ?? undefined,
+          name: _safeOwnString(userObj, 'name') ?? undefined,
+          role: _safeOwnString(userObj, 'role') ?? undefined,
+          roles: [..._safeOwnStringArray(userObj, 'roles')] as string[],
+          permissions: [..._safeOwnStringArray(userObj, 'permissions')] as string[],
+          isAdmin: _safeOwnBoolean(userObj, 'isAdmin'),
+          installCompleted: _safeOwnBoolean(userObj, 'installCompleted'),
+        }
+      : {};
 
   return adaptLegacyToCanonical(legacy, options);
 }
 
 /**
- * Build canonical subject from NextAuth JWT token.
- * Wrapper around adaptLegacyToCanonical for token-based usage.
+ * Build canonical subject from a DevHolm NextAuth JWT token.
  *
- * @param token - NextAuth JWT token (may be null or incomplete)
- * @param options - Adapter options
- * @returns Canonical subject and optional diagnostics
+ * All field reads are descriptor-safe; no getter traps are invoked.
  */
 export function canonicalSubjectFromToken(
   token: Record<string, unknown> | null | undefined,
   options?: CompatibilityAdapterOptions
 ): { subject: CanonicalAuthorizationSubject; diagnostics?: CompatibilityAdapterDiagnostics } {
-  const legacy: LegacyAuthorizationSubject = {
-    // Access through Record<string, unknown>; each value is unknown, cast to the
-    // expected optional type. adaptLegacyToCanonical validates each field defensively.
-    id: token?.id as string | undefined,
-    userId: token?.id as string | undefined,
-    email: token?.email as string | null | undefined,
-    name: token?.name as string | null | undefined,
-    role: token?.role as string | null | undefined,
-    roles: token?.roles as string[] | undefined,
-    permissions: token?.permissions as string[] | undefined,
-    isAdmin: token?.isAdmin as boolean | undefined,
-    installCompleted: token?.installCompleted as boolean | undefined,
-  };
+  const tokenObj = toSafeObject(token);
+
+  const legacy: LegacyAuthorizationSubject =
+    tokenObj !== null
+      ? {
+          id: _safeOwnString(tokenObj, 'id') ?? undefined,
+          userId: _safeOwnString(tokenObj, 'userId') ?? undefined,
+          email: _safeOwnString(tokenObj, 'email') ?? undefined,
+          name: _safeOwnString(tokenObj, 'name') ?? undefined,
+          role: _safeOwnString(tokenObj, 'role') ?? undefined,
+          roles: [..._safeOwnStringArray(tokenObj, 'roles')] as string[],
+          permissions: [..._safeOwnStringArray(tokenObj, 'permissions')] as string[],
+          isAdmin: _safeOwnBoolean(tokenObj, 'isAdmin'),
+          installCompleted: _safeOwnBoolean(tokenObj, 'installCompleted'),
+        }
+      : {};
 
   return adaptLegacyToCanonical(legacy, options);
 }

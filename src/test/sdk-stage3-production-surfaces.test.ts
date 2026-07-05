@@ -15,9 +15,11 @@
  * - Authenticated allowed (admin/permission holder)
  * - Authenticated denied (member without required access)
  * - Malformed/partial token data
- * - Legacy administrator compatibility (isAdmin field)
+ * - Legacy administrator compatibility (all paths)
  * - Policy error fail-closed behavior
  * - Client-provided state cannot bypass authorization
+ *
+ * Also tests the server-action authorization wrapper.
  *
  * Environment: node (required for @devholm/sdk/server import)
  */
@@ -28,8 +30,10 @@ import {
   canonicalSubjectFromToken,
   canonicalSubjectToNormalizedPolicySubject,
   mapPolicyToAuthorizationResult,
+  evaluateServerActionAuthorization,
   AuthorizationTransportResult,
 } from '@devholm/sdk/server';
+import { defineAccessDeclaration, policyEvaluatorId } from '@devholm/sdk';
 import {
   adminAccessDeclaration,
   adminAccessOwner,
@@ -297,12 +301,11 @@ describe('Surface 2: Permission-based access — parity tests', () => {
     expect(stage3Result.result).toBe(AuthorizationTransportResult.ALLOW);
   });
 
-  it('BEHAVIORAL DIFFERENCE: admin-role token without explicit admin.access permission is denied in Stage 3 (legacy allowed via hasAdminAccess)', async () => {
+  it('PARITY: allows admin role token (via adminAccessDeclaration anyOf composition)', async () => {
     // Legacy: admin role → hasAdminAccess → true, allows access to users.manage
-    // Stage 3: admin role token has no admin.access permission explicitly
-    // This is an intentional migration difference: Stage 3 uses explicit permissions.
-    // An admin role WITHOUT admin.access in their permissions list is denied.
-    // Migration path: explicitly grant admin.access permission to admin role users.
+    // Stage 3: usersManageDeclaration is anyOf[permission-any[users.manage], adminAccessDeclaration]
+    //          adminAccessDeclaration is anyOf[role-any[admin,superadmin], permission-any[admin.access]]
+    //          So role 'admin' is covered by the role-any branch of adminAccessDeclaration.
     const legacyResult = evaluateLegacyPermission(adminRoleToken, 'users.manage');
     const stage3Result = await evaluateStage3(
       adminRoleToken,
@@ -310,10 +313,25 @@ describe('Surface 2: Permission-based access — parity tests', () => {
       usersManageOwner
     );
     expect(legacyResult).toBe(true);
-    // Stage 3 without admin.access in permissions: FORBIDDEN
-    expect(stage3Result.result).toBe(AuthorizationTransportResult.FORBIDDEN);
-    // Document: This surface requires admin users to have explicit permissions.
-    // Grant admin.access to all admin-role users during migration.
+    expect(stage3Result.result).toBe(AuthorizationTransportResult.ALLOW);
+  });
+
+  it('PARITY: allows superadmin role token', async () => {
+    const superadminToken: TokenShape = {
+      id: 'user-15',
+      role: 'superadmin',
+      roles: ['superadmin'],
+      permissions: [],
+      isAdmin: true,
+    };
+    const legacyResult = evaluateLegacyPermission(superadminToken, 'users.manage');
+    const stage3Result = await evaluateStage3(
+      superadminToken,
+      usersManageDeclaration,
+      usersManageOwner
+    );
+    expect(legacyResult).toBe(true);
+    expect(stage3Result.result).toBe(AuthorizationTransportResult.ALLOW);
   });
 
   it('PARITY: denies member without users.manage permission', async () => {
@@ -358,8 +376,7 @@ describe('Surface 2: Permission-based access — parity tests', () => {
     const normalizedSubject = canonicalSubjectToNormalizedPolicySubject(subject);
 
     // Use a declaration with missing evaluator to trigger missing-runtime-reference
-    const { defineAccessDeclaration: define, policyEvaluatorId } = await import('@devholm/sdk');
-    const missingDecl = define({
+    const missingDecl = defineAccessDeclaration({
       kind: 'custom',
       evaluatorId: policyEvaluatorId('site:evaluator:nonexistent'),
     });
@@ -373,5 +390,87 @@ describe('Surface 2: Permission-based access — parity tests', () => {
     expect([500, 503]).toContain(authResult.httpStatus);
     expect(authResult.result).not.toBe(AuthorizationTransportResult.ALLOW);
     expect(authResult.result).not.toBe(AuthorizationTransportResult.FORBIDDEN);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Server-action authorization wrapper
+// ---------------------------------------------------------------------------
+
+describe('evaluateServerActionAuthorization', () => {
+  it('returns allowed=true for session with admin role', async () => {
+    const registry = createPolicyRegistry();
+    const session = {
+      user: { id: 'u1', role: 'admin', roles: ['admin'], permissions: [], isAdmin: true },
+    };
+    const result = await evaluateServerActionAuthorization(
+      session,
+      adminAccessDeclaration,
+      adminAccessOwner,
+      registry
+    );
+    expect(result.allowed).toBe(true);
+    expect(result.result).toBe(AuthorizationTransportResult.ALLOW);
+  });
+
+  it('returns allowed=false for member session', async () => {
+    const registry = createPolicyRegistry();
+    const session = {
+      user: { id: 'u2', role: 'member', roles: ['member'], permissions: [], isAdmin: false },
+    };
+    const result = await evaluateServerActionAuthorization(
+      session,
+      adminAccessDeclaration,
+      adminAccessOwner,
+      registry
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.result).toBe(AuthorizationTransportResult.FORBIDDEN);
+  });
+
+  it('returns allowed=false for null session (unauthenticated)', async () => {
+    const registry = createPolicyRegistry();
+    const result = await evaluateServerActionAuthorization(
+      null,
+      adminAccessDeclaration,
+      adminAccessOwner,
+      registry
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.result).toBe(AuthorizationTransportResult.UNAUTHENTICATED);
+  });
+
+  it('fails closed on policy error', async () => {
+    const registry = createPolicyRegistry();
+    const session = { user: { id: 'u3', role: 'admin', roles: ['admin'], permissions: [] } };
+    const missingDecl = defineAccessDeclaration({
+      kind: 'custom',
+      evaluatorId: policyEvaluatorId('site:evaluator:nonexistent'),
+    });
+    const result = await evaluateServerActionAuthorization(session, missingDecl, 'site', registry);
+    expect(result.allowed).toBe(false);
+    expect(result.result).toBe(AuthorizationTransportResult.POLICY_ERROR);
+    expect(result.result).not.toBe(AuthorizationTransportResult.ALLOW);
+  });
+
+  it('result subject matches canonical subject', async () => {
+    const registry = createPolicyRegistry();
+    const session = {
+      user: {
+        id: 'u4',
+        role: 'admin',
+        roles: ['admin'],
+        permissions: ['admin.access'],
+        isAdmin: true,
+      },
+    };
+    const result = await evaluateServerActionAuthorization(
+      session,
+      adminAccessDeclaration,
+      adminAccessOwner,
+      registry
+    );
+    expect(result.subject.userId).toBe('u4');
+    expect(result.subject.isAdmin).toBe(true);
   });
 });
