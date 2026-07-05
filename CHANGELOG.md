@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.9.4](https://github.com/chrishacia/devholm/compare/v3.9.3...v3.9.4) (2026-07-05)
+
+### Bug Fixes
+
+- address remaining sdk Stage 2 review findings and implement real package boundary ([#38](https://github.com/chrishacia/devholm/issues/38)) ([b8ed09b](https://github.com/chrishacia/devholm/commit/b8ed09b8d7992733a72a7470129fb3a630828eac)), closes [#36](https://github.com/chrishacia/devholm/issues/36) [#37](https://github.com/chrishacia/devholm/issues/37)
+
 ## [3.9.3](https://github.com/chrishacia/devholm/compare/v3.9.2...v3.9.3) (2026-07-05)
 
 ### Bug Fixes
