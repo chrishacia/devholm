@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.10.0](https://github.com/chrishacia/devholm/compare/v3.9.4...v3.10.0) (2026-07-05)
+
+### Features
+
+- **lib:** stage 3 server-side authorization enforcement ([9060d7c](https://github.com/chrishacia/devholm/commit/9060d7c2e31455b56d0132b15c02ea782d38ae08)), closes [#39](https://github.com/chrishacia/devholm/issues/39)
+
 ## [3.9.4](https://github.com/chrishacia/devholm/compare/v3.9.3...v3.9.4) (2026-07-05)
 
 ### Bug Fixes
