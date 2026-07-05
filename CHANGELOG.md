@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.10.1](https://github.com/chrishacia/devholm/compare/v3.10.0...v3.10.1) (2026-07-05)
+
+### Bug Fixes
+
+- **sdk:** complete Stage 3 parity and review closeout ([599d81a](https://github.com/chrishacia/devholm/commit/599d81ad77073f4bbc4a6e0d85407a2ce8a2fa4e))
+
 ## [3.10.0](https://github.com/chrishacia/devholm/compare/v3.9.4...v3.10.0) (2026-07-05)
 
 ### Features
