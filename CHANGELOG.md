@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.9.1](https://github.com/chrishacia/devholm/compare/v3.9.0...v3.9.1) (2026-07-05)
+
+### Bug Fixes
+
+- complete sdk Stage 2 security boundaries and verification - Closes [#31](https://github.com/chrishacia/devholm/issues/31), Closes [#32](https://github.com/chrishacia/devholm/issues/32) ([dee3946](https://github.com/chrishacia/devholm/commit/dee39462cdc1e3e42e294d5485615f92c8918913))
+
 ## [3.9.0](https://github.com/chrishacia/devholm/compare/v3.8.2...v3.9.0) (2026-07-04)
 
 ### Features
