@@ -4,6 +4,9 @@ import { SDK_RUNTIME_SERVER } from './internal/runtime-tags';
 import type { AccessDeclaration, OwnerId, PermissionId } from './contracts';
 
 export * from './server/policy';
+export * from './server/normalization';
+export * from './server/compatibility-adapter';
+export * from './server/authorization-wrappers';
 
 if (typeof window !== 'undefined') {
   throw new Error(

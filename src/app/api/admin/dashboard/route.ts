@@ -3,17 +3,26 @@ import { getDb } from '@/db';
 import { dismissAuthOnboardingStatus, getAuthOnboardingStatus } from '@/db/auth';
 import { getMessageStats } from '@/db/messages';
 import { checkRateLimit, getClientIp, rateLimitHeaders, RateLimits } from '@/lib/rate-limiter';
-import { verifyAdmin } from '@/lib/auth-helpers';
+import { AuthorizationTransportResult } from '@devholm/sdk/server';
+import {
+  authorizeRequest,
+  adminAccessDeclaration,
+  adminAccessOwner,
+} from '@/lib/sdk-authorization';
 
 /**
  * GET /api/admin/dashboard - Get dashboard stats (admin)
+ *
+ * Authorization: Stage 3 SDK — adminAccessDeclaration
+ * (role-any[admin, superadmin] OR permission-any[admin.access])
+ * Pre-migration equivalent: verifyAdmin(request) → hasAdminAccess(token)
  */
 export async function GET(request: NextRequest) {
-  const token = await verifyAdmin(request);
-
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const authResult = await authorizeRequest(request, adminAccessDeclaration, adminAccessOwner);
+  if (authResult.result !== AuthorizationTransportResult.ALLOW) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: authResult.httpStatus });
   }
+  const userId = authResult.subject.userId;
 
   const rateLimit = await checkRateLimit({
     action: 'admin-dashboard',
@@ -84,7 +93,7 @@ export async function GET(request: NextRequest) {
       .orderBy('created_at', 'desc')
       .limit(5);
 
-    const onboarding = await getAuthOnboardingStatus(token.sub as string);
+    const onboarding = await getAuthOnboardingStatus(userId ?? '');
 
     return NextResponse.json(
       {
@@ -105,9 +114,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const token = await verifyAdmin(request);
-  if (!token) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const authResult = await authorizeRequest(request, adminAccessDeclaration, adminAccessOwner);
+  if (authResult.result !== AuthorizationTransportResult.ALLOW) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: authResult.httpStatus });
   }
 
   const rateLimit = await checkRateLimit({

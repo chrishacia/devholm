@@ -63,3 +63,61 @@ test.describe('Admin Navigation', () => {
     expect(response3?.status()).not.toBe(404);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Stage 3 SDK Authorization: Production Surface E2E Coverage
+// ---------------------------------------------------------------------------
+// Surface 1: GET /api/admin/dashboard  (migrated to Stage 3 adminAccessDeclaration)
+// Surface 2: GET /api/admin/auth/users (migrated to Stage 3 usersManageDeclaration)
+//
+// These tests verify that the Stage 3 migration enforces authorization at the
+// HTTP boundary; they do not test admin-authenticated behavior (no user fixture).
+// ---------------------------------------------------------------------------
+
+test.describe('Stage 3 SDK authorization: production surface enforcement', () => {
+  test('GET /api/admin/dashboard returns 401 without authentication token', async ({ request }) => {
+    // Anonymous request must be rejected by Stage 3 authorization
+    const response = await request.get('/api/admin/dashboard');
+    // Stage 3 unauthenticated result maps to 401
+    expect(response.status()).toBe(401);
+  });
+
+  test('POST /api/admin/dashboard returns 401 without authentication token', async ({
+    request,
+  }) => {
+    const response = await request.patch('/api/admin/dashboard', {
+      data: { action: 'dismiss-onboarding' },
+    });
+    expect(response.status()).toBe(401);
+  });
+
+  test('GET /api/admin/auth/users returns 401 without authentication token', async ({
+    request,
+  }) => {
+    // Anonymous request must be rejected by Stage 3 authorization
+    const response = await request.get('/api/admin/auth/users');
+    expect(response.status()).toBe(401);
+  });
+
+  test('PATCH /api/admin/auth/users returns 401 without authentication token', async ({
+    request,
+  }) => {
+    const response = await request.patch('/api/admin/auth/users', {
+      data: { userId: '00000000-0000-0000-0000-000000000000', isActive: true },
+    });
+    expect(response.status()).toBe(401);
+  });
+
+  test('Stage 3 dashboard endpoint does not 404', async ({ page }) => {
+    const response = await page.goto('/api/admin/dashboard');
+    // Either 401 (unauthenticated) or redirect to login; must not 404 or 500
+    expect(response?.status()).not.toBe(404);
+    expect(response?.status()).not.toBe(500);
+  });
+
+  test('Stage 3 users endpoint does not 404', async ({ page }) => {
+    const response = await page.goto('/api/admin/auth/users');
+    expect(response?.status()).not.toBe(404);
+    expect(response?.status()).not.toBe(500);
+  });
+});

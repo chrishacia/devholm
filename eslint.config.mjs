@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'next-env.d.ts',
+    // Playwright generated artifacts - never lint transient reports
+    'playwright-report/**',
+    'test-results/**',
   ]),
   // Custom rules
   {
