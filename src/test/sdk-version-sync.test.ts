@@ -325,6 +325,7 @@ describe('sync-sdk-version', () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe('');
+    expect(result.stderr.trim()).toBe('');
     // Files must be unchanged
     expect(readFileSync(fixture.rootPath, 'utf8')).toBe(rootBefore);
     expect(readFileSync(fixture.sdkPath, 'utf8')).toBe(sdkBefore);
@@ -332,10 +333,13 @@ describe('sync-sdk-version', () => {
 
   it('sync-sdk-version.ts library source has no top-level process.exit or console calls', () => {
     const src = readFileSync(resolve(repoRoot, 'scripts/sync-sdk-version.ts'), 'utf8');
-    // Strip JSDoc/line comments before checking for executable calls
+    // Strip all comment lines – lines starting with //, and block comment delimiters (/** /* *)
     const codeOnly = src
       .split('\n')
-      .filter((line) => !line.trim().startsWith('*') && !line.trim().startsWith('//'))
+      .filter((line) => {
+        const t = line.trim();
+        return !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+      })
       .join('\n');
     expect(codeOnly).not.toMatch(/process\.exit\s*\(/);
     expect(codeOnly).not.toMatch(/console\.(log|warn|error)\s*\(/);
@@ -349,7 +353,101 @@ describe('sync-sdk-version', () => {
     expect(afterBump.some((cmd) => cmd.includes('sync-sdk-version-cli.ts'))).toBe(true);
   });
 
-  it('library import produces no console output', () => {
+  it('root package.json contains a script that invokes sync-sdk-version-cli.ts', () => {
+    const pkg = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    const scripts = Object.values(pkg.scripts ?? {});
+    expect(scripts.some((s) => s.includes('sync-sdk-version-cli.ts'))).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // CLI coverage – additional failure cases
+  // -------------------------------------------------------------------------
+
+  it('CLI exits non-zero when root version is an empty string', () => {
+    fixture = makeFixture(VALID_ROOT(''), VALID_SDK('1.0.0'));
+    const result = spawnSync(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        resolve(repoRoot, 'scripts/sync-sdk-version-cli.ts'),
+        fixture.rootPath,
+        fixture.sdkPath,
+      ],
+      { encoding: 'utf8', cwd: repoRoot }
+    );
+    expect(result.status).not.toBe(0);
+  });
+
+  it('CLI exits non-zero when root manifest has no version field', () => {
+    fixture = makeFixture(
+      JSON.stringify({ name: 'devholm', private: false }, null, 2) + '\n',
+      VALID_SDK('1.0.0')
+    );
+    const result = spawnSync(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        resolve(repoRoot, 'scripts/sync-sdk-version-cli.ts'),
+        fixture.rootPath,
+        fixture.sdkPath,
+      ],
+      { encoding: 'utf8', cwd: repoRoot }
+    );
+    expect(result.status).not.toBe(0);
+  });
+
+  it('CLI exits non-zero when SDK manifest has no version field', () => {
+    fixture = makeFixture(
+      VALID_ROOT('1.0.0'),
+      JSON.stringify({ name: '@devholm/sdk', private: true, type: 'module' }, null, 2) + '\n'
+    );
+    const result = spawnSync(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        resolve(repoRoot, 'scripts/sync-sdk-version-cli.ts'),
+        fixture.rootPath,
+        fixture.sdkPath,
+      ],
+      { encoding: 'utf8', cwd: repoRoot }
+    );
+    expect(result.status).not.toBe(0);
+  });
+
+  it('CLI preserves unrelated SDK manifest fields after sync', () => {
+    fixture = makeFixture(VALID_ROOT('5.0.0'), VALID_SDK('4.9.9'));
+    const before = JSON.parse(readFileSync(fixture.sdkPath, 'utf8')) as Record<string, unknown>;
+    const result = spawnSync(
+      'pnpm',
+      [
+        'exec',
+        'tsx',
+        resolve(repoRoot, 'scripts/sync-sdk-version-cli.ts'),
+        fixture.rootPath,
+        fixture.sdkPath,
+      ],
+      { encoding: 'utf8', cwd: repoRoot }
+    );
+    expect(result.status).toBe(0);
+    const after = JSON.parse(readFileSync(fixture.sdkPath, 'utf8')) as Record<string, unknown>;
+    expect(after['name']).toBe(before['name']);
+    expect(after['private']).toBe(before['private']);
+    expect(after['type']).toBe(before['type']);
+    expect(after['sideEffects']).toBe(before['sideEffects']);
+    expect(after['version']).toBe('5.0.0');
+  });
+
+  // -------------------------------------------------------------------------
+  // In-process syncSdkVersion() behavioral tests
+  // (not import tests – call the exported function directly)
+  // -------------------------------------------------------------------------
+
+  it('syncSdkVersion() call produces no console output', () => {
     const consoleLogSpy = vi.spyOn(console, 'log');
     const consoleErrorSpy = vi.spyOn(console, 'error');
     fixture = makeFixture(VALID_ROOT('5.0.0'), VALID_SDK('4.9.9'));
@@ -360,7 +458,7 @@ describe('sync-sdk-version', () => {
     consoleErrorSpy.mockRestore();
   });
 
-  it('library import does not mutate filesystem beyond the SDK manifest', () => {
+  it('syncSdkVersion() call does not mutate filesystem beyond the SDK manifest', () => {
     fixture = makeFixture(VALID_ROOT('5.0.0'), VALID_SDK('4.9.9'));
     const rootBefore = readFileSync(fixture.rootPath, 'utf8');
     syncSdkVersion(fixture.rootPath, fixture.sdkPath);
@@ -368,7 +466,7 @@ describe('sync-sdk-version', () => {
     expect(rootAfter).toBe(rootBefore);
   });
 
-  it('library import cannot call process.exit', () => {
+  it('syncSdkVersion() call does not invoke process.exit', () => {
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit should not be called');
     });

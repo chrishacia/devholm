@@ -389,9 +389,7 @@ function combineAnyOf(results: readonly PolicyResult[]): PolicyResult {
 }
 
 function policyError(code: PolicyErrorCode): PolicyErrorResult {
-  // Public PolicyErrorDetail ONLY exposes the code.
-  // Diagnostics are computed at call sites for logging/debugging purposes
-  // but are not included in the neutral public semantic result.
+  // The public result exposes only the error code; no diagnostic fields are included.
   return {
     kind: 'policy-error',
     error: { code },

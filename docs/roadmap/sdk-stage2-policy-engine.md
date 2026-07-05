@@ -1,30 +1,28 @@
 # SDK Stage 2: Deterministic Policy Engine and Registries
 
-Status: **Completed** ✅
+Status: **Correction under review**
 Date: 2026-07-05
 Related issue: #31
 Related parent workstream: #6
 Related ADR: `docs/roadmap/decisions/0002-sdk-boundaries-and-access-policy.md`
 
-## Completion Evidence
+## Correction notice
 
-- **PR #36** (governance remediation, squash SHA `554837a`) — v3.9.2: Fixed governance violation (direct push `dee3946`), established public API security boundary (`PolicyErrorDetail` minimal), added initial 78 test cases.
-- **PR #37** (final verification, squash SHA `bcc2f01cf11fc0b5bf89b8c16071f92f440749b3`) — merged 2026-07-05T06:05:47Z: Completed all remaining Stage 2 requirements.
-  - Removed unused `diagnostics` parameter from `policyError()` (dead code)
-  - Added invalid-owner validation matrix (10 invalid types × 3 assertions each)
-  - Added full 16-pair validation-time and runtime owner-reference matrices for both evaluators and resolvers
-  - Added nested allOf/anyOf cross-owner violation tests
-  - Added extended hostile evaluator result canonicalization suite
-  - Replaced false `execSync` exitCode tests with `spawnSync` in version-sync tests
-  - Fixed misleading test names in canonical-imports and package-boundary tests
-- **CI Run 28730973872**: All 8 checks passing (Sync DevHolm Framework, Detect Non-Docs Changes, Lint & Type Check, Unit Tests, Security Scan, Build Application, E2E Tests, GitGuardian Security Checks)
-- **Test counts**: sdk-policy-engine.test.ts: 193, sdk-version-sync.test.ts: 24, sdk-canonical-imports.test.ts: 8, sdk-package-boundaries.test.ts: 17, total suite: 534 passed / 28 skipped
-- **Starting main**: `27b97a27cc78c5cf1fdfc8a1cb6ab864004733f6`
-- **Resulting main**: `bcc2f01cf11fc0b5bf89b8c16071f92f440749b3`
+PR #37 (squash `bcc2f01`) was merged with five unresolved Copilot review findings. The roadmap was
+marked completed prematurely in commit `fa7c998` (a direct push to main). Issues #31 and #32 have
+been reopened. Final closure and documentation update will occur only after the correction PR
+(`fix/sdk-stage2-post-merge-review-closeout`) is reviewed, fully green, and squash-merged through
+GitHub. This section will be replaced with accurate evidence at that point.
+
+## History
+
+- **PR #36** (squash `554837a`, v3.9.2): Governance remediation. Established public API security boundary.
+- **PR #37** (squash `bcc2f01`, merged 2026-07-05T06:05:47Z): Partial Stage 2 verification. Contains five unresolved review findings addressed in the correction PR.
+- **Correction PR**: In progress — addresses review findings from PR #37 and PR #36, strengthens tests, and delivers correct documentation.
 
 ## Stage 3 Status
 
-Stage 3 has **not begun**. Issue #12 (product and framework evolution roadmap) remains open. No Stage 3 implementation work is included in this merge.
+Stage 3 has **not begun**. No Stage 3 implementation work is included in any merged commit.
 
 ## Purpose
 

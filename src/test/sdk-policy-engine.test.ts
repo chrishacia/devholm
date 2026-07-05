@@ -1967,13 +1967,13 @@ describe('SDK Stage 2 policy engine', () => {
       }
     });
 
-    it('allows result with symbol-keyed extra property (symbols are not enumerable string keys)', async () => {
+    it('allows result with symbol-keyed extra property – symbol data not present on canonical result', async () => {
       const registry = createPolicyRegistry();
+      const sym = Symbol('hostile');
       registry.registerEvaluator({
         id: policyEvaluatorId('framework:evaluator:symbol-property'),
         owner: 'framework',
         evaluate: () => {
-          const sym = Symbol('hostile');
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const obj: any = {
             kind: 'allow',
@@ -1992,9 +1992,11 @@ describe('SDK Stage 2 policy engine', () => {
       );
 
       // Symbols are not checked by canonicalizePolicyResult; the result is canonical allow
-      // and the symbol-keyed extra data is not propagated to the result.
+      // and the original symbol-keyed payload is not present on the result.
       expect(result.kind).toBe('allow');
-      expect(result).not.toHaveProperty('symbol-data');
+      // The canonicalized result must not carry the original symbol key.
+      expect(Object.getOwnPropertySymbols(result)).not.toContain(sym);
+      expect(Object.getOwnPropertySymbols(result)).toHaveLength(0);
     });
   });
 
@@ -2014,19 +2016,25 @@ describe('SDK Stage 2 policy engine', () => {
 
     for (const testCase of invalidOwnerCases) {
       describe(`owner is ${testCase.label}`, () => {
-        it('validateDeclaration returns invalid with invalid-declaration code', () => {
+        it('validateDeclaration returns invalid with exact issue structure', () => {
           const registry = createPolicyRegistry();
+          const decl = defineAccessDeclaration({ kind: 'everyone' });
           const result = registry.validateDeclaration(
-            defineAccessDeclaration({ kind: 'everyone' }),
+            decl,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             testCase.value as any
           );
           expect(result.valid).toBe(false);
           expect(result.issues).toHaveLength(1);
-          expect(result.issues[0]).toHaveProperty('code', 'invalid-declaration');
+          // Exact issue shape: code, path, declarationKind — no unexpected fields
+          expect(result.issues[0]).toEqual({
+            code: 'invalid-declaration',
+            path: '$',
+            declarationKind: 'everyone',
+          });
         });
 
-        it('evaluateDeclaration returns policy-error invalid-declaration without throwing', async () => {
+        it('evaluateDeclaration returns exactly policy-error invalid-declaration without throwing', async () => {
           const registry = createPolicyRegistry();
           let threw = false;
           let result: Awaited<ReturnType<typeof registry.evaluateDeclaration>> | null = null;
@@ -2400,12 +2408,15 @@ describe('SDK Stage 2 policy engine', () => {
       expect(await evalHostile(new FakeAllow())).toEqual(invalidResultError);
     });
 
-    it('rejects object with custom null-chain prototype', async () => {
+    it('accepts null-prototype plain record – canonicalized to a new canonical result', async () => {
       const obj = Object.create(null) as Record<string, unknown>;
       obj['kind'] = 'allow';
-      // null prototype is allowed per canonicalize, so this should pass
+      // null prototype is accepted by canonicalizePolicyResult; the object canonicalizes to allow.
       const result = await evalHostile(obj);
       expect(result.kind).toBe('allow');
+      // The returned result is a newly constructed canonical object, not the original input.
+      expect(result).not.toBe(obj);
+      expect(Object.getOwnPropertySymbols(result)).toHaveLength(0);
     });
 
     it('rejects custom class prototype even when kind is valid', async () => {
@@ -2482,7 +2493,7 @@ describe('SDK Stage 2 policy engine', () => {
       expect(getterExecuted).toBe(0);
     });
 
-    it('allows symbol-keyed top-level property – symbol data not propagated to canonical result', async () => {
+    it('allows symbol-keyed top-level property – symbol key and data absent from canonical result', async () => {
       const sym = Symbol('hostile');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const obj: any = { kind: 'allow', [sym]: 'secret' };
@@ -2491,6 +2502,9 @@ describe('SDK Stage 2 policy engine', () => {
       const result = await evalHostile(obj);
       expect(result.kind).toBe('allow');
       expect(result).not.toBe(obj); // not the evaluator-provided object
+      // Verify the symbol key and its data are absent from the canonical result object.
+      expect(Object.getOwnPropertySymbols(result)).not.toContain(sym);
+      expect(Object.getOwnPropertySymbols(result)).toHaveLength(0);
     });
 
     it('rejects result with secret/API-key fields – never exposed', async () => {
