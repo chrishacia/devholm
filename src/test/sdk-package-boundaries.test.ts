@@ -211,12 +211,12 @@ describe('SDK package boundaries', () => {
     expect(inputs.some((input) => input.includes('server-only'))).toBe(false);
   });
 
-  it('verifies root export cannot be bundled as client-safe without explicit server prevention', () => {
+  it('root export bundles cleanly in client target – it carries no server-only marker', () => {
     // Try to bundle root export
     const { result } = bundleFixtureWithEsbuild(
       "import { defineAccessDeclaration } from '@devholm/sdk';\nvoid defineAccessDeclaration;"
     );
-    // Should succeed as root export is neutral
+    // Should succeed as root export is neutral (no server-only guard)
     expect(result.code).toBe(0);
   });
 

@@ -26,16 +26,17 @@ describe('SDK canonical import paths', () => {
     expect(fromRoot).toEqual(fromTesting);
   });
 
-  it('returns results that cannot be mutated', () => {
+  it('each call returns a fresh runtime copy – mutations do not affect subsequent calls', () => {
     const paths = supportedSdkImportPathsFromRoot();
     const originalLength = paths.length;
 
-    // Attempt mutations (should have no effect if truly immutable)
+    // The contract: each call returns a fresh array (not frozen).
+    // Mutations to the returned array do not affect the next call.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = paths as any[];
     result.push('malicious-path');
 
-    // Verify original function still returns same result
+    // Verify original function still returns same result on next call
     const newPaths = supportedSdkImportPathsFromRoot();
     expect(newPaths.length).toBe(originalLength);
     expect(newPaths).toEqual([
@@ -47,15 +48,17 @@ describe('SDK canonical import paths', () => {
     ]);
   });
 
-  it('returns readonly array type that prevents index assignment', () => {
+  it('returned array is not frozen – TypeScript readonly type only; runtime mutation is possible', () => {
     const paths = supportedSdkImportPathsFromRoot();
-    // TypeScript should enforce that paths is readonly
-    // At runtime, attempt to mutate would fail on strict object
+    // TypeScript types this as readonly, but the underlying value is a regular array.
+    // This test documents that runtime immutability is provided through fresh copies per call,
+    // NOT through Object.freeze(). This is the truthful documented contract.
+    expect(Object.isFrozen(paths)).toBe(false); // it is a fresh mutable array
     expect(() => {
-      // @ts-expect-error - Testing runtime immutability
+      // @ts-expect-error – Testing that runtime mutation works (but doesn't affect future calls)
       paths[0] = '@devholm/sdk/evil';
-    }).not.toThrow(); // JavaScript arrays can be mutated at runtime
-    // But the actual content should remain unchanged on the next call
+    }).not.toThrow();
+    // Mutation does not affect the next call
     const freshPaths = supportedSdkImportPathsFromRoot();
     expect(freshPaths[0]).toBe('@devholm/sdk');
   });

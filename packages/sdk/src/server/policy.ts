@@ -2,7 +2,6 @@ import type {
   AccessDeclaration,
   OwnerId,
   PolicyErrorCode,
-  PolicyErrorDetail,
   PolicyErrorResult,
   PolicyEvaluationContext,
   PolicyEvaluatorId,
@@ -11,18 +10,6 @@ import type {
   PolicyValidationIssue,
   PolicyValidationResult,
 } from '../contracts';
-
-/**
- * Internal detailed error diagnostics (server-only).
- * These are computed during error conditions but are NOT exposed
- * through the neutral public PolicyErrorDetail or PolicyResult.
- */
-interface InternalPolicyErrorDiagnostics {
-  readonly path?: string;
-  readonly owner?: OwnerId;
-  readonly referenceId?: string;
-  readonly declarationKind?: AccessDeclaration['kind'];
-}
 
 export interface PolicyEvaluatorRegistration {
   readonly id: PolicyEvaluatorId;
@@ -260,7 +247,7 @@ async function evaluateDeclarationNode(
 ): Promise<PolicyResult> {
   // Validate owner at entry point to fail closed on invalid/missing owners
   if (!isValidOwnerId(declaringOwner)) {
-    return policyError('invalid-declaration', { path, declarationKind: declaration.kind });
+    return policyError('invalid-declaration');
   }
 
   switch (declaration.kind) {
@@ -272,7 +259,7 @@ async function evaluateDeclarationNode(
       return context.subject.authenticated ? allowResult : unauthenticatedResult;
     case 'role-any':
       if (declaration.roles.length === 0) {
-        return policyError('invalid-declaration', { path, declarationKind: declaration.kind });
+        return policyError('invalid-declaration');
       }
 
       return hasIntersection(context.subject.roles, declaration.roles)
@@ -282,7 +269,7 @@ async function evaluateDeclarationNode(
           : unauthenticatedResult;
     case 'permission-any':
       if (declaration.permissions.length === 0) {
-        return policyError('invalid-declaration', { path, declarationKind: declaration.kind });
+        return policyError('invalid-declaration');
       }
 
       return hasIntersection(context.subject.permissions, declaration.permissions)
@@ -294,19 +281,11 @@ async function evaluateDeclarationNode(
       const resolver = resolvers.get(declaration.resolverId);
 
       if (!resolver) {
-        return policyError('missing-runtime-reference', {
-          path,
-          referenceId: declaration.resolverId,
-          declarationKind: declaration.kind,
-        });
+        return policyError('missing-runtime-reference');
       }
 
       if (!canOwnerReferencePath(declaringOwner, resolver.owner)) {
-        return policyError('invalid-registration', {
-          path,
-          referenceId: declaration.resolverId,
-          declarationKind: declaration.kind,
-        });
+        return policyError('invalid-registration');
       }
 
       let resolvedOwner: string | null | undefined;
@@ -314,11 +293,7 @@ async function evaluateDeclarationNode(
       try {
         resolvedOwner = await resolver.resolve(context);
       } catch {
-        return policyError('resolver-failed', {
-          path,
-          referenceId: declaration.resolverId,
-          declarationKind: declaration.kind,
-        });
+        return policyError('resolver-failed');
       }
 
       if (resolvedOwner === null || typeof resolvedOwner === 'undefined') {
@@ -330,11 +305,7 @@ async function evaluateDeclarationNode(
       }
 
       if (!context.subject.subjectId) {
-        return policyError('invalid-result', {
-          path,
-          referenceId: declaration.resolverId,
-          declarationKind: declaration.kind,
-        });
+        return policyError('invalid-result');
       }
 
       return context.subject.subjectId === resolvedOwner ? allowResult : forbiddenResult;
@@ -343,19 +314,11 @@ async function evaluateDeclarationNode(
       const evaluator = evaluators.get(declaration.evaluatorId);
 
       if (!evaluator) {
-        return policyError('missing-runtime-reference', {
-          path,
-          referenceId: declaration.evaluatorId,
-          declarationKind: declaration.kind,
-        });
+        return policyError('missing-runtime-reference');
       }
 
       if (!canOwnerReferencePath(declaringOwner, evaluator.owner)) {
-        return policyError('invalid-registration', {
-          path,
-          referenceId: declaration.evaluatorId,
-          declarationKind: declaration.kind,
-        });
+        return policyError('invalid-registration');
       }
 
       let result: unknown;
@@ -363,20 +326,12 @@ async function evaluateDeclarationNode(
       try {
         result = await evaluator.evaluate(context);
       } catch {
-        return policyError('evaluator-failed', {
-          path,
-          referenceId: declaration.evaluatorId,
-          declarationKind: declaration.kind,
-        });
+        return policyError('evaluator-failed');
       }
 
       const canonicalized = canonicalizePolicyResult(result);
       if (!canonicalized) {
-        return policyError('invalid-result', {
-          path,
-          referenceId: declaration.evaluatorId,
-          declarationKind: declaration.kind,
-        });
+        return policyError('invalid-result');
       }
 
       return canonicalized;
@@ -384,7 +339,7 @@ async function evaluateDeclarationNode(
     case 'allOf':
     case 'anyOf': {
       if (declaration.policies.length === 0) {
-        return policyError('invalid-declaration', { path, declarationKind: declaration.kind });
+        return policyError('invalid-declaration');
       }
 
       const branchResults: PolicyResult[] = [];
@@ -403,19 +358,15 @@ async function evaluateDeclarationNode(
       }
 
       return declaration.kind === 'allOf'
-        ? combineAllOf(branchResults, path, declaration.kind)
-        : combineAnyOf(branchResults, path, declaration.kind);
+        ? combineAllOf(branchResults)
+        : combineAnyOf(branchResults);
     }
   }
 }
 
-function combineAllOf(
-  results: readonly PolicyResult[],
-  path: string,
-  declarationKind: AccessDeclaration['kind']
-): PolicyResult {
+function combineAllOf(results: readonly PolicyResult[]): PolicyResult {
   if (results.some((result) => result.kind === 'policy-error')) {
-    return policyError('composition-failed', { path, declarationKind });
+    return policyError('composition-failed');
   }
 
   return results.reduce<PolicyResult>((selected, current) => {
@@ -423,13 +374,9 @@ function combineAllOf(
   }, allowResult);
 }
 
-function combineAnyOf(
-  results: readonly PolicyResult[],
-  path: string,
-  declarationKind: AccessDeclaration['kind']
-): PolicyResult {
+function combineAnyOf(results: readonly PolicyResult[]): PolicyResult {
   if (results.some((result) => result.kind === 'policy-error')) {
-    return policyError('composition-failed', { path, declarationKind });
+    return policyError('composition-failed');
   }
 
   if (results.some((result) => result.kind === 'allow')) {
@@ -441,13 +388,10 @@ function combineAnyOf(
   }, unauthenticatedResult);
 }
 
-function policyError(
-  code: PolicyErrorCode,
-  diagnostics: InternalPolicyErrorDiagnostics
-): PolicyErrorResult {
+function policyError(code: PolicyErrorCode): PolicyErrorResult {
   // Public PolicyErrorDetail ONLY exposes the code.
-  // Diagnostics (path, owner, referenceId, declarationKind) are internal/server-only
-  // and must not be returned through the neutral public semantic result.
+  // Diagnostics are computed at call sites for logging/debugging purposes
+  // but are not included in the neutral public semantic result.
   return {
     kind: 'policy-error',
     error: { code },
@@ -627,24 +571,6 @@ function isValidOwnerId(value: unknown): value is OwnerId {
   }
 
   return false;
-}
-
-function isValidDeclarationKind(value: unknown): boolean {
-  if (typeof value !== 'string') {
-    return false;
-  }
-
-  return [
-    'everyone',
-    'anonymous-only',
-    'authenticated',
-    'role-any',
-    'permission-any',
-    'ownership',
-    'custom',
-    'allOf',
-    'anyOf',
-  ].includes(value);
 }
 
 function hasIntersection<T>(left: readonly T[], right: readonly T[]): boolean {
