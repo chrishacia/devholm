@@ -1,30 +1,76 @@
 # SDK Stage 2: Deterministic Policy Engine and Registries
 
-Status: **Completed** ✅
+Status: **Completed ✅**
 Date: 2026-07-05
 Related issue: #31
 Related parent workstream: #6
 Related ADR: `docs/roadmap/decisions/0002-sdk-boundaries-and-access-policy.md`
 
-## Completion Evidence
+## Governance history
 
-- **PR #36** (governance remediation, squash SHA `554837a`) — v3.9.2: Fixed governance violation (direct push `dee3946`), established public API security boundary (`PolicyErrorDetail` minimal), added initial 78 test cases.
-- **PR #37** (final verification, squash SHA `bcc2f01cf11fc0b5bf89b8c16071f92f440749b3`) — merged 2026-07-05T06:05:47Z: Completed all remaining Stage 2 requirements.
-  - Removed unused `diagnostics` parameter from `policyError()` (dead code)
-  - Added invalid-owner validation matrix (10 invalid types × 3 assertions each)
-  - Added full 16-pair validation-time and runtime owner-reference matrices for both evaluators and resolvers
-  - Added nested allOf/anyOf cross-owner violation tests
-  - Added extended hostile evaluator result canonicalization suite
-  - Replaced false `execSync` exitCode tests with `spawnSync` in version-sync tests
-  - Fixed misleading test names in canonical-imports and package-boundary tests
-- **CI Run 28730973872**: All 8 checks passing (Sync DevHolm Framework, Detect Non-Docs Changes, Lint & Type Check, Unit Tests, Security Scan, Build Application, E2E Tests, GitGuardian Security Checks)
-- **Test counts**: sdk-policy-engine.test.ts: 193, sdk-version-sync.test.ts: 24, sdk-canonical-imports.test.ts: 8, sdk-package-boundaries.test.ts: 17, total suite: 534 passed / 28 skipped
-- **Starting main**: `27b97a27cc78c5cf1fdfc8a1cb6ab864004733f6`
-- **Resulting main**: `bcc2f01cf11fc0b5bf89b8c16071f92f440749b3`
+Stage 2 was delivered through three governed PRs plus one corrective PR:
+
+- **PR #36** (squash `554837a`, v3.9.2): Governance remediation. Established public API security boundary.
+- **PR #37** (squash `bcc2f01`, merged 2026-07-05T06:05:47Z): Primary Stage 2 implementation — policy engine, registries, version sync, canonical imports. Merged with five unresolved Copilot review findings.
+- **Direct push `fa7c998`** (2026-07-05): Premature documentation push directly to main before review findings were resolved. This violated the governed merge process. Issues #31 and #32 were reopened as a result.
+- **PR #38** (`fix/sdk-stage2-post-merge-review-closeout`): Corrective PR. Addressed all eight unresolved review threads (PR #36: 2, PR #37: 5, PR #38: 1), replaced a non-production-equivalent boundary test with a real esbuild bundle-and-execute proof, removed fake marker module approach, and implemented the real `"browser": null` conditional-export boundary. All governance irregularities are now remediated.
+
+The squash SHA, merge timestamp, resulting main SHA, and release version will be recorded in issues #6, #31, and #32 after PR #38 is merged.
+
+## Stage 2 completion evidence
+
+### Implementation
+
+- Boundary mechanism: `"browser": null` in `packages/sdk/package.json` server export — no fake marker, no Vitest alias for production behavior.
+- Browser-negative proof: esbuild with `--platform=browser` fails with error matching `"browser": null` condition disabled by package author.
+- Server-positive proof: esbuild with `--platform=node --conditions=react-server` bundles and executes successfully; Node exits 0, stdout contains `server-import-ok`, stderr empty.
+
+### Code-validation CI
+
+- Head: `2087c07d1028472397fdbf40f5ad6b9741444577`
+- Run: `28734689827` — conclusion: **success**
+- Lint & Type Check: success
+- Unit Tests: success
+- Security Scan: success
+- Build Application: success
+- E2E Tests: success
+- Docker publish / production deployment: skipped as expected
+
+### Test counts (all local, final head)
+
+| Suite                  | Passed                     |
+| ---------------------- | -------------------------- |
+| sdk-package-boundaries | 20                         |
+| sdk-canonical-imports  | 10                         |
+| sdk-policy-engine      | 193                        |
+| sdk-version-sync       | 29                         |
+| **Whole suite**        | **544 passed, 28 skipped** |
+| Test files             | 38 passed, 1 skipped       |
+
+### Review threads
+
+| PR  | Unresolved before | Unresolved after |
+| --- | ----------------- | ---------------- |
+| #36 | 2                 | 0                |
+| #37 | 5                 | 0                |
+| #38 | 1                 | 0                |
+
+### Versions and lockfile
+
+- Root `package.json` version: `3.9.3`
+- `packages/sdk/package.json` version: `3.9.3`
+- `pnpm-lock.yaml`: identical to main (no correction-related churn)
+- `vitest.config.ts`: identical to main (no correction-related churn)
+
+## History
+
+- **PR #36** (squash `554837a`, v3.9.2): Governance remediation. Established public API security boundary.
+- **PR #37** (squash `bcc2f01`, merged 2026-07-05T06:05:47Z): Partial Stage 2 verification. Contains five unresolved review findings addressed in the correction PR.
+- **PR #38** (corrective, squash SHA pending): Addresses all review findings, real boundary proof, final documentation. Squash SHA and release to be recorded in issues after merge.
 
 ## Stage 3 Status
 
-Stage 3 has **not begun**. Issue #12 (product and framework evolution roadmap) remains open. No Stage 3 implementation work is included in this merge.
+Stage 3 has **not begun**. No Stage 3 implementation work is included in any merged commit.
 
 ## Purpose
 

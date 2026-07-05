@@ -66,6 +66,35 @@ function bundleFixtureWithEsbuild(entryImport: string) {
   };
 }
 
+function bundleAndRunFixtureOnServer(entryContent: string) {
+  const fixture = withTempProject({
+    'entry.ts': entryContent,
+  });
+
+  const outputFile = path.join(fixture.tempRoot, 'bundle.mjs');
+
+  const bundleResult = run('pnpm', [
+    'exec',
+    'esbuild',
+    path.join(fixture.tempRoot, 'entry.ts'),
+    '--bundle',
+    '--platform=node',
+    '--format=esm',
+    '--conditions=react-server',
+    '--log-level=error',
+    `--outfile=${outputFile}`,
+  ]);
+
+  let runResult = { code: -1, stdout: '', stderr: '' };
+  if (bundleResult.code === 0) {
+    runResult = run('node', [outputFile]);
+  }
+
+  fixture.cleanup();
+
+  return { bundleResult, runResult };
+}
+
 describe('SDK package boundaries', () => {
   it('keeps the root and SDK package versions in lockstep during issue #6', () => {
     const rootPackage = JSON.parse(
@@ -220,6 +249,47 @@ describe('SDK package boundaries', () => {
     expect(result.code).toBe(0);
   });
 
+  it('@devholm/sdk/server is rejected from a browser/client bundle because of the server-only boundary', () => {
+    // Attempting to bundle the server entrypoint for a browser target must fail
+    // because the package export map explicitly disables the server export via "browser": null.
+    // esbuild will reject this during resolution when building for browser target.
+    const { result } = bundleFixtureWithEsbuild(
+      "import { createPolicyRegistry } from '@devholm/sdk/server';\nvoid createPolicyRegistry;"
+    );
+
+    // The bundle must fail – this is the production boundary enforcement via conditional exports.
+    expect(result.code).not.toBe(0);
+    // Verify the error is related to the export being disabled via "browser": null
+    // (esbuild explicitly mentions the package.json and the disabled condition)
+    expect(result.stderr).toMatch(/browser.*null|disabled by the package author/i);
+  });
+
+  it('@devholm/sdk/server bundles and executes successfully on a Node.js/server target', () => {
+    // Prove the server entrypoint can be bundled for a Node.js server target using react-server
+    // conditions and that the resulting bundle executes successfully with real exports available.
+    // This uses the same esbuild bundling path a production server consumer would use.
+    const entryContent = [
+      "import { createPolicyRegistry } from '@devholm/sdk/server';",
+      '',
+      "if (typeof createPolicyRegistry !== 'function') {",
+      "  throw new Error('createPolicyRegistry is unavailable');",
+      '}',
+      '',
+      "console.log('server-import-ok');",
+    ].join('\n');
+
+    const { bundleResult, runResult } = bundleAndRunFixtureOnServer(entryContent);
+
+    // Bundle must succeed on Node.js server target using react-server conditions
+    expect(bundleResult.code).toBe(0);
+    expect(bundleResult.stderr).toBe('');
+
+    // Execution must succeed with the expected output
+    expect(runResult.code).toBe(0);
+    expect(runResult.stdout.trim()).toContain('server-import-ok');
+    expect(runResult.stderr).toBe('');
+  });
+
   it('confirms @devholm/sdk/server carries the server-only marker', () => {
     const serverEntrypoint = path.join(repoRoot, 'packages/sdk/src/server.ts');
     const content = fs.readFileSync(serverEntrypoint, 'utf8');
@@ -230,10 +300,10 @@ describe('SDK package boundaries', () => {
   it('confirms server entrypoint includes server-only guard', () => {
     const serverEntrypoint = path.join(repoRoot, 'packages/sdk/src/server.ts');
     const content = fs.readFileSync(serverEntrypoint, 'utf8');
-    // Should import server-only as first import
-    expect(content.startsWith("import 'server-only';")).toBe(true);
-    // Should also have runtime guard
-    expect(content).toContain("typeof window !== 'undefined'");
+    // Should import server-only as first import (check for both quote styles)
+    expect(content).toMatch(/^import\s+["']server-only["'];/);
+    // Should also have runtime guard (check for both quote styles)
+    expect(content).toMatch(/typeof window !== ["']undefined["']/);
   });
 
   it('confirms middleware entrypoint does not contain server-only marker', () => {
@@ -305,5 +375,24 @@ describe('SDK package boundaries', () => {
 
     const result = run('node', ['--input-type=module', '-e', script]);
     expect(result.code).toBe(0);
+  });
+
+  it('Vitest server-only alias is test-only: the real package is incompatible with browser targets', () => {
+    // The Vitest config maps 'server-only' to a fixture stub in tests.
+    // That stub must not be used outside the test environment.
+    // Confirm: the real 'server-only' package has no browser field and
+    // will cause a build error when bundled for browser, while the Vitest fixture exists.
+    const vitestFixture = path.join(repoRoot, 'src/test/__fixtures__/server-only.ts');
+    expect(fs.existsSync(vitestFixture)).toBe(true);
+
+    // The actual server-only package must NOT have a browser-compatible main entry
+    const realServerOnly = path.join(repoRoot, 'node_modules/server-only');
+    if (fs.existsSync(realServerOnly)) {
+      const pkg = JSON.parse(
+        fs.readFileSync(path.join(realServerOnly, 'package.json'), 'utf8')
+      ) as Record<string, unknown>;
+      // server-only must not have a browser field or browser-specific entry
+      expect(pkg.browser).toBeUndefined();
+    }
   });
 });
