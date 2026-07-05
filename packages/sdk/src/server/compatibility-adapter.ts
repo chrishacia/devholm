@@ -73,21 +73,37 @@ export interface LegacyAuthorizationSubject {
 /**
  * Safely convert an unknown value to a non-null plain object or null.
  *
- * Rejects: null, undefined, non-objects, arrays, Date objects, and functions.
- * Date objects are rejected because they are not plain key-value records.
- * Exceptions from `instanceof Date` on a proxy are caught and treated as safe
- * (i.e., the object is accepted — the proxy check is best-effort).
+ * Accepted records: plain objects or null-prototype records with own data properties.
+ * Rejected: null, undefined, non-objects, arrays, Date instances, functions.
+ *
+ * Every inspection operation that may invoke a proxy trap is wrapped in an exception
+ * boundary. Any exception during inspection causes this function to return null (fail
+ * closed). The "fail closed" contract means we never accept an object whose type we
+ * cannot safely determine.
+ *
+ * - `Array.isArray`: may throw on a revoked proxy or a proxy whose `isArray` internal
+ *   operation throws — wrapped, returns null on exception.
+ * - `instanceof Date`: invokes the [[GetPrototypeOf]] internal method — may throw on a
+ *   revoked proxy — wrapped, returns null on exception (fail closed, not accepted).
  */
 function toSafeObject(val: unknown): object | null {
   if (val === null || val === undefined) return null;
   if (typeof val !== 'object') return null;
-  if (Array.isArray(val)) return null;
-  // Reject Date objects (not plain records). instanceof may invoke proxy
-  // [[GetPrototypeOf]] trap; catch and accept on failure (conservative).
+  // Array.isArray may throw on a revoked proxy or a proxy whose isArray trap throws.
+  // Fail closed: cannot safely determine type, so reject.
+  let isArr: boolean;
+  try {
+    isArr = Array.isArray(val);
+  } catch {
+    return null; // fail closed
+  }
+  if (isArr) return null;
+  // instanceof Date invokes [[GetPrototypeOf]] which can throw on a revoked proxy.
+  // Fail closed: reject if we cannot safely determine the prototype chain.
   try {
     if (val instanceof Date) return null;
   } catch {
-    // Proxy trap threw — treat as acceptable plain object
+    return null; // fail closed: cannot safely inspect, reject
   }
   return val as object;
 }

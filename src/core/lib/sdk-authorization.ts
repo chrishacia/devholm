@@ -23,6 +23,7 @@ import {
   canonicalSubjectFromToken,
   canonicalSubjectToNormalizedPolicySubject,
   mapPolicyToAuthorizationResult,
+  evaluateServerActionAuthorization,
   type AuthorizationResult,
   type AuthorizationEvaluationOptions,
   type ServerActionAuthorizationResult,
@@ -144,26 +145,43 @@ export async function authorizeRequest(
 }
 
 /**
- * Evaluate authorization for a Next.js server action using JWT token from request.
+ * Evaluate authorization for a Next.js server action using a session from `auth()`.
  *
- * Returns a ServerActionAuthorizationResult with an explicit `allowed` flag
- * suitable for server-action return values — no HTTP status codes.
+ * This is the correct pattern for real Next.js Server Actions, which must obtain
+ * authentication context internally (not from caller-supplied arguments).
+ * Call `auth()` inside the action and pass the result here.
+ *
+ * Returns a ServerActionAuthorizationResult with an explicit `allowed` flag and
+ * structured result suitable for serializable server-action return values.
  *
  * @example
  * ```ts
  * 'use server';
- * import { authorizeServerAction, adminAccessDeclaration, adminAccessOwner } from '@/lib/sdk-authorization';
- * import type { NextRequest } from 'next/server';
+ * import { auth } from '@/auth';
+ * import { authorizeSessionAction, adminAccessDeclaration, adminAccessOwner } from '@/lib/sdk-authorization';
  *
- * // authorizeServerAction requires a NextRequest (available in Server Actions
- * // invoked from route handlers). For session-based actions without a request,
- * // call evaluateServerActionAuthorization() directly with auth().
- * export async function dismissOnboarding(request: NextRequest) {
- *   const auth = await authorizeServerAction(request, adminAccessDeclaration, adminAccessOwner);
- *   if (!auth.allowed) return { success: false, error: auth.errorMessage };
- *   // proceed...
+ * export async function dismissOnboarding(formData: FormData) {
+ *   const session = await auth();
+ *   const authorization = await authorizeSessionAction(session, adminAccessDeclaration, adminAccessOwner);
+ *   if (!authorization.allowed) return { success: false, error: authorization.errorMessage };
+ *   // proceed with action body...
  * }
  * ```
+ */
+export async function authorizeSessionAction(
+  session: { user?: unknown } | null | undefined,
+  declaration: AccessDeclaration,
+  owner: OwnerId,
+  options?: AuthorizationEvaluationOptions
+): Promise<ServerActionAuthorizationResult> {
+  return evaluateServerActionAuthorization(session, declaration, owner, appRegistry, options);
+}
+
+/**
+ * Evaluate authorization for a NextRequest using JWT token auth (for API route handlers).
+ *
+ * For real Next.js Server Actions (which never receive a NextRequest argument), use
+ * `authorizeSessionAction` with a session obtained from `auth()` instead.
  */
 export async function authorizeServerAction(
   request: NextRequest,

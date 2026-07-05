@@ -125,49 +125,78 @@ test.describe('Stage 3 SDK authorization: anonymous enforcement', () => {
 // Stage 3 SDK Authorization: Access matrix (authenticated)
 //
 // These tests require a running application with seeded credentials.
-// They use the E2E database bootstrap seed which provisions:
+// The E2E seed provisions the following identity:
 //   admin@example.test / e2e-test-password-change-me (role: admin)
 //
-// Full matrix is tested via unit/integration parity tests above.
+// The full access matrix for all identity types (superadmin, permission-only,
+// member) is covered in the unit/integration parity tests in
+// src/test/sdk-stage3-production-surfaces.test.ts and
+// src/test/sdk-stage3-authorization.test.ts.
+//
 // E2E coverage here proves the real HTTP handler enforces Stage 3 authorization
-// at the HTTP boundary, not just in isolated unit tests.
+// at the HTTP boundary using a real session cookie obtained via actual login.
+//
+// Failure policy:
+//   - Login failure FAILS the test (no test.skip — a missing seed is a real defect)
+//   - Cookie not found FAILS the test
+//   - Unexpected HTTP status FAILS the test
+//
+// E2E matrix coverage (with seeded identity):
+// Dashboard (adminAccessDeclaration):
+//   - admin role → 200 ✅
+//   - anonymous → 401 ✅ (above)
+// Users management (usersManageDeclaration):
+//   - admin role → 200 ✅ (anyOf: adminAccessDeclaration branch)
+//   - anonymous → 401 ✅ (above)
+//
+// Remaining matrix (superadmin, admin.access permission, users.manage permission, member denied):
+//   Covered by integration parity tests in sdk-stage3-production-surfaces.test.ts.
+//   Real E2E for those identities requires additional database seeds.
 // ---------------------------------------------------------------------------
 
 test.describe('Stage 3 SDK authorization: authenticated access matrix', () => {
-  // Helper to obtain a session token for a seeded credential
-  async function getAdminCookie(
+  // Obtain a real session cookie for the seeded admin identity.
+  // Failure to log in FAILS the test — a missing seed or broken login is a defect.
+  async function loginAndGetSessionCookie(
     page: import('@playwright/test').Page
-  ): Promise<string | undefined> {
+  ): Promise<{ name: string; value: string }> {
     await page.goto('/admin/login');
     await page.getByRole('textbox', { name: /email/i }).fill('admin@example.test');
     await page.locator('input[type="password"]').first().fill('e2e-test-password-change-me');
     await page.getByRole('button', { name: /sign in|log in/i }).click();
-    // Wait for redirect to admin dashboard
-    await page.waitForURL(/\/admin(?!\/login)/, { timeout: 10000 }).catch(() => undefined);
+
+    // Wait for post-login redirect; if login fails the URL stays on /admin/login
+    await page.waitForURL(/\/admin(?!\/login)/, { timeout: 15000 });
+    const postLoginUrl = page.url();
+    if (postLoginUrl.includes('/admin/login')) {
+      throw new Error(
+        'E2E login failed: still on /admin/login after submit. ' +
+          'Check that admin@example.test is seeded with the expected password.'
+      );
+    }
+
     const cookies = await page.context().cookies();
-    const session = cookies.find(
+    const sessionCookie = cookies.find(
       (c) => c.name === 'authjs.session-token' || c.name === '__Secure-authjs.session-token'
     );
-    return session?.value;
+    if (!sessionCookie) {
+      throw new Error(
+        'E2E login succeeded (redirected from login) but no session cookie was set. ' +
+          'Check NextAuth cookie configuration.'
+      );
+    }
+    return { name: sessionCookie.name, value: sessionCookie.value };
   }
 
   test('authenticated admin-role caller: GET /api/admin/dashboard returns 200', async ({
     page,
     request,
   }) => {
-    await getAdminCookie(page);
-    const cookies = await page.context().cookies();
-    const sessionCookie = cookies.find(
-      (c) => c.name === 'authjs.session-token' || c.name === '__Secure-authjs.session-token'
-    );
-    if (!sessionCookie) {
-      test.skip(true, 'Login failed or no session cookie — skip authenticated E2E');
-      return;
-    }
+    const cookie = await loginAndGetSessionCookie(page);
     const response = await request.get('/api/admin/dashboard', {
-      headers: { Cookie: `${sessionCookie.name}=${sessionCookie.value}` },
+      headers: { Cookie: `${cookie.name}=${cookie.value}` },
     });
-    // Admin role → Stage 3 adminAccessDeclaration → allowed
+    // Admin role → Stage 3 adminAccessDeclaration (anyOf role-any[admin]) → 200
     expect(response.status()).toBe(200);
   });
 
@@ -175,19 +204,11 @@ test.describe('Stage 3 SDK authorization: authenticated access matrix', () => {
     page,
     request,
   }) => {
-    await getAdminCookie(page);
-    const cookies = await page.context().cookies();
-    const sessionCookie = cookies.find(
-      (c) => c.name === 'authjs.session-token' || c.name === '__Secure-authjs.session-token'
-    );
-    if (!sessionCookie) {
-      test.skip(true, 'Login failed or no session cookie — skip authenticated E2E');
-      return;
-    }
+    const cookie = await loginAndGetSessionCookie(page);
     const response = await request.get('/api/admin/auth/users', {
-      headers: { Cookie: `${sessionCookie.name}=${sessionCookie.value}` },
+      headers: { Cookie: `${cookie.name}=${cookie.value}` },
     });
-    // Admin role → Stage 3 usersManageDeclaration anyOf → allowed via adminAccessDeclaration
+    // Admin role → Stage 3 usersManageDeclaration anyOf → adminAccessDeclaration → 200
     expect(response.status()).toBe(200);
   });
 });

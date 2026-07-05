@@ -71,9 +71,23 @@ export function safeOwnBoolean(obj: object, key: string): boolean {
 /**
  * Safely extract string elements from an array without invoking accessor-backed indices.
  * Returns sorted, deduplicated, pollution-filtered strings.
+ *
+ * Every potentially trapping operation — including `Array.isArray`, `Object.getOwnPropertyNames`,
+ * and per-element `Object.getOwnPropertyDescriptor` — is wrapped in an exception boundary.
+ * A revoked proxy, a proxy whose `isArray` internal slot throws, or a proxy whose
+ * `[[OwnPropertyKeys]]` trap throws will return a frozen empty array instead of propagating
+ * an exception to the caller.
  */
 export function safeStringElements(val: unknown): readonly string[] {
-  if (!Array.isArray(val)) return Object.freeze([]);
+  // Array.isArray invokes the [[IsArray]] internal method which can throw on a revoked proxy
+  // or a proxy whose handler has been configured to throw. Must be inside a try/catch.
+  let isArr: boolean;
+  try {
+    isArr = Array.isArray(val);
+  } catch {
+    return Object.freeze([]);
+  }
+  if (!isArr) return Object.freeze([]);
 
   const result: string[] = [];
 

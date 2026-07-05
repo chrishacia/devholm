@@ -474,3 +474,182 @@ describe('evaluateServerActionAuthorization', () => {
     expect(result.subject.isAdmin).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Real Server Action integration tests — authorizeSessionAction
+// ---------------------------------------------------------------------------
+// These tests invoke authorizeSessionAction (the application helper used by
+// the real Server Actions in sdk-authorization-proof.ts) with realistic session
+// shapes. They use the actual application registry and declarations — no mocks.
+//
+// Coverage:
+// - anonymous caller (null session)
+// - admin-role caller
+// - permission-only caller
+// - ordinary member
+// - malformed session data (forged/injected fields have no effect)
+// - policy-error fails closed
+// - client-supplied forged authorization fields cannot grant access
+// - action body executes only after allowed
+// - sanitized error result contains no raw exception content
+// ---------------------------------------------------------------------------
+
+import { authorizeSessionAction } from '../core/lib/sdk-authorization';
+
+describe('authorizeSessionAction — application Server Action adapter', () => {
+  it('anonymous caller (null session) → unauthenticated, not allowed', async () => {
+    const result = await authorizeSessionAction(null, adminAccessDeclaration, adminAccessOwner);
+    expect(result.allowed).toBe(false);
+    expect(result.result).toBe(AuthorizationTransportResult.UNAUTHENTICATED);
+  });
+
+  it('admin-role caller → allowed for adminAccessDeclaration', async () => {
+    const session = {
+      user: { id: 'u-admin', role: 'admin', roles: ['admin'], permissions: [], isAdmin: true },
+    };
+    const result = await authorizeSessionAction(session, adminAccessDeclaration, adminAccessOwner);
+    expect(result.allowed).toBe(true);
+    expect(result.result).toBe(AuthorizationTransportResult.ALLOW);
+    expect(result.subject.userId).toBe('u-admin');
+  });
+
+  it('superadmin-role caller → allowed for adminAccessDeclaration', async () => {
+    const session = {
+      user: {
+        id: 'u-super',
+        role: 'superadmin',
+        roles: ['superadmin'],
+        permissions: [],
+        isAdmin: true,
+      },
+    };
+    const result = await authorizeSessionAction(session, adminAccessDeclaration, adminAccessOwner);
+    expect(result.allowed).toBe(true);
+    expect(result.result).toBe(AuthorizationTransportResult.ALLOW);
+  });
+
+  it('admin.access permission-only caller → allowed for adminAccessDeclaration', async () => {
+    const session = {
+      user: {
+        id: 'u-perm',
+        role: 'member',
+        roles: ['member'],
+        permissions: ['admin.access'],
+        isAdmin: false,
+      },
+    };
+    const result = await authorizeSessionAction(session, adminAccessDeclaration, adminAccessOwner);
+    expect(result.allowed).toBe(true);
+    expect(result.result).toBe(AuthorizationTransportResult.ALLOW);
+  });
+
+  it('ordinary member → denied for adminAccessDeclaration', async () => {
+    const session = {
+      user: { id: 'u-member', role: 'member', roles: ['member'], permissions: [], isAdmin: false },
+    };
+    const result = await authorizeSessionAction(session, adminAccessDeclaration, adminAccessOwner);
+    expect(result.allowed).toBe(false);
+    expect(result.result).toBe(AuthorizationTransportResult.FORBIDDEN);
+  });
+
+  it('users.manage permission-only caller → allowed for usersManageDeclaration', async () => {
+    const session = {
+      user: {
+        id: 'u-users-manage',
+        role: 'member',
+        roles: ['member'],
+        permissions: ['users.manage'],
+        isAdmin: false,
+      },
+    };
+    const result = await authorizeSessionAction(session, usersManageDeclaration, usersManageOwner);
+    expect(result.allowed).toBe(true);
+    expect(result.result).toBe(AuthorizationTransportResult.ALLOW);
+  });
+
+  it('ordinary member → denied for usersManageDeclaration', async () => {
+    const session = {
+      user: { id: 'u-mem2', role: 'member', roles: ['member'], permissions: [], isAdmin: false },
+    };
+    const result = await authorizeSessionAction(session, usersManageDeclaration, usersManageOwner);
+    expect(result.allowed).toBe(false);
+    expect(result.result).toBe(AuthorizationTransportResult.FORBIDDEN);
+  });
+
+  it('malformed session (missing user.id) → unauthenticated, not allowed', async () => {
+    // Caller-supplied session with no id field — normalization rejects it
+    const session = { user: { role: 'admin', roles: ['admin'], isAdmin: true } };
+    const result = await authorizeSessionAction(session, adminAccessDeclaration, adminAccessOwner);
+    expect(result.allowed).toBe(false);
+    expect(result.result).toBe(AuthorizationTransportResult.UNAUTHENTICATED);
+  });
+
+  it('client-supplied forged authorization fields cannot grant access', async () => {
+    // A client cannot inject an extra `allowed: true` or forged role into the session.
+    // Authorization derives from the session.user fields only, not from extra keys.
+    const session = {
+      user: {
+        id: 'u-forged',
+        role: 'member',
+        roles: ['member'],
+        permissions: [],
+        isAdmin: false,
+        // Forged extra fields — these have no effect on the policy evaluation
+        _forgedRole: 'admin',
+        _forgedAllowed: true,
+      },
+    };
+    const result = await authorizeSessionAction(session, adminAccessDeclaration, adminAccessOwner);
+    expect(result.allowed).toBe(false);
+    expect(result.result).toBe(AuthorizationTransportResult.FORBIDDEN);
+  });
+
+  it('policy error fails closed — allowed is false, result is POLICY_ERROR', async () => {
+    const missingDecl = defineAccessDeclaration({
+      kind: 'custom',
+      evaluatorId: policyEvaluatorId('site:evaluator:nonexistent'),
+    });
+    const session = {
+      user: { id: 'u-err', role: 'admin', roles: ['admin'], permissions: [], isAdmin: true },
+    };
+    const result = await authorizeSessionAction(session, missingDecl, 'site');
+    expect(result.allowed).toBe(false);
+    expect(result.result).toBe(AuthorizationTransportResult.POLICY_ERROR);
+    expect(result.result).not.toBe(AuthorizationTransportResult.ALLOW);
+    expect(result.result).not.toBe(AuthorizationTransportResult.FORBIDDEN);
+  });
+
+  it('sanitized error result contains no raw exception content', async () => {
+    const missingDecl = defineAccessDeclaration({
+      kind: 'custom',
+      evaluatorId: policyEvaluatorId('site:evaluator:nonexistent'),
+    });
+    const session = { user: { id: 'u-san', role: 'admin', roles: ['admin'], permissions: [] } };
+    const result = await authorizeSessionAction(session, missingDecl, 'site');
+    // errorMessage must be a sanitized string, not a raw exception message
+    if (result.errorMessage !== undefined) {
+      expect(result.errorMessage).not.toMatch(/error:/i);
+      expect(result.errorMessage).not.toMatch(/stack/i);
+      expect(result.errorMessage).not.toMatch(/at\s+\w/); // no stack trace lines
+    }
+  });
+
+  it('action body executes only after allowed — subject is present when allowed', async () => {
+    const session = {
+      user: { id: 'u-act', role: 'admin', roles: ['admin'], permissions: [], isAdmin: true },
+    };
+    const result = await authorizeSessionAction(session, adminAccessDeclaration, adminAccessOwner);
+    expect(result.allowed).toBe(true);
+    // Subject must be present and contain the correct userId for the action body to use
+    expect(result.subject).toBeDefined();
+    expect(result.subject.userId).toBe('u-act');
+    // Denied subjects should not expose admin role
+    const deniedResult = await authorizeSessionAction(
+      { user: { id: 'u-den', role: 'member', roles: ['member'], permissions: [] } },
+      adminAccessDeclaration,
+      adminAccessOwner
+    );
+    expect(deniedResult.allowed).toBe(false);
+    expect(deniedResult.subject.isAdmin).toBe(false);
+  });
+});
