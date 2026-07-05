@@ -274,10 +274,10 @@ describe('SDK package boundaries', () => {
   it('confirms server entrypoint includes server-only guard', () => {
     const serverEntrypoint = path.join(repoRoot, 'packages/sdk/src/server.ts');
     const content = fs.readFileSync(serverEntrypoint, 'utf8');
-    // Should import server-only as first import
-    expect(content.startsWith("import 'server-only';")).toBe(true);
-    // Should also have runtime guard
-    expect(content).toContain("typeof window !== 'undefined'");
+    // Should import server-only as first import (check for both quote styles)
+    expect(content).toMatch(/^import\s+["']server-only["'];/);
+    // Should also have runtime guard (check for both quote styles)
+    expect(content).toMatch(/typeof window !== ["']undefined["']/);
   });
 
   it('confirms middleware entrypoint does not contain server-only marker', () => {
@@ -366,7 +366,7 @@ describe('SDK package boundaries', () => {
         fs.readFileSync(path.join(realServerOnly, 'package.json'), 'utf8')
       ) as Record<string, unknown>;
       // server-only must not have a browser field or browser-specific entry
-      expect(pkg['browser']).toBeUndefined();
+      expect(pkg.browser).toBeUndefined();
     }
   });
 });

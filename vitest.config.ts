@@ -1,7 +1,7 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
-import path from 'path';
+import path from 'node:path';
 
 export default defineConfig({
   plugins: [react()],
@@ -23,17 +23,35 @@ export default defineConfig({
         find: 'server-only',
         replacement: path.resolve(__dirname, './src/test/__fixtures__/server-only.ts'),
       },
-      { find: '@/components', replacement: path.resolve(__dirname, './src/core/components') },
+      {
+        find: '@/components',
+        replacement: path.resolve(__dirname, './src/core/components'),
+      },
       { find: '@/lib', replacement: path.resolve(__dirname, './src/core/lib') },
-      { find: '@/hooks', replacement: path.resolve(__dirname, './src/core/hooks') },
+      {
+        find: '@/hooks',
+        replacement: path.resolve(__dirname, './src/core/hooks'),
+      },
       { find: '@/db', replacement: path.resolve(__dirname, './src/core/db') },
-      { find: '@/config', replacement: path.resolve(__dirname, './src/core/config') },
-      { find: '@/theme', replacement: path.resolve(__dirname, './src/core/theme') },
-      { find: '@/types', replacement: path.resolve(__dirname, './src/core/types_app') },
+      {
+        find: '@/config',
+        replacement: path.resolve(__dirname, './src/core/config'),
+      },
+      {
+        find: '@/theme',
+        replacement: path.resolve(__dirname, './src/core/theme'),
+      },
+      {
+        find: '@/types',
+        replacement: path.resolve(__dirname, './src/core/types_app'),
+      },
       { find: '@', replacement: path.resolve(__dirname, './src') },
       { find: '@core', replacement: path.resolve(__dirname, './src/core') },
       { find: '@user', replacement: path.resolve(__dirname, './src/user') },
-      { find: '@config', replacement: path.resolve(__dirname, './devholm.config') },
+      {
+        find: '@config',
+        replacement: path.resolve(__dirname, './devholm.config'),
+      },
     ],
   },
 });
