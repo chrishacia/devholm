@@ -23,10 +23,6 @@ export default defineConfig({
         find: 'server-only',
         replacement: path.resolve(__dirname, './src/test/__fixtures__/server-only.ts'),
       },
-      {
-        find: '__DEVHOLM_SERVER_ONLY_RUNTIME__',
-        replacement: path.resolve(__dirname, './src/test/__fixtures__/server-only.ts'),
-      },
       { find: '@/components', replacement: path.resolve(__dirname, './src/core/components') },
       { find: '@/lib', replacement: path.resolve(__dirname, './src/core/lib') },
       { find: '@/hooks', replacement: path.resolve(__dirname, './src/core/hooks') },

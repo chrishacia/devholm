@@ -222,22 +222,46 @@ describe('SDK package boundaries', () => {
 
   it('@devholm/sdk/server is rejected from a browser/client bundle because of the server-only boundary', () => {
     // Attempting to bundle the server entrypoint for a browser target must fail
-    // because the server-only package has no browser-compatible entry point.
-    // esbuild will fail to resolve the server-only import when building for browser target.
+    // because the package export map explicitly disables the server export via "browser": null.
+    // esbuild will reject this during resolution when building for browser target.
     const { result } = bundleFixtureWithEsbuild(
       "import { createPolicyRegistry } from '@devholm/sdk/server';\nvoid createPolicyRegistry;"
     );
 
-    // Debug output to understand what's happening
-    if (result.code === 0) {
-      console.error(`[DEBUG] Bundle succeeded unexpectedly. Stderr: ${result.stderr}`);
-      console.error(`[DEBUG] Stdout: ${result.stdout}`);
-    }
-
-    // The bundle must fail – this is the actual production boundary enforcement.
+    // The bundle must fail – this is the production boundary enforcement via conditional exports.
     expect(result.code).not.toBe(0);
-    // Verify the error is related to the server-only boundary, not some other failure.
-    expect(result.stderr).toMatch(/server-only/i);
+    // Verify the error is related to the export being disabled via "browser": null
+    // (esbuild explicitly mentions the package.json and the disabled condition)
+    expect(result.stderr).toMatch(/browser.*null|disabled by the package author/i);
+  });
+
+  it('@devholm/sdk/server is successfully importable in a Node.js/server context', () => {
+    // Verify that the server export CAN be resolved successfully in Node contexts.
+    // The conditional export must allow server consumers to resolve the entry point.
+    const script = `
+      // Verify the export path resolves for Node/import conditions
+      const resolved = import.meta.resolve('@devholm/sdk/server');
+      
+      if (!resolved) {
+        console.error('Failed to resolve @devholm/sdk/server');
+        process.exit(1);
+      }
+      
+      // Verify it resolves to the server.ts source file
+      if (!resolved.includes('server.ts')) {
+        console.error('Resolved path does not include server.ts:', resolved);
+        process.exit(1);
+      }
+      
+      console.log('Server export resolved successfully');
+    `;
+
+    const result = run('node', ['--input-type=module', '-e', script]);
+
+    // Node resolution should succeed
+    expect(result.code).toBe(0);
+    // Verify the export was resolved correctly
+    expect(result.stdout).toContain('Server export resolved successfully');
   });
 
   it('confirms @devholm/sdk/server carries the server-only marker', () => {

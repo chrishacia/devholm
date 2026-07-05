@@ -1,5 +1,4 @@
 import 'server-only';
-import './__server-only-marker__';
 
 import { SDK_RUNTIME_SERVER } from './internal/runtime-tags';
 import type { AccessDeclaration, OwnerId, PermissionId } from './contracts';

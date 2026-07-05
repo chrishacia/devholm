@@ -12,6 +12,7 @@
     },
     "./server": {
       "types": "./src/server.ts",
+      "browser": null,
       "node": "./src/server.ts",
       "import": "./src/server.ts",
       "default": "./src/server.ts"
