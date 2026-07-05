@@ -227,6 +227,13 @@ describe('SDK package boundaries', () => {
     const { result } = bundleFixtureWithEsbuild(
       "import { createPolicyRegistry } from '@devholm/sdk/server';\nvoid createPolicyRegistry;"
     );
+
+    // Debug output to understand what's happening
+    if (result.code === 0) {
+      console.error(`[DEBUG] Bundle succeeded unexpectedly. Stderr: ${result.stderr}`);
+      console.error(`[DEBUG] Stdout: ${result.stdout}`);
+    }
+
     // The bundle must fail – this is the actual production boundary enforcement.
     expect(result.code).not.toBe(0);
     // Verify the error is related to the server-only boundary, not some other failure.
