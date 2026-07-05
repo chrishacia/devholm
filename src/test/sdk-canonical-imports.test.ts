@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { supportedSdkImportPaths as supportedSdkImportPathsFromRoot } from '@devholm/sdk';
 import { supportedSdkImportPaths as supportedSdkImportPathsFromTesting } from '@devholm/sdk/testing';
 
-const repoRoot = resolve(fileURLToPath(import.meta.url), '../../..');
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 function runNode(script: string) {
   return spawnSync('node', ['--input-type=module', '-e', script], {
@@ -73,7 +73,7 @@ describe('SDK canonical import paths', () => {
     expect(result.stderr).toBe('');
   });
 
-  it('non-server paths resolve in a browser-compatible Node module resolution', () => {
+  it('non-server paths resolve via the package export map', () => {
     const clientPaths = CANONICAL_PATHS.filter((p) => p !== '@devholm/sdk/server');
     const script = clientPaths
       .map(

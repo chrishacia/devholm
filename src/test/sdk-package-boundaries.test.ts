@@ -222,19 +222,15 @@ describe('SDK package boundaries', () => {
 
   it('@devholm/sdk/server is rejected from a browser/client bundle because of the server-only boundary', () => {
     // Attempting to bundle the server entrypoint for a browser target must fail
-    // because the server-only guard throws at runtime when window is defined.
-    // esbuild itself resolves the import, but the server.ts runtime guard causes
-    // bundle errors or the server-only package signals this at bundle time.
-    // We verify either that the bundle fails OR that the server-only marker appears in the bundle
-    // (which esbuild will error on via the server-only package's browser-incompatible entry).
-    const { result, inputs } = bundleFixtureWithEsbuild(
+    // because the server-only package has no browser-compatible entry point.
+    // esbuild will fail to resolve the server-only import when building for browser target.
+    const { result } = bundleFixtureWithEsbuild(
       "import { createPolicyRegistry } from '@devholm/sdk/server';\nvoid createPolicyRegistry;"
     );
-    // The bundle must either fail (non-zero exit) or include server-only in its inputs,
-    // which means the guard was pulled in. Either way the server boundary is enforced.
-    const hasServerOnly = inputs.some((input) => input.includes('server-only'));
-    const bundleFailed = result.code !== 0;
-    expect(hasServerOnly || bundleFailed).toBe(true);
+    // The bundle must fail – this is the actual production boundary enforcement.
+    expect(result.code).not.toBe(0);
+    // Verify the error is related to the server-only boundary, not some other failure.
+    expect(result.stderr).toMatch(/server-only/i);
   });
 
   it('confirms @devholm/sdk/server carries the server-only marker', () => {
