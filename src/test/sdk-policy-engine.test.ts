@@ -1452,7 +1452,9 @@ describe('SDK Stage 2 policy engine', () => {
       );
 
       expect(result.kind).toBe('policy-error');
-      expect(result.error.code).toBe('invalid-declaration');
+      if (result.kind === 'policy-error') {
+        expect(result.error.code).toBe('invalid-declaration');
+      }
     });
   });
 
@@ -1551,7 +1553,8 @@ describe('SDK Stage 2 policy engine', () => {
       registry.registerEvaluator({
         id: policyEvaluatorId('framework:evaluator:returns-undefined'),
         owner: 'framework',
-        evaluate: () => undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        evaluate: () => undefined as any,
       });
 
       const result = await registry.evaluateDeclaration(
@@ -1573,7 +1576,8 @@ describe('SDK Stage 2 policy engine', () => {
       registry.registerEvaluator({
         id: policyEvaluatorId('framework:evaluator:returns-null'),
         owner: 'framework',
-        evaluate: () => null,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        evaluate: () => null as any,
       });
 
       const result = await registry.evaluateDeclaration(
@@ -1585,7 +1589,9 @@ describe('SDK Stage 2 policy engine', () => {
       );
 
       expect(result.kind).toBe('policy-error');
-      expect(result.error.code).toBe('invalid-result');
+      if (result.kind === 'policy-error') {
+        expect(result.error.code).toBe('invalid-result');
+      }
     });
 
     it('rejects string as evaluator result', async () => {
@@ -1651,7 +1657,9 @@ describe('SDK Stage 2 policy engine', () => {
       );
 
       expect(result.kind).toBe('policy-error');
-      expect(result.error.code).toBe('invalid-result');
+      if (result.kind === 'policy-error') {
+        expect(result.error.code).toBe('invalid-result');
+      }
     });
 
     it('rejects unknown result kind', async () => {
@@ -1672,7 +1680,9 @@ describe('SDK Stage 2 policy engine', () => {
       );
 
       expect(result.kind).toBe('policy-error');
-      expect(result.error.code).toBe('invalid-result');
+      if (result.kind === 'policy-error') {
+        expect(result.error.code).toBe('invalid-result');
+      }
     });
 
     it('rejects policy-error without error object', async () => {
@@ -1693,7 +1703,9 @@ describe('SDK Stage 2 policy engine', () => {
       );
 
       expect(result.kind).toBe('policy-error');
-      expect(result.error.code).toBe('invalid-result');
+      if (result.kind === 'policy-error') {
+        expect(result.error.code).toBe('invalid-result');
+      }
     });
 
     it('rejects unknown error code', async () => {
@@ -1714,7 +1726,9 @@ describe('SDK Stage 2 policy engine', () => {
       );
 
       expect(result.kind).toBe('policy-error');
-      expect(result.error.code).toBe('invalid-result');
+      if (result.kind === 'policy-error') {
+        expect(result.error.code).toBe('invalid-result');
+      }
     });
 
     it('ensures public error result does not expose diagnostic fields', async () => {
@@ -1750,10 +1764,12 @@ describe('SDK Stage 2 policy engine', () => {
         kind: 'policy-error',
         error: { code: 'invalid-result' },
       });
-      expect(result.error).not.toHaveProperty('path');
-      expect(result.error).not.toHaveProperty('owner');
-      expect(result.error).not.toHaveProperty('referenceId');
-      expect(result.error).not.toHaveProperty('declarationKind');
+      if (result.kind === 'policy-error') {
+        expect(result.error).not.toHaveProperty('path');
+        expect(result.error).not.toHaveProperty('owner');
+        expect(result.error).not.toHaveProperty('referenceId');
+        expect(result.error).not.toHaveProperty('declarationKind');
+      }
     });
   });
 });
