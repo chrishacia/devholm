@@ -12,6 +12,18 @@ import type {
   PolicyValidationResult,
 } from '../contracts';
 
+/**
+ * Internal detailed error diagnostics (server-only).
+ * These are computed during error conditions but are NOT exposed
+ * through the neutral public PolicyErrorDetail or PolicyResult.
+ */
+interface InternalPolicyErrorDiagnostics {
+  readonly path?: string;
+  readonly owner?: OwnerId;
+  readonly referenceId?: string;
+  readonly declarationKind?: AccessDeclaration['kind'];
+}
+
 export interface PolicyEvaluatorRegistration {
   readonly id: PolicyEvaluatorId;
   readonly owner: OwnerId;
@@ -431,39 +443,14 @@ function combineAnyOf(
 
 function policyError(
   code: PolicyErrorCode,
-  detail: Omit<PolicyErrorDetail, 'code'>
+  diagnostics: InternalPolicyErrorDiagnostics
 ): PolicyErrorResult {
-  const error: PolicyErrorDetail = (() => {
-    const base = { code };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: Record<string, any> = { ...base };
-
-    if (typeof detail.path === 'string' && detail.path.length > 0 && detail.path.length < 512) {
-      result.path = detail.path;
-    }
-
-    if (typeof detail.owner === 'string' && isValidOwnerId(detail.owner)) {
-      result.owner = detail.owner;
-    }
-
-    if (
-      typeof detail.referenceId === 'string' &&
-      detail.referenceId.length > 0 &&
-      detail.referenceId.length < 256
-    ) {
-      result.referenceId = detail.referenceId;
-    }
-
-    if (detail.declarationKind !== undefined && isValidDeclarationKind(detail.declarationKind)) {
-      result.declarationKind = detail.declarationKind;
-    }
-
-    return result as PolicyErrorDetail;
-  })();
-
+  // Public PolicyErrorDetail ONLY exposes the code.
+  // Diagnostics (path, owner, referenceId, declarationKind) are internal/server-only
+  // and must not be returned through the neutral public semantic result.
   return {
     kind: 'policy-error',
-    error,
+    error: { code },
   };
 }
 
@@ -570,67 +557,51 @@ function canonicalizePolicyResult(value: unknown): PolicyResult | null {
         return null;
       }
 
-      // Check other optional fields - they must be data properties if present
-      let path: unknown = undefined;
+      // Validate optional diagnostic fields (fail-closed on invalid structure)
+      // but do NOT include them in the public return value
+      let hasInvalidDiagnostics = false;
+
+      // Check path
       const pathDescriptor = Object.getOwnPropertyDescriptor(error, 'path');
       if (pathDescriptor) {
         if (pathDescriptor.get || pathDescriptor.set || !pathDescriptor.enumerable) {
-          return null;
+          hasInvalidDiagnostics = true;
         }
-        path = pathDescriptor.value;
       }
 
-      let owner: unknown = undefined;
+      // Check owner
       const ownerDescriptor = Object.getOwnPropertyDescriptor(error, 'owner');
       if (ownerDescriptor) {
         if (ownerDescriptor.get || ownerDescriptor.set || !ownerDescriptor.enumerable) {
-          return null;
+          hasInvalidDiagnostics = true;
         }
-        owner = ownerDescriptor.value;
       }
 
-      let referenceId: unknown = undefined;
+      // Check referenceId
       const refIdDescriptor = Object.getOwnPropertyDescriptor(error, 'referenceId');
       if (refIdDescriptor) {
         if (refIdDescriptor.get || refIdDescriptor.set || !refIdDescriptor.enumerable) {
-          return null;
+          hasInvalidDiagnostics = true;
         }
-        referenceId = refIdDescriptor.value;
       }
 
-      let declarationKind: unknown = undefined;
+      // Check declarationKind
       const declKindDescriptor = Object.getOwnPropertyDescriptor(error, 'declarationKind');
       if (declKindDescriptor) {
         if (declKindDescriptor.get || declKindDescriptor.set || !declKindDescriptor.enumerable) {
-          return null;
+          hasInvalidDiagnostics = true;
         }
-        declarationKind = declKindDescriptor.value;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sanitizedErrorObj: Record<string, any> = {
-        code: errorCode as PolicyErrorCode,
-      };
-
-      if (typeof path === 'string' && path.length > 0 && path.length < 512) {
-        sanitizedErrorObj.path = path;
+      // Fail closed on invalid diagnostic structure
+      if (hasInvalidDiagnostics) {
+        return null;
       }
 
-      if (typeof owner === 'string' && isValidOwnerId(owner)) {
-        sanitizedErrorObj.owner = owner as OwnerId;
-      }
-
-      if (typeof referenceId === 'string' && referenceId.length > 0 && referenceId.length < 256) {
-        sanitizedErrorObj.referenceId = referenceId;
-      }
-
-      if (isValidDeclarationKind(declarationKind)) {
-        sanitizedErrorObj.declarationKind = declarationKind as AccessDeclaration['kind'];
-      }
-
+      // Public PolicyErrorDetail ONLY includes the code
       return {
         kind: 'policy-error',
-        error: sanitizedErrorObj as PolicyErrorDetail,
+        error: { code: errorCode as PolicyErrorCode },
       };
     }
 

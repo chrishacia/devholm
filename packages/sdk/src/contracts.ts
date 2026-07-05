@@ -27,12 +27,14 @@ export type PolicyErrorCode =
   | 'composition-failed'
   | 'invalid-result';
 
+/**
+ * Public semantic policy error result.
+ * Exposes only the error code through the neutral runtime boundary.
+ * Detailed diagnostics (path, owner, referenceId, declarationKind) are
+ * internal/server-only and NOT exposed to public consumers.
+ */
 export interface PolicyErrorDetail {
   readonly code: PolicyErrorCode;
-  readonly path?: string;
-  readonly owner?: OwnerId;
-  readonly referenceId?: string;
-  readonly declarationKind?: AccessDeclaration['kind'];
 }
 
 export interface AllowPolicyResult {
