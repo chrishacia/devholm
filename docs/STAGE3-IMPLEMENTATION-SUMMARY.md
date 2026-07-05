@@ -1,260 +1,213 @@
-/\*\*
+# SDK Stage 3: Server-Side Authorization Enforcement
 
-- SDK Stage 3: Server Enforcement Implementation Summary
-- ========================================================
--
-- This document summarizes the Stage 3 implementation that integrates the
-- Stage 2 policy engine with canonical subject normalization for server-side
-- authorization enforcement.
--
-- Related: ADR-0002, Stage 2 (#31), Stage 3 (#39), Governance (#6)
-  \*/
+**Status:** Corrected via `fix/sdk-stage3-closeout` (follow-up to PR #40)
+**Related:** ADR-0002, Stage 2 (#31), issue #39, parent #6
 
-// =============================================================================
-// WHAT IS STAGE 3?
-// =============================================================================
-//
-// Stage 3 is the server enforcement layer that:
-// 1. Normalizes auth data to a canonical subject
-// 2. Evaluates Stage 2 policies using real policy engine
-// 3. Deterministically maps policy results to HTTP responses
-// 4. Fails closed on all error conditions
-// 5. Provides sanitized diagnostics for debugging
-//
-// Stage 3 is NOT responsible for:
-// - Client-side visibility (Stage 4)
-// - Middleware integration (Stage 4)
-// - React hooks (Stage 5)
-// - Acceptance testing (Stage 6)
+---
 
-// =============================================================================
-// IMPLEMENTATION COMPONENTS
-// =============================================================================
-//
-// 1. NORMALIZATION (packages/sdk/src/server/normalization.ts)
-// ============================================================
-// Canonical subject model that handles:
-// - Null/undefined/malformed inputs defensively
-// - Prototype pollution protection
-// - Array deduplication and sorting
-// - Consistent field types
-//
-// Input: Any auth data (session, token, etc.)
-// Output: CanonicalAuthorizationSubject with status, userId, email, role,
-// roles[], permissions[], isAdmin
-// Properties:
-// - Never throws; returns UNAUTHENTICATED on invalid input
-// - All arrays are sorted and deduplicated
-// - No null-prototype pollution keys
-//
-// Example:
-// `ts
-// const subject = normalizeAuthorizationSubject(sessionUser);
-// if (subject.status === AuthenticationStatus.AUTHENTICATED) {
-//   console.log(subject.userId);      // Safe to use
-//   console.log(subject.roles);       // Sorted, deduplicated []
-//   console.log(subject.permissions); // Safe []
-// }
-// `
+## What is Stage 3?
 
-// 2. COMPATIBILITY ADAPTER (packages/sdk/src/server/compatibility-adapter.ts)
-// ===========================================================================
-// Bridges legacy auth patterns to canonical form during migration.
-//
-// Functions:
-// - adaptLegacyToCanonical(): Explicit legacy→canonical mapping
-// - canonicalSubjectFromSession(): Extract canonical subject from session
-//
-// Admin determination has three configurable strategies:
-// - 'legacy': isAdmin field AND role/roles in ['admin','superadmin'] are both considered
-// - 'canonical': only the explicit isAdmin=true field is accepted
-// - 'union': either legacy (isAdmin, role/roles) OR canonical rule grants admin
-//
-// Used by: Authorization wrappers to extract subject with optional
-// legacy compatibility path for gradual migration.
+Stage 3 implements the server-side enforcement layer that bridges Stage 2's deterministic policy engine with the canonical authorization subject model. It delivers:
 
-// 3. AUTHORIZATION WRAPPERS (packages/sdk/src/server/authorization-wrappers.ts)
-// ============================================================================
-// Server enforcement for API routes and server actions.
-//
-// Key functions:
-// - evaluateApiAuthorization(session, declaration, owner, registry, options?)
-// Returns: AuthorizationResult with HTTP mapping
-// Does: Normalizes subject, evaluates real Stage 2 engine with provided registry,
-// maps result to HTTP status
-// Registry and declaration are injected by the caller (no global state)
-//
-// - mapPolicyToAuthorizationResult(policyResult, subject, options?)
-// Maps Stage 2 PolicyResult kinds to AuthorizationTransportResult
-// Enforces fail-closed: policy-error → 500 or 503, never 403
-//
-// Result types:
-// - ALLOW (200): Policy evaluated to allow
-// - UNAUTHENTICATED (401): Required authentication missing
-// - FORBIDDEN (403): Authenticated but not allowed
-// - CONCEALED (404): Resource hidden from this subject
-// - POLICY_ERROR (500/503): Policy evaluation failed; fail closed
+1. **Canonical subject normalization** — converts any raw session/token into a strongly-typed, frozen, snapshot-isolated subject
+2. **Compatibility adapter** — maps current DevHolm session/token shapes to the canonical form during staged migration
+3. **Route wrapper** — evaluates Stage 2 declarations against canonical subjects and returns deterministic HTTP-mapped results
+4. **Server-action wrapper** — distinct from the route wrapper; returns action-oriented results (no HTTP status codes)
+5. **Application adapter** — application-owned policy registry + declarations + helper functions
 
-// 4. APPLICATION AUTHORIZATION ADAPTER (src/core/lib/sdk-authorization.ts)
-// =========================================================================
-// Application-owned policy registry — NOT a global SDK singleton.
-// The SDK exports createPolicyRegistry() only; the application owns its instance.
-//
-// Contents:
-// - appRegistry: application PolicyRegistry instance
-// - adminAccessDeclaration: anyOf[role-any[admin,superadmin], permission-any[admin.access]]
-// - usersManageDeclaration: permission-any[users.manage, admin.access]
-// - authorizeRequest(): JWT token → canonical subject → policy evaluation
+Stage 3 does **not** implement: middleware integration (Stage 4), React visibility (Stage 5), or acceptance proof (Stage 6).
 
-// =============================================================================
-// DATA FLOW: From Session to Authorization Decision
-// =============================================================================
-//
-// 1. Application calls: evaluateApiAuthorization(session, declaration, owner, registry)
-//
-// 2. Stage 3 normalizes session:
-// canonicalSubjectFromSession(session, options)
-// → CanonicalAuthorizationSubject
-// → Protected against null/undefined/malformed
-//
-// 3. Convert to Stage 2 format:
-// canonicalSubjectToNormalizedPolicySubject(subject)
-// → NormalizedPolicySubject with branded PermissionId values
-//
-// 4. Call Stage 2 policy engine:
-// registry.evaluateDeclaration(declaration, context)
-// → PolicyResult (kind: allow|forbidden|unauthenticated|not-found|policy-error)
-//
-// 5. Map result to HTTP:
-// mapPolicyToAuthorizationResult(policyResult, subject)
-// → AuthorizationResult {
-// result: ALLOW|FORBIDDEN|UNAUTHENTICATED|CONCEALED|POLICY_ERROR,
-// httpStatus: 200|403|401|404|500/503,
-// subject: canonical subject,
-// errorMessage?: sanitized message,
-// diagnostics?: (if enabled)
-// }
-//
-// 6. Application handles result:
-// if (authResult.result !== AuthorizationTransportResult.ALLOW) {
-// return NextResponse(status: authResult.httpStatus);
-// }
-// // Use authResult.subject for business logic
+---
 
-// =============================================================================
-// REAL STAGE 2 INTEGRATION EVIDENCE
-// =============================================================================
-//
-// Stage 3 wrappers call the REAL Stage 2 policy engine, not a mock:
-//
-// 1. getPolicyRegistry() returns the real createPolicyRegistry() instance
-// 2. Policy registrations use real Stage 2 PolicyRegistry.registerEvaluator()
-// 3. Evaluation calls real registry.evaluateDeclaration()
-// 4. Result types are real Stage 2 PolicyResult kinds
-// 5. All PolicyEvaluatorRegistrations must be registered before evaluation
-// 6. Fail-closed semantics follow Stage 2 precedence exactly
-// 7. No global mutable state: registry passed by caller
-//
-// Test file: src/test/sdk-stage3-real-integration.test.ts
-// - Registers real Stage 2 evaluators
-// - Calls evaluateApiAuthorization() with real policies
-// - Verifies Stage 2 engine was invoked (captures context subject)
-// - Tests all PolicyResult kinds
-// - Tests fail-closed on engine errors
+## Canonical Subject Contract
 
-// =============================================================================
-// PRODUCTION SURFACE MIGRATIONS
-// =============================================================================
-//
-// Two migration examples (docs/):
-//
-// 1. stage3-example-admin-profile-api.ts
-// - Role-based policy: 'admin:profile-read'
-// - Parity tests showing old vs new behavior matches
-// - Rollback strategy
-//
-// 2. stage3-example-posts-api.ts
-// - Permission-based policy: 'posts:write', 'posts:delete'
-// - Complex allOf composition example
-// - Comprehensive parity test suite
-//
-// 3. stage3-production-surface-migration.md
-// - Migration guide for real surfaces
-// - Policy registration patterns
-// - Testing strategy
-// - Rollback patterns
+### Type definition
 
-// =============================================================================
-// SECURITY INVARIANTS (All enforced by Stage 3)
-// =============================================================================
-//
-// 1. Fail-closed on policy errors
-// - policy-error NEVER becomes 403
-// - All errors map to 500 or 503, never 200
-//
-// 2. Deterministic subject normalization
-// - No exceptions; null/undefined inputs return UNAUTHENTICATED
-// - Array mutations are impossible (sorted + deduplicated)
-// - Prototype pollution keys are filtered
-//
-// 3. Real Stage 2 policy engine is authoritative
-// - No hardcoded allow/deny shortcuts
-// - All policy logic delegated to Stage 2
-// - No caching that could cause stale decisions
-//
-// 4. Sanitized diagnostics
-// - No secrets, stack traces, or internal objects leak
-// - Diagnostics are only enabled in non-production
-// - Error messages are safe for client transport
-//
-// 5. Canonical subjects are immutable by design
-// - All fields are readonly
-// - Arrays are sorted and deduplicated
-// - No ability to mutate after creation
+```typescript
+export interface CanonicalAuthorizationSubject {
+  readonly status: AuthenticationStatus; // 'authenticated' | 'unauthenticated'
+  readonly userId: string | null;
+  readonly email: string | null;
+  readonly role: string | null;
+  readonly roles: readonly string[]; // sorted, deduplicated, frozen
+  readonly permissions: readonly string[]; // sorted, deduplicated, frozen
+  readonly isAdmin: boolean;
+}
+```
 
-// =============================================================================
-// FILES CHANGED
-// =============================================================================
-//
-// New files:
-// - packages/sdk/src/server/normalization.ts
-// - packages/sdk/src/server/compatibility-adapter.ts
-// - packages/sdk/src/server/authorization-wrappers.ts
-// - src/core/lib/sdk-authorization.ts (application layer, NOT SDK)
-// - src/test/sdk-stage3-authorization.test.ts
-// - src/test/sdk-stage3-integration.test.ts
-// - src/test/sdk-stage3-real-integration.test.ts
-// - src/test/sdk-stage3-production-surfaces.test.ts
-//
-// Modified files:
-// - packages/sdk/src/server.ts: exports normalization, compatibility-adapter, authorization-wrappers
-// - src/app/api/admin/dashboard/route.ts: migrated to Stage 3 adminAccessDeclaration
-// - src/app/api/admin/auth/users/route.ts: migrated to Stage 3 usersManageDeclaration
-// - e2e/admin.spec.ts: added Stage 3 surface enforcement tests
-// - eslint.config.mjs: added playwright-report/** and test-results/** to ignores
+### Runtime contract: deeply frozen snapshots
 
-// =============================================================================
-// VALIDATION
-// =============================================================================
-//
-// All code compiles without errors (verified via TypeScript)
-// Test file demonstrates real Stage 2 integration
-// Documentation shows migration patterns for production surfaces
-// Examples include comprehensive parity test suites
-//
-// To validate before merge:
-// pnpm install --frozen-lockfile # No lockfile churn
-// pnpm lint # Code style
-// pnpm typecheck # TypeScript
-// pnpm test # All tests including Stage 3
-// pnpm build # Production build
+- `normalizeAuthorizationSubject` returns a `Object.freeze`'d subject.
+- `roles` and `permissions` arrays are individually frozen before inclusion.
+- Every call returns a **fresh, independent** snapshot. Mutating the source after normalization does not affect the already-returned result.
+- Mutation attempts on frozen output objects or their arrays throw in strict mode.
+- This is a **runtime contract enforced via `Object.freeze`**, not solely a TypeScript type guarantee.
 
-// =============================================================================
-// RELATED ISSUES & ADRs
-// =============================================================================
-//
-// Issue #39: SDK Stage 3 Implementation (this work)
-// Issue #31: SDK Stage 2 (completed, merged via #38)
-// Issue #6: Governance workstream (parent)
-// ADR-0002: SDK boundaries and access policy
-// PR #38: Stage 2 post-merge review closeout (merged)
+---
+
+## Accessor-Safe Field Reading
+
+All field reads from untrusted source objects use `Object.getOwnPropertyDescriptor` rather than optional-chaining property access.
+
+**Why:** `object?.field` invokes the `[[Get]]` operation, which executes accessor getter traps on regular objects and the `get` proxy trap on proxies. For authorization code, executing untrusted getter code on an input object is a security risk.
+
+**What the safe approach does:**
+
+- Calls `Object.getOwnPropertyDescriptor(obj, key)` to retrieve the property descriptor
+- If the descriptor has `get` or `set` (i.e., it's an accessor), returns `undefined` without invoking the getter
+- If the descriptor has `value` (i.e., it's a data property), reads the value safely
+- Wraps all descriptor reads in `try/catch` to handle revoked-proxy exceptions and throwing `getOwnPropertyDescriptor` traps
+
+**Limitation:** Proxy objects' `[[GetOwnProperty]]` trap is still invoked by `getOwnPropertyDescriptor`. This cannot be avoided. The safety guarantee is:
+
+- For **regular objects with accessor properties**: getters are **never invoked**
+- For **proxy objects**: traps may execute, but exceptions are **caught and fail closed**
+
+Array element reads use the same descriptor-safe approach: each index is inspected via `getOwnPropertyDescriptor` before reading its value. Accessor-backed array indices are skipped.
+
+---
+
+## Administrator Rule
+
+The canonical administrator rule is:
+
+> `isAdmin === true` **OR** `role === 'admin'/'superadmin'` **OR** `roles` contains `'admin'`/`'superadmin'`
+
+This is the default `'legacy'` admin determination rule in the compatibility adapter.
+
+The `adminAccessDeclaration` policy encodes this as a Stage 2 declaration:
+
+```typescript
+defineAccessDeclaration({
+  kind: 'anyOf',
+  policies: [
+    { kind: 'role-any', roles: ['admin', 'superadmin'] },
+    { kind: 'permission-any', permissions: [permissionId('admin.access')] },
+  ],
+});
+```
+
+Note: the `isAdmin` field is **not** used by Stage 2 policy declarations. The canonical subject's `isAdmin` field is derived from the legacy adapter for backward compatibility diagnostics but does not drive policy decisions. Policy decisions are driven exclusively by `roles` and `permissions`.
+
+---
+
+## Compatibility Behavior
+
+The compatibility adapter (`canonicalSubjectFromSession`, `canonicalSubjectFromToken`, `adaptLegacyToCanonical`) maps DevHolm session/token data to canonical form.
+
+Admin determination rules:
+
+- `'legacy'` (default): `isAdmin` field OR role `'admin'`/`'superadmin'` OR roles array contains those
+- `'canonical'`: only explicit `isAdmin === true`
+- `'union'`: either legacy OR canonical rule
+
+The `'legacy'` rule preserves the pre-migration `hasAdminAccess()` behavior exactly.
+
+---
+
+## Route Wrapper
+
+`evaluateApiAuthorization(session, declaration, owner, registry, options?)`:
+
+- Extracts canonical subject via compatibility adapter (accessor-safe)
+- Converts to `NormalizedPolicySubject` with branded `PermissionId` values
+- Evaluates against Stage 2 `PolicyRegistry`
+- Maps result to HTTP status via transport table
+
+Transport table:
+
+| Stage 2 result                             | HTTP status | Transport result |
+| ------------------------------------------ | ----------- | ---------------- |
+| `allow`                                    | 200         | ALLOW            |
+| `forbidden` (authenticated)                | 403         | FORBIDDEN        |
+| `forbidden` (unauthenticated)              | 401         | UNAUTHENTICATED  |
+| `unauthenticated`                          | 401         | UNAUTHENTICATED  |
+| `not-found`                                | 404         | CONCEALED        |
+| `policy-error` `missing-runtime-reference` | 503         | POLICY_ERROR     |
+| `policy-error` (all other codes)           | 500         | POLICY_ERROR     |
+
+**Invariant:** `policy-error` NEVER maps to 403, 404, or 200.
+
+---
+
+## Server-Action Wrapper
+
+`evaluateServerActionAuthorization(session, declaration, owner, registry, options?)`:
+
+- Same evaluation logic as the route wrapper
+- Returns `ServerActionAuthorizationResult` with an explicit `allowed: boolean` flag
+- No HTTP status codes — oriented for server-action return values
+- Sanitized `errorMessage` when not allowed
+- Fails closed on all errors
+
+Application-level adapter: `authorizeServerAction(request, declaration, owner, options?)` in `src/core/lib/sdk-authorization.ts`.
+
+---
+
+## Migrated Production Surfaces
+
+Two real production API routes were migrated from legacy auth helpers to Stage 3:
+
+### Surface 1: `/api/admin/dashboard` (GET, PATCH)
+
+- **Pre-migration:** `verifyAdmin(request)` → `hasAdminAccess(token)`
+- **Stage 3:** `authorizeRequest(request, adminAccessDeclaration, 'site')`
+- **Allowed:** admin role, superadmin role, admin.access permission
+- **Denied:** ordinary members, anonymous
+
+### Surface 2: `/api/admin/auth/users` (GET, PATCH)
+
+- **Pre-migration:** `verifyPermission(request, 'users.manage')` → `hasPermission || hasAdminAccess`
+- **Stage 3:** `authorizeRequest(request, usersManageDeclaration, 'site')`
+- **Declaration:** `anyOf[permission-any[users.manage], adminAccessDeclaration]`
+- **Allowed:** users.manage permission, admin.access permission, admin role, superadmin role
+- **Denied:** ordinary members, anonymous
+
+---
+
+## Diagnostics
+
+Diagnostics are opt-in (`{ diagnosticsEnabled: true }`). They expose:
+
+- `policyEvaluationDetails`: the error code for `policy-error` results
+- `migrationType`: `'canonical'` or `'legacy-compat'`
+
+Diagnostics never contain raw exceptions, stack traces, or secrets. **Do not enable in production.**
+
+---
+
+## Migration and Rollback Strategy
+
+To rollback a migrated route to the legacy authorization path:
+
+1. Remove the `authorizeRequest` call
+2. Restore the original `verifyAdmin` / `verifyPermission` call
+3. No schema changes are required (Stage 3 is additive)
+
+Feature-flag approach for gradual migration:
+
+```typescript
+if (process.env.SDK_STAGE3_ENABLED === 'true') {
+  const authResult = await authorizeRequest(request, adminAccessDeclaration, adminAccessOwner);
+  if (authResult.result !== AuthorizationTransportResult.ALLOW) {
+    return NextResponse.json({ error: authResult.errorMessage }, { status: authResult.httpStatus });
+  }
+} else {
+  const token = await verifyAdmin(request);
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+}
+```
+
+---
+
+## Deferred Work
+
+The following SDK authorization capabilities are explicitly **not implemented** in Stage 3.
+Issue numbers are references to the `chrishacia/devholm` issue tracker; verify current
+issue state before starting work, as issue purpose may evolve.
+
+- Stage 4: Middleware integration — not implemented
+- Stage 5: React visibility hooks — not implemented
+- Stage 6: Acceptance proof — not implemented
+- Capability service implementation — not implemented
+- Plugin publication — not implemented

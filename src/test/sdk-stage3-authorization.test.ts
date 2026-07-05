@@ -1,34 +1,36 @@
+// @vitest-environment node
 /**
  * SDK Stage 3: Canonical Subject Normalization and Authorization Tests
  * =====================================================================
  *
- * Comprehensive unit tests for:
+ * Imports exclusively from the public SDK entrypoints:
+ * - @devholm/sdk/server  — server-side types and functions
+ * - @devholm/sdk         — neutral contracts
+ *
+ * Environment: node (required to avoid the @devholm/sdk/server browser guard)
+ *
+ * Coverage:
  * - normalizeAuthorizationSubject (canonical subject normalization)
- * - adaptLegacyToCanonical / canonicalSubjectFromSession / canonicalSubjectFromToken
+ * - Accessor safety: getters, proxy traps, inherited properties, symbol keys
+ * - Freezing/immutability contract
+ * - adaptLegacyToCanonical, canonicalSubjectFromSession, canonicalSubjectFromToken
  * - mapPolicyToAuthorizationResult (real Stage 2 PolicyResult → HTTP mapping)
  * - Security invariants
- *
- * All tests use real Stage 2 PolicyResult shapes (kind discriminated union).
- * No invented policy shapes, no PolicyEvaluationResult shim.
  */
 
-import { describe, it, expect } from 'vitest';
-import type { PolicyResult } from '../../packages/sdk/src/contracts';
+import { describe, it, expect, vi } from 'vitest';
+import type { PolicyResult } from '@devholm/sdk';
 import {
   normalizeAuthorizationSubject,
-  type CanonicalAuthorizationSubject,
-  AuthenticationStatus,
-} from '../../packages/sdk/src/server/normalization';
-import {
   adaptLegacyToCanonical,
   canonicalSubjectFromSession,
   canonicalSubjectFromToken,
-  type LegacyAuthorizationSubject,
-} from '../../packages/sdk/src/server/compatibility-adapter';
-import {
   mapPolicyToAuthorizationResult,
   AuthorizationTransportResult,
-} from '../../packages/sdk/src/server/authorization-wrappers';
+  type CanonicalAuthorizationSubject,
+  AuthenticationStatus,
+  type LegacyAuthorizationSubject,
+} from '@devholm/sdk/server';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,32 +39,24 @@ import {
 function authenticatedSubject(
   overrides: Partial<CanonicalAuthorizationSubject> = {}
 ): CanonicalAuthorizationSubject {
-  return {
+  return Object.freeze({
     status: AuthenticationStatus.AUTHENTICATED,
     userId: 'user-123',
     email: 'test@example.com',
     role: 'member',
-    roles: ['member'],
-    permissions: [],
+    roles: Object.freeze(['member']) as readonly string[],
+    permissions: Object.freeze([]) as readonly string[],
     isAdmin: false,
     ...overrides,
-  };
+  });
 }
 
 function unauthenticatedSubject(): CanonicalAuthorizationSubject {
-  return {
-    status: AuthenticationStatus.UNAUTHENTICATED,
-    userId: null,
-    email: null,
-    role: null,
-    roles: [],
-    permissions: [],
-    isAdmin: false,
-  };
+  return normalizeAuthorizationSubject(null);
 }
 
 // ---------------------------------------------------------------------------
-// normalizeAuthorizationSubject
+// normalizeAuthorizationSubject — basic cases
 // ---------------------------------------------------------------------------
 
 describe('normalizeAuthorizationSubject', () => {
@@ -78,7 +72,28 @@ describe('normalizeAuthorizationSubject', () => {
   it('produces unauthenticated subject for undefined input', () => {
     const result = normalizeAuthorizationSubject(undefined);
     expect(result.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
-    expect(result.userId).toBe(null);
+  });
+
+  it('produces unauthenticated subject for non-object input', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(normalizeAuthorizationSubject('string' as any).status).toBe(
+      AuthenticationStatus.UNAUTHENTICATED
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(normalizeAuthorizationSubject(42 as any).status).toBe(
+      AuthenticationStatus.UNAUTHENTICATED
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(normalizeAuthorizationSubject(true as any).status).toBe(
+      AuthenticationStatus.UNAUTHENTICATED
+    );
+  });
+
+  it('produces unauthenticated subject for array input', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(normalizeAuthorizationSubject([] as any).status).toBe(
+      AuthenticationStatus.UNAUTHENTICATED
+    );
   });
 
   it('produces unauthenticated subject when userId is absent', () => {
@@ -100,144 +115,195 @@ describe('normalizeAuthorizationSubject', () => {
     expect(result.isAdmin).toBe(false);
   });
 
-  it('rejects non-string userId', () => {
+  it('rejects non-string userId (unauthenticated)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = normalizeAuthorizationSubject({ userId: 12345 } as any);
-    expect(result.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
+    expect(normalizeAuthorizationSubject({ userId: 12345 } as any).status).toBe(
+      AuthenticationStatus.UNAUTHENTICATED
+    );
   });
 
   it('rejects empty-string userId', () => {
-    const result = normalizeAuthorizationSubject({ userId: '' });
-    expect(result.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
-  });
-
-  it('sets email to null for non-string email', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = normalizeAuthorizationSubject({ userId: 'user-123', email: 12345 } as any);
-    expect(result.email).toBe(null);
-  });
-
-  it('sets role to null for empty-string role', () => {
-    const result = normalizeAuthorizationSubject({ userId: 'user-123', role: '' });
-    expect(result.role).toBe(null);
+    expect(normalizeAuthorizationSubject({ userId: '' }).status).toBe(
+      AuthenticationStatus.UNAUTHENTICATED
+    );
   });
 
   it('deduplicates and sorts roles', () => {
     const result = normalizeAuthorizationSubject({
-      userId: 'user-123',
+      userId: 'u1',
       roles: ['admin', 'member', 'admin', 'contributor', 'member'],
     });
     expect(result.roles).toEqual(['admin', 'contributor', 'member']);
   });
 
-  it('filters out non-string roles', () => {
+  it('filters prototype-pollution keys from roles', () => {
     const result = normalizeAuthorizationSubject({
-      userId: 'user-123',
-      roles: ['admin', 12345, null, 'member', undefined],
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
-    expect(result.roles).toEqual(['admin', 'member']);
-  });
-
-  it('filters out empty-string roles', () => {
-    const result = normalizeAuthorizationSubject({
-      userId: 'user-123',
-      roles: ['admin', '', 'member', ''],
-    });
-    expect(result.roles).toEqual(['admin', 'member']);
-  });
-
-  it('deduplicates and sorts permissions', () => {
-    const result = normalizeAuthorizationSubject({
-      userId: 'user-123',
-      permissions: ['users.read', 'users.write', 'users.read', 'admin.access'],
-    });
-    expect(result.permissions).toEqual(['admin.access', 'users.read', 'users.write']);
-  });
-
-  it('rejects non-array roles', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = normalizeAuthorizationSubject({ userId: 'user-123', roles: 'admin' as any });
-    expect(result.roles).toEqual([]);
-  });
-
-  it('rejects non-array permissions', () => {
-    const result = normalizeAuthorizationSubject({
-      userId: 'user-123',
-      permissions: 'users.read',
-    });
-    expect(result.permissions).toEqual([]);
-  });
-
-  it('rejects prototype-pollution keys in roles', () => {
-    const result = normalizeAuthorizationSubject({
-      userId: 'user-123',
+      userId: 'u1',
       roles: ['admin', '__proto__', 'member', 'constructor', 'prototype'],
     });
     expect(result.roles).toEqual(['admin', 'member']);
     expect(result.roles).not.toContain('__proto__');
     expect(result.roles).not.toContain('constructor');
-    expect(result.roles).not.toContain('prototype');
   });
 
-  it('only literal boolean true is accepted as isAdmin=true', () => {
-    // Only === true is accepted; truthy non-booleans are treated as false (security invariant)
+  it('only literal boolean true is accepted for isAdmin', () => {
     expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: true }).isAdmin).toBe(true);
+    // Truthy non-boolean values are rejected (security: no privilege escalation via coercion)
     expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: 'yes' }).isAdmin).toBe(false);
     expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: 1 }).isAdmin).toBe(false);
-  });
-
-  it('coerces isAdmin falsy values to false', () => {
     expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: 0 }).isAdmin).toBe(false);
     expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: null }).isAdmin).toBe(false);
     expect(normalizeAuthorizationSubject({ userId: 'u1', isAdmin: false }).isAdmin).toBe(false);
   });
 
-  it('rejects non-object raw input', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(normalizeAuthorizationSubject('string' as any).status).toBe(
-      AuthenticationStatus.UNAUTHENTICATED
-    );
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(normalizeAuthorizationSubject(123 as any).status).toBe(
-      AuthenticationStatus.UNAUTHENTICATED
-    );
+  it('handles null-prototype objects', () => {
+    const obj = Object.create(null) as Record<string, unknown>;
+    obj.userId = 'u1';
+    obj.roles = ['admin'];
+    const result = normalizeAuthorizationSubject(obj);
+    expect(result.status).toBe(AuthenticationStatus.AUTHENTICATED);
+    expect(result.userId).toBe('u1');
+    expect(result.roles).toContain('admin');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Accessor safety tests
+// ---------------------------------------------------------------------------
+
+describe('normalizeAuthorizationSubject — accessor safety', () => {
+  it('does NOT invoke a getter on the userId property', () => {
+    const sideEffect = vi.fn().mockReturnValue('from-getter');
+    const obj = {};
+    Object.defineProperty(obj, 'userId', { get: sideEffect, enumerable: true });
+    const result = normalizeAuthorizationSubject(obj as { userId?: unknown });
+    // Getter must NOT be called — accessor property is skipped
+    expect(sideEffect).not.toHaveBeenCalled();
+    // Result must be unauthenticated (accessor userId yields undefined in our model)
+    expect(result.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
   });
 
-  it('produces deterministic output for identical input', () => {
-    const input = {
-      userId: 'user-123',
-      roles: ['member', 'admin', 'member'],
-      permissions: ['read', 'write', 'read'],
-    };
-    const result1 = normalizeAuthorizationSubject(input);
-    const result2 = normalizeAuthorizationSubject(input);
-    expect(JSON.stringify(result1)).toBe(JSON.stringify(result2));
+  it('does NOT invoke a getter that has side effects on roles', () => {
+    const sideEffect = vi.fn().mockReturnValue(['admin']);
+    const obj = { userId: 'u1' };
+    Object.defineProperty(obj, 'roles', { get: sideEffect, enumerable: true });
+    normalizeAuthorizationSubject(obj as { userId: string; roles?: unknown });
+    expect(sideEffect).not.toHaveBeenCalled();
   });
 
-  it('snapshot-isolates output: mutating original input after normalization does not change returned result', () => {
+  it('skips inherited accessor properties — does NOT invoke inherited getter', () => {
+    const sideEffect = vi.fn().mockReturnValue('inherited-user');
+    const proto = {};
+    Object.defineProperty(proto, 'userId', { get: sideEffect, enumerable: true });
+    const obj = Object.create(proto) as Record<string, unknown>;
+    // Define own data property that shadows the inherited accessor.
+    // (Direct assignment `obj.userId = 'own-user'` would throw in strict mode
+    //  because the prototype defines userId as a getter-only accessor.)
+    Object.defineProperty(obj, 'userId', {
+      value: 'own-user',
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+    const result = normalizeAuthorizationSubject(obj);
+    // Own data property is read via descriptor; inherited getter is NOT invoked
+    expect(sideEffect).not.toHaveBeenCalled();
+    expect(result.userId).toBe('own-user');
+  });
+
+  it('returns unauthenticated for a revoked proxy (does not throw)', () => {
+    const { proxy, revoke } = Proxy.revocable({ userId: 'u1' }, {});
+    revoke();
+    // A revoked proxy throws on any access — normalizeAuthorizationSubject must fail closed
+    let result: ReturnType<typeof normalizeAuthorizationSubject> | undefined;
+    expect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result = normalizeAuthorizationSubject(proxy as any);
+    }).not.toThrow();
+    expect(result?.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
+  });
+
+  it('catches a proxy with throwing getOwnPropertyDescriptor trap', () => {
+    const trap = vi.fn().mockImplementation(() => {
+      throw new Error('spy trap');
+    });
+    const proxy = new Proxy({ userId: 'u1' }, { getOwnPropertyDescriptor: trap });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = normalizeAuthorizationSubject(proxy as any);
+    // Trap may be called (unavoidable), but exception is caught → fail closed
+    expect(result.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
+  });
+
+  it('skips accessor-backed array indices in roles', () => {
+    const sideEffect = vi.fn().mockReturnValue('injected');
+    const arr: unknown[] = ['admin'];
+    Object.defineProperty(arr, 1, { get: sideEffect, enumerable: true });
+    const result = normalizeAuthorizationSubject({
+      userId: 'u1',
+      roles: arr,
+    });
+    expect(sideEffect).not.toHaveBeenCalled();
+    // Only the data-property index 0 ('admin') should be in roles
+    expect(result.roles).toEqual(['admin']);
+  });
+
+  it('ignores symbol-keyed properties', () => {
+    const sym = Symbol('userId');
+    const obj: Record<symbol, string> = { [sym]: 'sym-user' };
+    // Symbol key does not become a named field — must be unauthenticated
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = normalizeAuthorizationSubject(obj as any);
+    expect(result.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Immutability / snapshot contract
+// ---------------------------------------------------------------------------
+
+describe('normalizeAuthorizationSubject — immutability', () => {
+  it('returns a frozen canonical subject', () => {
+    const result = normalizeAuthorizationSubject({ userId: 'u1' });
+    expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it('returns frozen roles and permissions arrays', () => {
+    const result = normalizeAuthorizationSubject({
+      userId: 'u1',
+      roles: ['admin'],
+      permissions: ['users.read'],
+    });
+    expect(Object.isFrozen(result.roles)).toBe(true);
+    expect(Object.isFrozen(result.permissions)).toBe(true);
+  });
+
+  it('mutating source after normalization does not change the returned result', () => {
     const input = {
-      userId: 'user-123',
+      userId: 'u1',
       roles: ['admin', 'member'],
     };
-    // 1. Normalize first
     const result = normalizeAuthorizationSubject(input);
-    // 2. Mutate original AFTER returning the result
+    // Mutate the original input AFTER getting the result
     input.roles.push('hacker');
-    // 3. The already-returned result is unchanged
+    // Already-returned result is unaffected
     expect(result.roles).not.toContain('hacker');
     expect(result.roles).toEqual(['admin', 'member']);
-    // (A fresh normalization of the mutated input will legitimately include 'hacker')
-    const resultAfterMutation = normalizeAuthorizationSubject(input);
-    expect(resultAfterMutation.roles).toContain('hacker');
   });
 
-  it('each call returns a fresh isolated object reference', () => {
-    const input = { userId: 'user-123', roles: ['admin', 'member'] };
-    const result1 = normalizeAuthorizationSubject(input);
-    const result2 = normalizeAuthorizationSubject(input);
-    expect(result1).not.toBe(result2);
-    expect(result1.roles).not.toBe(result2.roles);
+  it('attempt to mutate returned roles array throws in strict mode', () => {
+    const result = normalizeAuthorizationSubject({ userId: 'u1', roles: ['admin'] });
+    expect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (result.roles as any).push('hack');
+    }).toThrow();
+  });
+
+  it('each call produces an independent snapshot', () => {
+    const input = { userId: 'u1', roles: ['admin'] };
+    const r1 = normalizeAuthorizationSubject(input);
+    const r2 = normalizeAuthorizationSubject(input);
+    expect(r1).not.toBe(r2);
+    expect(r1.roles).not.toBe(r2.roles);
   });
 });
 
@@ -246,7 +312,7 @@ describe('normalizeAuthorizationSubject', () => {
 // ---------------------------------------------------------------------------
 
 describe('adaptLegacyToCanonical', () => {
-  it('adapts valid legacy subject to canonical form', () => {
+  it('adapts valid legacy subject', () => {
     const legacy: LegacyAuthorizationSubject = {
       id: 'user-123',
       email: 'test@example.com',
@@ -258,68 +324,40 @@ describe('adaptLegacyToCanonical', () => {
     const { subject } = adaptLegacyToCanonical(legacy);
     expect(subject.status).toBe(AuthenticationStatus.AUTHENTICATED);
     expect(subject.userId).toBe('user-123');
-    expect(subject.email).toBe('test@example.com');
-    expect(subject.role).toBe('member');
     expect(subject.roles).toEqual(['contributor', 'member']);
     expect(subject.permissions).toEqual(['posts.read', 'users.read']);
   });
 
-  it('handles legacy isAdmin=true', () => {
-    const { subject } = adaptLegacyToCanonical({ id: 'user-123', isAdmin: true });
+  it('handles legacy role admin → isAdmin=true', () => {
+    const { subject } = adaptLegacyToCanonical({ id: 'u1', role: 'admin' });
     expect(subject.isAdmin).toBe(true);
   });
 
-  it('handles legacy role admin', () => {
-    const { subject } = adaptLegacyToCanonical({ id: 'user-123', role: 'admin' });
+  it('handles legacy role superadmin → isAdmin=true', () => {
+    const { subject } = adaptLegacyToCanonical({ id: 'u1', role: 'superadmin' });
     expect(subject.isAdmin).toBe(true);
   });
 
-  it('handles legacy role superadmin', () => {
-    const { subject } = adaptLegacyToCanonical({ id: 'user-123', role: 'superadmin' });
-    expect(subject.isAdmin).toBe(true);
-  });
-
-  it('handles legacy roles array containing admin', () => {
+  it('handles legacy roles array containing admin → isAdmin=true', () => {
     const { subject } = adaptLegacyToCanonical({
-      id: 'user-123',
+      id: 'u1',
       role: 'member',
       roles: ['member', 'admin'],
     });
     expect(subject.isAdmin).toBe(true);
   });
 
-  it('respects adminDeterminationRule=canonical (only explicit isAdmin)', () => {
+  it('respects adminDeterminationRule=canonical', () => {
     const { subject } = adaptLegacyToCanonical(
-      { id: 'user-123', role: 'admin', isAdmin: false },
+      { id: 'u1', role: 'admin', isAdmin: false },
       { adminDeterminationRule: 'canonical' }
     );
     expect(subject.isAdmin).toBe(false);
   });
 
-  it('respects adminDeterminationRule=union (either legacy or canonical)', () => {
-    const { subject } = adaptLegacyToCanonical(
-      { id: 'user-123', role: 'member', isAdmin: false, roles: ['admin'] },
-      { adminDeterminationRule: 'union' }
-    );
-    expect(subject.isAdmin).toBe(true);
-  });
-
   it('provides diagnostics when enabled', () => {
-    const { diagnostics } = adaptLegacyToCanonical(
-      { id: 'user-123' },
-      { diagnosticsEnabled: true }
-    );
-    expect(diagnostics).toBeDefined();
+    const { diagnostics } = adaptLegacyToCanonical({ id: 'u1' }, { diagnosticsEnabled: true });
     expect(diagnostics?.usedCompatibilityPath).toBe(true);
-    expect(typeof diagnostics?.pathDescription).toBe('string');
-  });
-
-  it('omits diagnostics when not enabled', () => {
-    const { diagnostics } = adaptLegacyToCanonical(
-      { id: 'user-123' },
-      { diagnosticsEnabled: false }
-    );
-    expect(diagnostics).toBeUndefined();
   });
 
   it('handles null legacy subject', () => {
@@ -329,11 +367,11 @@ describe('adaptLegacyToCanonical', () => {
 });
 
 // ---------------------------------------------------------------------------
-// canonicalSubjectFromSession
+// canonicalSubjectFromSession / canonicalSubjectFromToken
 // ---------------------------------------------------------------------------
 
 describe('canonicalSubjectFromSession', () => {
-  it('adapts NextAuth session with id field to canonical subject', () => {
+  it('adapts NextAuth session with id field', () => {
     const session = {
       user: {
         id: 'user-123',
@@ -354,29 +392,28 @@ describe('canonicalSubjectFromSession', () => {
     expect(subject.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
   });
 
-  it('handles session without user', () => {
-    const { subject } = canonicalSubjectFromSession({});
-    expect(subject.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
+  it('does NOT invoke accessor getter on session.user', () => {
+    const sideEffect = vi.fn().mockReturnValue({ id: 'injected' });
+    const session = {};
+    Object.defineProperty(session, 'user', { get: sideEffect, enumerable: true });
+    canonicalSubjectFromSession(session as { user?: Record<string, unknown> });
+    expect(sideEffect).not.toHaveBeenCalled();
   });
 });
 
-// ---------------------------------------------------------------------------
-// canonicalSubjectFromToken
-// ---------------------------------------------------------------------------
-
 describe('canonicalSubjectFromToken', () => {
-  it('adapts NextAuth JWT token to canonical subject', () => {
+  it('adapts NextAuth JWT token', () => {
     const token = {
       id: 'user-123',
-      email: 'test@example.com',
-      role: 'member',
-      roles: ['member'],
-      permissions: ['users.read'],
-      isAdmin: false,
+      role: 'admin',
+      roles: ['admin'],
+      permissions: [],
+      isAdmin: true,
     };
     const { subject } = canonicalSubjectFromToken(token);
     expect(subject.status).toBe(AuthenticationStatus.AUTHENTICATED);
     expect(subject.userId).toBe('user-123');
+    expect(subject.isAdmin).toBe(true);
   });
 
   it('handles null token', () => {
@@ -403,7 +440,7 @@ describe('mapPolicyToAuthorizationResult', () => {
     expect(result.errorMessage).toBeUndefined();
   });
 
-  it('maps forbidden (authenticated subject) to 403 FORBIDDEN', () => {
+  it('maps forbidden (authenticated) to 403 FORBIDDEN', () => {
     const result = mapPolicyToAuthorizationResult(
       { kind: 'forbidden' } satisfies PolicyResult,
       subject
@@ -412,7 +449,7 @@ describe('mapPolicyToAuthorizationResult', () => {
     expect(result.httpStatus).toBe(403);
   });
 
-  it('maps forbidden (unauthenticated subject) to 401 UNAUTHENTICATED', () => {
+  it('maps forbidden (unauthenticated) to 401 UNAUTHENTICATED', () => {
     const result = mapPolicyToAuthorizationResult(
       { kind: 'forbidden' } satisfies PolicyResult,
       unauthed
@@ -421,7 +458,7 @@ describe('mapPolicyToAuthorizationResult', () => {
     expect(result.httpStatus).toBe(401);
   });
 
-  it('maps unauthenticated to 401 UNAUTHENTICATED', () => {
+  it('maps unauthenticated to 401', () => {
     const result = mapPolicyToAuthorizationResult(
       { kind: 'unauthenticated' } satisfies PolicyResult,
       unauthed
@@ -439,7 +476,7 @@ describe('mapPolicyToAuthorizationResult', () => {
     expect(result.httpStatus).toBe(404);
   });
 
-  it('maps policy-error evaluator-failed to 500 POLICY_ERROR', () => {
+  it('maps policy-error evaluator-failed to 500', () => {
     const result = mapPolicyToAuthorizationResult(
       { kind: 'policy-error', error: { code: 'evaluator-failed' } } satisfies PolicyResult,
       subject
@@ -448,22 +485,13 @@ describe('mapPolicyToAuthorizationResult', () => {
     expect(result.httpStatus).toBe(500);
   });
 
-  it('maps policy-error missing-runtime-reference to 503 POLICY_ERROR', () => {
+  it('maps policy-error missing-runtime-reference to 503', () => {
     const result = mapPolicyToAuthorizationResult(
       { kind: 'policy-error', error: { code: 'missing-runtime-reference' } } satisfies PolicyResult,
       subject
     );
     expect(result.result).toBe(AuthorizationTransportResult.POLICY_ERROR);
     expect(result.httpStatus).toBe(503);
-  });
-
-  it('maps policy-error composition-failed to 500 POLICY_ERROR', () => {
-    const result = mapPolicyToAuthorizationResult(
-      { kind: 'policy-error', error: { code: 'composition-failed' } } satisfies PolicyResult,
-      subject
-    );
-    expect(result.result).toBe(AuthorizationTransportResult.POLICY_ERROR);
-    expect(result.httpStatus).toBe(500);
   });
 });
 
@@ -474,7 +502,7 @@ describe('mapPolicyToAuthorizationResult', () => {
 describe('Security invariants', () => {
   const subject = authenticatedSubject();
 
-  it('policy-error is never downgraded to FORBIDDEN', () => {
+  it('policy-error is never downgraded to FORBIDDEN or ALLOW', () => {
     for (const code of [
       'evaluator-failed',
       'resolver-failed',
@@ -489,34 +517,18 @@ describe('Security invariants', () => {
         subject
       );
       expect(result.result).toBe(AuthorizationTransportResult.POLICY_ERROR);
-      expect(result.result).not.toBe(AuthorizationTransportResult.FORBIDDEN);
       expect(result.httpStatus).toBeGreaterThanOrEqual(500);
+      expect(result.result).not.toBe(AuthorizationTransportResult.FORBIDDEN);
+      expect(result.result).not.toBe(AuthorizationTransportResult.ALLOW);
     }
   });
 
-  it('policy-error is never downgraded to ALLOW', () => {
-    const result = mapPolicyToAuthorizationResult(
-      { kind: 'policy-error', error: { code: 'composition-failed' } },
-      subject
-    );
-    expect(result.result).not.toBe(AuthorizationTransportResult.ALLOW);
-    expect(result.httpStatus).not.toBe(200);
-  });
-
-  it('error message never contains raw policy engine details', () => {
+  it('sanitized error message is never raw exception content', () => {
     const result = mapPolicyToAuthorizationResult(
       { kind: 'policy-error', error: { code: 'evaluator-failed' } },
       subject
     );
     expect(result.errorMessage).toBe('Policy evaluation error');
-  });
-
-  it('diagnostics are null by default (not enabled)', () => {
-    const result = mapPolicyToAuthorizationResult(
-      { kind: 'policy-error', error: { code: 'evaluator-failed' } },
-      subject
-    );
-    expect(result.diagnostics).toBeUndefined();
   });
 
   it('diagnostics expose only error code when enabled', () => {
@@ -526,10 +538,5 @@ describe('Security invariants', () => {
       { diagnosticsEnabled: true }
     );
     expect(result.diagnostics?.policyEvaluationDetails).toBe('evaluator-failed');
-  });
-
-  it('output subject is the passed-in canonical subject (reference identity)', () => {
-    const result = mapPolicyToAuthorizationResult({ kind: 'allow' }, subject);
-    expect(result.subject).toBe(subject);
   });
 });

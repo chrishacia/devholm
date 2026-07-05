@@ -29,7 +29,11 @@ import type {
 } from '../contracts';
 import { permissionId } from '../contracts';
 import type { PolicyRegistry } from './policy';
-import { type CanonicalAuthorizationSubject, AuthenticationStatus } from './normalization';
+import {
+  type CanonicalAuthorizationSubject,
+  AuthenticationStatus,
+  normalizeAuthorizationSubject as _normForFallback,
+} from './normalization';
 import {
   canonicalSubjectFromSession,
   type CompatibilityAdapterOptions,
@@ -284,16 +288,102 @@ export async function evaluateApiAuthorization(
     return {
       result: AuthorizationTransportResult.POLICY_ERROR,
       httpStatus: 500,
-      subject: {
-        status: AuthenticationStatus.UNAUTHENTICATED,
-        userId: null,
-        email: null,
-        role: null,
-        roles: [],
-        permissions: [],
-        isAdmin: false,
-      },
+      // Use the frozen unauthenticated subject constant via normalizeAuthorizationSubject(null).
+      subject: _normForFallback(null),
       errorMessage: 'Authorization evaluation error',
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Server-action authorization wrapper
+// ---------------------------------------------------------------------------
+
+/**
+ * Result of a server-action authorization evaluation.
+ *
+ * Unlike the HTTP-mapped result, this result is oriented for use in server
+ * actions where HTTP status codes are not directly relevant. The `allowed`
+ * flag provides a simple boolean gate, while `result` gives the full
+ * discriminated outcome for callers that need the distinction.
+ *
+ * Never contains raw exceptions, stack traces, or internal implementation details.
+ */
+export interface ServerActionAuthorizationResult {
+  /** Deterministic authorization result code */
+  result: AuthorizationTransportResult;
+
+  /** Whether the action is allowed to proceed */
+  allowed: boolean;
+
+  /** Canonical subject that was evaluated */
+  subject: CanonicalAuthorizationSubject;
+
+  /** Sanitized error message for display to callers (when not allowed) */
+  errorMessage?: string;
+
+  /** Diagnostics (only if explicitly enabled) */
+  diagnostics?: {
+    policyEvaluationDetails?: string;
+    migrationType?: 'canonical' | 'legacy-compat';
+  };
+}
+
+/**
+ * Evaluate authorization for a Next.js server action.
+ *
+ * Functionally equivalent to `evaluateApiAuthorization` but returns a
+ * result oriented for server-action consumers: no HTTP status code;
+ * includes an explicit `allowed` boolean flag.
+ *
+ * The session may be obtained via `auth()` (NextAuth) or any other
+ * dependency-injected subject source. Framework types are not imported
+ * into this module.
+ *
+ * @example
+ * ```ts
+ * // server-action file:
+ * 'use server';
+ *
+ * import { auth } from '@/auth';
+ * import { evaluateServerActionAuthorization } from '@devholm/sdk/server';
+ * import { appRegistry, adminAccessDeclaration, adminAccessOwner } from '@/lib/sdk-authorization';
+ *
+ * export async function deleteUser(userId: string) {
+ *   const session = await auth();
+ *   const authResult = await evaluateServerActionAuthorization(
+ *     session,
+ *     adminAccessDeclaration,
+ *     adminAccessOwner,
+ *     appRegistry,
+ *   );
+ *   if (!authResult.allowed) {
+ *     return { success: false, error: authResult.errorMessage };
+ *   }
+ *   // proceed with action...
+ * }
+ * ```
+ *
+ * @param session - Raw session value (e.g., NextAuth session or null)
+ * @param declaration - Access declaration defining the authorization policy
+ * @param owner - Policy owner (framework, site, or plugin namespace)
+ * @param registry - Stage 2 policy registry with required evaluator registrations
+ * @param options - Evaluation options
+ * @returns Action-oriented authorization result with explicit allowed flag
+ */
+export async function evaluateServerActionAuthorization(
+  session: unknown,
+  declaration: AccessDeclaration,
+  owner: OwnerId,
+  registry: PolicyRegistry,
+  options?: AuthorizationEvaluationOptions
+): Promise<ServerActionAuthorizationResult> {
+  const httpResult = await evaluateApiAuthorization(session, declaration, owner, registry, options);
+  return {
+    result: httpResult.result,
+    allowed: httpResult.result === AuthorizationTransportResult.ALLOW,
+    subject: httpResult.subject,
+    errorMessage: httpResult.errorMessage,
+    diagnostics: httpResult.diagnostics,
+  };
 }

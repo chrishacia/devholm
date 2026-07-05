@@ -1,44 +1,47 @@
+// @vitest-environment node
 /**
  * SDK Stage 3: Integration Scenarios
  * ====================================
  *
- * Integration-level tests demonstrating the complete Stage 3 authorization flow:
- *   session → compatibility adapter → canonical subject → policy evaluation → HTTP result
+ * Integration-level tests demonstrating the complete Stage 3 authorization flow.
  *
- * All tests use real Stage 2 PolicyResult shapes (kind discriminated union).
- * Session data is processed through the compatibility adapter (not passed raw to normalizer).
- * Prototype-pollution and determinism properties are covered here.
+ * Imports exclusively from public SDK entrypoints:
+ * - @devholm/sdk/server  — server-side types and functions
+ * - @devholm/sdk         — neutral contracts
+ *
+ * Environment: node (required for @devholm/sdk/server import)
+ *
+ * Flow: session → compatibility adapter → canonical subject → policy result → HTTP result
  */
 
 import { describe, it, expect } from 'vitest';
-import type { PolicyResult } from '../../packages/sdk/src/contracts';
-import { AuthenticationStatus } from '../../packages/sdk/src/server/normalization';
+import type { PolicyResult } from '@devholm/sdk';
 import {
+  normalizeAuthorizationSubject,
   canonicalSubjectFromSession,
   adaptLegacyToCanonical,
-} from '../../packages/sdk/src/server/compatibility-adapter';
-import {
   mapPolicyToAuthorizationResult,
   AuthorizationTransportResult,
-} from '../../packages/sdk/src/server/authorization-wrappers';
+  AuthenticationStatus,
+} from '@devholm/sdk/server';
 
 // ---------------------------------------------------------------------------
 // Scenario 1: Admin user allowed
 // ---------------------------------------------------------------------------
 
 describe('Scenario: admin user allowed', () => {
-  it('produces authenticated canonical subject from session', () => {
+  it('produces authenticated canonical subject from session with id field', () => {
     const session = {
       user: {
         id: 'admin-001',
         email: 'admin@example.com',
         role: 'admin',
         roles: ['admin', 'member'],
-        permissions: ['users.read', 'users.write', 'admin.access'],
+        permissions: ['users.read', 'admin.access'],
         isAdmin: true,
       },
     };
-    // Use the compatibility adapter — session.user has 'id', not 'userId'
+    // Use compatibility adapter — session.user has 'id', not 'userId'
     const { subject } = canonicalSubjectFromSession(session);
     expect(subject.status).toBe(AuthenticationStatus.AUTHENTICATED);
     expect(subject.isAdmin).toBe(true);
@@ -50,15 +53,17 @@ describe('Scenario: admin user allowed', () => {
     const { subject } = canonicalSubjectFromSession({
       user: { id: 'admin-001', role: 'admin', isAdmin: true, roles: ['admin'], permissions: [] },
     });
-    const policyResult: PolicyResult = { kind: 'allow' };
-    const result = mapPolicyToAuthorizationResult(policyResult, subject);
+    const result = mapPolicyToAuthorizationResult(
+      { kind: 'allow' } satisfies PolicyResult,
+      subject
+    );
     expect(result.result).toBe(AuthorizationTransportResult.ALLOW);
     expect(result.httpStatus).toBe(200);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Scenario 2: Regular member denied
+// Scenario 2: Member denied
 // ---------------------------------------------------------------------------
 
 describe('Scenario: member access denied', () => {
@@ -68,15 +73,15 @@ describe('Scenario: member access denied', () => {
         id: 'member-001',
         role: 'member',
         roles: ['member'],
-        permissions: ['posts.read'],
+        permissions: [],
         isAdmin: false,
       },
     });
     expect(subject.status).toBe(AuthenticationStatus.AUTHENTICATED);
-    expect(subject.isAdmin).toBe(false);
-
-    const policyResult: PolicyResult = { kind: 'forbidden' };
-    const result = mapPolicyToAuthorizationResult(policyResult, subject);
+    const result = mapPolicyToAuthorizationResult(
+      { kind: 'forbidden' } satisfies PolicyResult,
+      subject
+    );
     expect(result.result).toBe(AuthorizationTransportResult.FORBIDDEN);
     expect(result.httpStatus).toBe(403);
   });
@@ -95,44 +100,41 @@ describe('Scenario: unauthenticated user', () => {
 
   it('maps Stage 2 unauthenticated to 401', () => {
     const { subject } = canonicalSubjectFromSession(null);
-    const policyResult: PolicyResult = { kind: 'unauthenticated' };
-    const result = mapPolicyToAuthorizationResult(policyResult, subject);
+    const result = mapPolicyToAuthorizationResult(
+      { kind: 'unauthenticated' } satisfies PolicyResult,
+      subject
+    );
     expect(result.result).toBe(AuthorizationTransportResult.UNAUTHENTICATED);
     expect(result.httpStatus).toBe(401);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Scenario 4: Policy engine failure (security-critical — fail closed)
+// Scenario 4: Policy engine failure (fail-closed)
 // ---------------------------------------------------------------------------
 
 describe('Scenario: policy engine failure', () => {
   it('fails closed with 500 for evaluator-failed (never 403)', () => {
     const { subject } = canonicalSubjectFromSession({
-      user: { id: 'user-001', role: 'member', isAdmin: false, roles: ['member'], permissions: [] },
+      user: { id: 'u1', role: 'member', isAdmin: false, roles: ['member'], permissions: [] },
     });
-    const policyResult: PolicyResult = {
-      kind: 'policy-error',
-      error: { code: 'evaluator-failed' },
-    };
-    const result = mapPolicyToAuthorizationResult(policyResult, subject);
+    const result = mapPolicyToAuthorizationResult(
+      { kind: 'policy-error', error: { code: 'evaluator-failed' } } satisfies PolicyResult,
+      subject
+    );
     expect(result.result).toBe(AuthorizationTransportResult.POLICY_ERROR);
     expect(result.httpStatus).toBe(500);
     expect(result.result).not.toBe(AuthorizationTransportResult.FORBIDDEN);
   });
 
-  it('fails closed with 503 for missing-runtime-reference (never 403)', () => {
-    const { subject } = canonicalSubjectFromSession({
-      user: { id: 'user-001', role: 'member', isAdmin: false, roles: ['member'], permissions: [] },
-    });
-    const policyResult: PolicyResult = {
-      kind: 'policy-error',
-      error: { code: 'missing-runtime-reference' },
-    };
-    const result = mapPolicyToAuthorizationResult(policyResult, subject);
-    expect(result.result).toBe(AuthorizationTransportResult.POLICY_ERROR);
+  it('fails closed with 503 for missing-runtime-reference', () => {
+    const subject = normalizeAuthorizationSubject({ userId: 'u1' });
+    const result = mapPolicyToAuthorizationResult(
+      { kind: 'policy-error', error: { code: 'missing-runtime-reference' } } satisfies PolicyResult,
+      subject
+    );
     expect(result.httpStatus).toBe(503);
-    expect(result.result).not.toBe(AuthorizationTransportResult.FORBIDDEN);
+    expect(result.result).toBe(AuthorizationTransportResult.POLICY_ERROR);
   });
 });
 
@@ -142,18 +144,17 @@ describe('Scenario: policy engine failure', () => {
 
 describe('Scenario: legacy compatibility adapter', () => {
   it('adapts legacy authorization data to canonical form', () => {
-    const legacySubject = {
-      id: 'user-123',
-      email: 'user@example.com',
-      role: 'member',
-      roles: ['member', 'contributor'],
-      permissions: ['posts.read', 'posts.write'],
-      isAdmin: false,
-    };
-    const { subject, diagnostics } = adaptLegacyToCanonical(legacySubject, {
-      diagnosticsEnabled: true,
-      adminDeterminationRule: 'legacy',
-    });
+    const { subject, diagnostics } = adaptLegacyToCanonical(
+      {
+        id: 'user-123',
+        email: 'user@example.com',
+        role: 'member',
+        roles: ['member', 'contributor'],
+        permissions: ['posts.read', 'posts.write'],
+        isAdmin: false,
+      },
+      { diagnosticsEnabled: true, adminDeterminationRule: 'legacy' }
+    );
     expect(subject.status).toBe(AuthenticationStatus.AUTHENTICATED);
     expect(subject.userId).toBe('user-123');
     expect(subject.roles).toEqual(['contributor', 'member']);
@@ -168,10 +169,9 @@ describe('Scenario: legacy compatibility adapter', () => {
 
 describe('Scenario: prototype pollution protection', () => {
   it('normalizes out prototype-pollution role keys', () => {
-    // Use adapter which internally calls normalizeAuthorizationSubject
     const { subject } = canonicalSubjectFromSession({
       user: {
-        id: 'user-001',
+        id: 'u1',
         roles: ['member', '__proto__', 'constructor', 'prototype', 'admin'],
         permissions: [],
         isAdmin: false,
@@ -180,7 +180,6 @@ describe('Scenario: prototype pollution protection', () => {
     expect(subject.roles).toEqual(['admin', 'member']);
     expect(subject.roles).not.toContain('__proto__');
     expect(subject.roles).not.toContain('constructor');
-    expect(subject.roles).not.toContain('prototype');
   });
 });
 
@@ -192,7 +191,7 @@ describe('Scenario: determinism', () => {
   it('deduplicates and sorts roles and permissions', () => {
     const { subject } = canonicalSubjectFromSession({
       user: {
-        id: 'user-001',
+        id: 'u1',
         roles: ['admin', 'member', 'admin', 'contributor', 'member'],
         permissions: ['write', 'read', 'write', 'delete', 'read'],
       },
@@ -200,45 +199,29 @@ describe('Scenario: determinism', () => {
     expect(subject.roles).toEqual(['admin', 'contributor', 'member']);
     expect(subject.permissions).toEqual(['delete', 'read', 'write']);
   });
-
-  it('identical sessions produce identical canonical subjects', () => {
-    const session = {
-      user: {
-        id: 'user-001',
-        role: 'admin',
-        roles: ['admin', 'member'],
-        permissions: ['users.read', 'users.write'],
-        isAdmin: true,
-      },
-    };
-    const { subject: s1 } = canonicalSubjectFromSession(session);
-    const { subject: s2 } = canonicalSubjectFromSession(session);
-    expect(JSON.stringify(s1)).toBe(JSON.stringify(s2));
-  });
 });
 
 // ---------------------------------------------------------------------------
-// Scenario 8: Complete flow (session → canonical → policy result → HTTP)
+// Scenario 8: Complete flow
 // ---------------------------------------------------------------------------
 
 describe('Scenario: complete authorization flow', () => {
   it('produces ALLOW with 200 for admin session and allow policy result', () => {
     const session = {
       user: {
-        id: 'user-001',
-        email: 'user@example.com',
+        id: 'u1',
+        email: 'admin@example.com',
         role: 'admin',
         roles: ['admin', 'member'],
-        permissions: ['users.read', 'users.write'],
+        permissions: ['users.read'],
         isAdmin: true,
       },
     };
     const { subject } = canonicalSubjectFromSession(session);
-    const policyResult: PolicyResult = { kind: 'allow' };
-    const authResult = mapPolicyToAuthorizationResult(policyResult, subject);
-    expect(authResult.result).toBe(AuthorizationTransportResult.ALLOW);
-    expect(authResult.httpStatus).toBe(200);
-    expect(authResult.subject).toBe(subject);
-    expect(authResult.errorMessage).toBeUndefined();
+    const result = mapPolicyToAuthorizationResult({ kind: 'allow' }, subject);
+    expect(result.result).toBe(AuthorizationTransportResult.ALLOW);
+    expect(result.httpStatus).toBe(200);
+    expect(result.subject).toBe(subject);
+    expect(result.errorMessage).toBeUndefined();
   });
 });

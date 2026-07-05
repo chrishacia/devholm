@@ -25,6 +25,7 @@ import {
   mapPolicyToAuthorizationResult,
   type AuthorizationResult,
   type AuthorizationEvaluationOptions,
+  type ServerActionAuthorizationResult,
 } from '@devholm/sdk/server';
 import {
   defineAccessDeclaration,
@@ -74,19 +75,30 @@ export const adminAccessDeclaration: AccessDeclaration = defineAccessDeclaration
 export const adminAccessOwner: OwnerId = 'site';
 
 /**
- * Users-manage policy: requires 'users.manage' or 'admin.access' permission.
+ * Users-manage policy: preserves the full legacy `verifyPermission('users.manage')` access matrix.
  *
- * Pre-migration behavior: `verifyPermission(request, 'users.manage')` in auth-helpers.ts:
- *   - checks hasPermission(token, 'users.manage')
- *   - falls back to hasAdminAccess(token) for role-based admins
+ * Pre-migration behavior: `verifyPermission(request, 'users.manage')` permitted:
+ *   1. Explicit `users.manage` permission
+ *   2. Explicit `admin.access` permission
+ *   3. Role 'admin' (via hasAdminAccess)
+ *   4. Role 'superadmin' (via hasAdminAccess)
+ *   5. `roles` array containing 'admin' or 'superadmin' (via hasAdminAccess)
  *
- * Post-migration behavior: evaluates permission-any with both permissions explicitly.
+ * Post-migration behavior: uses anyOf composition so that either explicit
+ * `users.manage` permission OR the full adminAccessDeclaration (which covers
+ * all role-based and admin.access paths) is sufficient.
  *
  * Owner: 'site'
  */
 export const usersManageDeclaration: AccessDeclaration = defineAccessDeclaration({
-  kind: 'permission-any',
-  permissions: [permissionId('users.manage'), permissionId('admin.access')],
+  kind: 'anyOf',
+  policies: [
+    {
+      kind: 'permission-any',
+      permissions: [permissionId('users.manage')],
+    },
+    adminAccessDeclaration,
+  ],
 });
 export const usersManageOwner: OwnerId = 'site';
 
@@ -129,4 +141,49 @@ export async function authorizeRequest(
   });
 
   return mapPolicyToAuthorizationResult(policyResult, subject, options);
+}
+
+/**
+ * Evaluate authorization for a Next.js server action using JWT token from request.
+ *
+ * Returns a ServerActionAuthorizationResult with an explicit `allowed` flag
+ * suitable for server-action return values — no HTTP status codes.
+ *
+ * @example
+ * ```ts
+ * 'use server';
+ * import { authorizeServerAction, adminAccessDeclaration, adminAccessOwner } from '@/lib/sdk-authorization';
+ * import type { NextRequest } from 'next/server';
+ *
+ * // authorizeServerAction requires a NextRequest (available in Server Actions
+ * // invoked from route handlers). For session-based actions without a request,
+ * // call evaluateServerActionAuthorization() directly with auth().
+ * export async function dismissOnboarding(request: NextRequest) {
+ *   const auth = await authorizeServerAction(request, adminAccessDeclaration, adminAccessOwner);
+ *   if (!auth.allowed) return { success: false, error: auth.errorMessage };
+ *   // proceed...
+ * }
+ * ```
+ */
+export async function authorizeServerAction(
+  request: NextRequest,
+  declaration: AccessDeclaration,
+  owner: OwnerId,
+  options?: AuthorizationEvaluationOptions
+): Promise<ServerActionAuthorizationResult> {
+  const token = await getAdminToken(request);
+  const { subject } = canonicalSubjectFromToken(token);
+  const normalizedSubject = canonicalSubjectToNormalizedPolicySubject(subject);
+  const policyResult = await appRegistry.evaluateDeclaration(declaration, {
+    subject: normalizedSubject,
+    owner,
+  });
+  const httpResult = mapPolicyToAuthorizationResult(policyResult, subject, options);
+  return {
+    result: httpResult.result,
+    allowed: httpResult.result === 'allow',
+    subject: httpResult.subject,
+    errorMessage: httpResult.errorMessage,
+    diagnostics: httpResult.diagnostics,
+  };
 }

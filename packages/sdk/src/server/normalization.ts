@@ -2,113 +2,156 @@
  * SDK Stage 3: Canonical Authorization Subject Normalization
  * ============================================================
  *
- * Runtime-neutral canonical authorization subject model for deterministic policy evaluation.
- * This module provides the definitive subject representation for all authorization decisions.
+ * Accessor-safe design:
+ * - All field reads use `Object.getOwnPropertyDescriptor` (via `_normalization-helpers.ts`)
+ *   to inspect own data properties without invoking accessor getter traps.
+ * - Accessor properties on the source are never invoked.
+ * - Proxy-trap exceptions are caught and fail closed.
+ * - Array element reading is also descriptor-safe.
+ *
+ * Snapshot contract:
+ * - **Authenticated results**: each call returns a freshly allocated frozen object.
+ *   Mutating the source after normalization does not affect the returned result.
+ * - **Unauthenticated results**: returns a shared frozen constant
+ *   (`UNAUTHENTICATED_SUBJECT`). The returned reference is always the same object
+ *   for unauthenticated inputs, but it is frozen so mutations are impossible.
+ *   Callers that require reference identity (`===`) should not use unauthenticated
+ *   subjects as dictionary keys.
  *
  * Security invariants:
- * - Never trusts malformed runtime values
- * - Produces deterministic output with full deduplication
- * - Avoids prototype pollution and accessor execution
- * - Never leaks raw session/token objects
- * - Explicitly represents anonymous and authenticated subjects
- * - Establishes one documented administrator rule
- * - Remains serializable
+ * - Never trusts malformed runtime values.
+ * - Produces deterministic output with full deduplication and sorting.
+ * - Rejects prototype-pollution key injection.
+ * - Never leaks raw session/token objects.
+ * - `isAdmin`: only literal `true` is accepted (prevents privilege escalation via coercion).
+ * - Output is JSON-serializable.
  *
  * Related: ADR-0002, Stage 2 policy engine
  */
 
-/**
- * Canonical subject authentication status
- */
+import { safeOwnString, safeOwnBoolean, safeOwnStringArray } from './_normalization-helpers';
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
 export enum AuthenticationStatus {
-  /** Unauthenticated request with no valid session/token */
   UNAUTHENTICATED = 'unauthenticated',
-  /** Authenticated request with valid session/token */
   AUTHENTICATED = 'authenticated',
 }
 
 /**
  * Canonical authorization subject for policy evaluation.
- * Always serializable, never contains raw session/token objects.
+ *
+ * All fields are readonly. The `roles` and `permissions` arrays are frozen at
+ * runtime. Authenticated subjects are freshly allocated each call; unauthenticated
+ * subjects return a shared frozen constant.
  */
 export interface CanonicalAuthorizationSubject {
-  /** Authentication status */
-  status: AuthenticationStatus;
-
-  /** User ID, null for unauthenticated */
-  userId: string | null;
-
-  /** Email address, null for unauthenticated */
-  email: string | null;
-
-  /** Canonical primary role, null for unauthenticated or no role */
-  role: string | null;
-
-  /** Deduplicated, sorted array of all role identifiers */
-  roles: string[];
-
-  /** Deduplicated, sorted array of permission identifiers */
-  permissions: string[];
-
-  /** Explicit administrator status: true if user is admin, false otherwise */
-  isAdmin: boolean;
+  readonly status: AuthenticationStatus;
+  readonly userId: string | null;
+  readonly email: string | null;
+  readonly role: string | null;
+  readonly roles: readonly string[];
+  readonly permissions: readonly string[];
+  readonly isAdmin: boolean;
 }
 
 /**
  * Safe source for canonical subject normalization.
- * Input shape must never be trusted; all fields are defensively validated.
+ * All fields are typed as `unknown` — the normalizer validates every field.
  */
 export interface RawAuthorizationSubject {
-  userId?: unknown;
-  email?: unknown;
-  role?: unknown;
-  roles?: unknown;
-  permissions?: unknown;
-  isAdmin?: unknown;
+  readonly userId?: unknown;
+  readonly email?: unknown;
+  readonly role?: unknown;
+  readonly roles?: unknown;
+  readonly permissions?: unknown;
+  readonly isAdmin?: unknown;
 }
 
+// ---------------------------------------------------------------------------
+// Shared frozen unauthenticated constant
+// ---------------------------------------------------------------------------
+
 /**
- * Normalize raw authorization subject into canonical form.
- * Never throws; always produces a valid canonical subject or unauthenticated default.
+ * Shared frozen unauthenticated subject constant.
  *
- * Defensive behavior:
- * - Non-string/non-null userId is rejected; unauthenticated result
- * - Non-string/non-null email is rejected; set to null
- * - Non-string/non-null role is rejected; set to null
- * - Non-array roles are rejected; set to []
- * - Non-string elements in roles array are filtered out
- * - Duplicate roles are deduplicated and sorted
- * - Empty string roles are filtered out
- * - Non-array permissions are rejected; set to []
- * - Non-string elements in permissions array are filtered out
- * - Duplicate permissions are deduplicated and sorted
- * - Empty string permissions are filtered out
- * - Non-boolean isAdmin is strictly required to be true; any other value (including truthy
- *   non-booleans such as strings or numbers) is treated as false for security.
+ * All unauthenticated inputs return this exact reference. It is frozen so
+ * mutations will throw. Callers must not use reference identity to distinguish
+ * unauthenticated results; check `subject.status` instead.
+ */
+const UNAUTHENTICATED_SUBJECT: CanonicalAuthorizationSubject = Object.freeze({
+  status: AuthenticationStatus.UNAUTHENTICATED,
+  userId: null,
+  email: null,
+  role: null,
+  roles: Object.freeze([]) as readonly string[],
+  permissions: Object.freeze([]) as readonly string[],
+  isAdmin: false,
+} satisfies CanonicalAuthorizationSubject);
+
+function createUnauthenticatedSubject(): CanonicalAuthorizationSubject {
+  return UNAUTHENTICATED_SUBJECT;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalize a raw authorization subject into the canonical frozen form.
  *
- * @param raw - Raw input subject (may be null, undefined, or malformed)
- * @param options - Normalization options (reserved for future policy extensions)
- * @returns Canonical subject ready for policy evaluation
+ * Never throws; always produces a valid canonical subject or the shared
+ * unauthenticated constant if the input is absent or invalid.
+ *
+ * **Field extraction is accessor-safe**: own data properties are read via
+ * `Object.getOwnPropertyDescriptor`. Accessor properties (getters/setters) on
+ * the source are never invoked. Proxy-trap exceptions are caught and fail closed.
+ * Array elements are extracted element-by-element using descriptor inspection.
+ *
+ * **Snapshot contract**:
+ * - Authenticated: each call returns a freshly allocated frozen object. Mutating
+ *   the source after this call does not affect the already-returned result.
+ * - Unauthenticated: returns the shared `UNAUTHENTICATED_SUBJECT` constant (same
+ *   object reference for every unauthenticated call). It is frozen; mutations throw.
+ *
+ * Defensive rules:
+ * - Input must be a non-null, non-array plain object (or null/undefined → unauthenticated).
+ * - `userId`: must be a non-empty own data-property string; otherwise unauthenticated.
+ * - `email`/`role`: non-empty string or null.
+ * - `roles`/`permissions`: sorted, deduplicated, pollution-filtered string arrays.
+ * - `isAdmin`: only literal `true` is accepted; any other value returns false.
  */
 export function normalizeAuthorizationSubject(
   raw: RawAuthorizationSubject | null | undefined
 ): CanonicalAuthorizationSubject {
-  if (!raw || typeof raw !== 'object') {
+  if (raw === null || raw === undefined) {
+    return createUnauthenticatedSubject();
+  }
+  if (typeof raw !== 'object') {
+    return createUnauthenticatedSubject();
+  }
+  // Array.isArray on a revoked proxy throws; wrap in try/catch.
+  try {
+    if (Array.isArray(raw)) return createUnauthenticatedSubject();
+  } catch {
     return createUnauthenticatedSubject();
   }
 
-  const userId = extractString(raw.userId);
+  const userId = safeOwnString(raw, 'userId');
   if (!userId) {
     return createUnauthenticatedSubject();
   }
 
-  const email = extractString(raw.email);
-  const role = extractString(raw.role);
-  const roles = extractAndDedupStringArray(raw.roles);
-  const permissions = extractAndDedupStringArray(raw.permissions);
-  const isAdmin = extractBoolean(raw.isAdmin);
+  const email = safeOwnString(raw, 'email');
+  const role = safeOwnString(raw, 'role');
+  const roles = safeOwnStringArray(raw, 'roles');
+  const permissions = safeOwnStringArray(raw, 'permissions');
+  const isAdmin = safeOwnBoolean(raw, 'isAdmin');
 
-  return {
+  // Authenticated: fresh frozen object each call.
+  return Object.freeze({
     status: AuthenticationStatus.AUTHENTICATED,
     userId,
     email,
@@ -116,72 +159,13 @@ export function normalizeAuthorizationSubject(
     roles,
     permissions,
     isAdmin,
-  };
+  } satisfies CanonicalAuthorizationSubject);
 }
 
-/**
- * Create an unauthenticated canonical subject (default safe state).
- */
-function createUnauthenticatedSubject(): CanonicalAuthorizationSubject {
-  return {
-    status: AuthenticationStatus.UNAUTHENTICATED,
-    userId: null,
-    email: null,
-    role: null,
-    roles: [],
-    permissions: [],
-    isAdmin: false,
-  };
-}
-
-/**
- * Safely extract string value or return null.
- */
-function extractString(value: unknown): string | null {
-  if (typeof value === 'string' && value.length > 0) {
-    return value;
-  }
-  return null;
-}
-
-/**
- * Safely extract boolean value.
- * Only literal `true` is accepted as true; any other value (including truthy
- * non-booleans such as 'true', 1, or 'yes') returns false.
- * This prevents privilege escalation via type coercion of the isAdmin field.
- */
-function extractBoolean(value: unknown): boolean {
-  return value === true;
-}
-
-/**
- * Safely extract array of strings, deduplicate, sort, and return.
- * Filters out non-string, empty string, and null values.
- */
-function extractAndDedupStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  // Filter to valid non-empty strings
-  const strings = value
-    .filter((item): item is string => typeof item === 'string' && item.length > 0)
-    .filter((item) => !isPrototypePollutionKey(item));
-
-  // Deduplicate and sort for deterministic output
-  return Array.from(new Set(strings)).sort();
-}
-
-/**
- * Detect prototype pollution attack keys.
- */
-function isPrototypePollutionKey(key: string): boolean {
-  return (
-    key === '__proto__' ||
-    key === 'constructor' ||
-    key === 'prototype' ||
-    key === 'hasOwnProperty' ||
-    key === 'toString' ||
-    key === 'valueOf'
-  );
-}
+// ---------------------------------------------------------------------------
+// Note: The safe-property helpers (safeReadOwnProperty, safeOwnString, etc.)
+// are defined in `./_normalization-helpers.ts` and imported above. They are
+// NOT re-exported from this module. `compatibility-adapter.ts` imports them
+// directly from `_normalization-helpers.ts`. These helpers are internal SDK
+// implementation details and are not part of the `@devholm/sdk/server` API.
+// ---------------------------------------------------------------------------
