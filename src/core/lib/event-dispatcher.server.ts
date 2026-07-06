@@ -32,6 +32,7 @@ async function isPluginEnabled(pluginId: string): Promise<boolean> {
 /**
  * Get the observability context for logging event handler results.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getObservabilityContext(
   event: DomainEvent,
   pluginId: string,

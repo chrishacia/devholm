@@ -6,25 +6,26 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getDb } from '@/db';
 import {
-  eventTypeId,
   eventHandlerId,
   eventPayloadVersion,
   StandardEventTypes,
+  // eventTypeId - unused in this test
   type UserCreatedEvent,
   type UserAuthenticatedEvent,
 } from '@core/types/events';
-import { getEventRegistry, resetEventRegistry, setEventRegistry, EventRegistry } from '@core/lib/event-registry.server';
 import {
-  dispatchEvent,
-  dispatchEventWithResults,
-} from '@core/lib/event-dispatcher.server';
+  resetEventRegistry,
+  setEventRegistry,
+  EventRegistry,
+} from '@core/lib/event-registry.server';
+import { dispatchEvent, dispatchEventWithResults } from '@core/lib/event-dispatcher.server';
 
 describe('Event Dispatcher', () => {
   beforeEach(async () => {
     resetEventRegistry();
-    // Ensure plugins are in enabled state for tests
-    const db = getDb();
-    await db('site_settings').where('key', 'like', 'plugin:%:enabled').del();
+    // Clear mock site_settings before each test
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__mockSiteSettings?.clear();
   });
 
   afterEach(() => {
@@ -96,7 +97,11 @@ describe('Event Dispatcher', () => {
 
     // Enable only plugin-1
     const db = getDb();
-    await db('site_settings').insert({ key: 'plugin:plugin-1:enabled', value: 'true', type: 'boolean' });
+    await db('site_settings').insert({
+      key: 'plugin:plugin-1:enabled',
+      value: 'true',
+      type: 'boolean',
+    });
     // plugin-2 is not enabled (no entry or value is false)
 
     const event: UserCreatedEvent = {
@@ -270,7 +275,11 @@ describe('Event Dispatcher', () => {
     });
 
     const db = getDb();
-    await db('site_settings').insert({ key: 'plugin:plugin-1:enabled', value: 'true', type: 'boolean' });
+    await db('site_settings').insert({
+      key: 'plugin:plugin-1:enabled',
+      value: 'true',
+      type: 'boolean',
+    });
 
     const userCreatedEvent: UserCreatedEvent = {
       eventTypeId: StandardEventTypes.USER_CREATED,

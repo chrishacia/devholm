@@ -20,9 +20,14 @@ export type {
   EventHandler,
   EventHandlerRegistration,
   EventEmissionContext,
-} from '@core/types/events';
+} from './types/events';
 
-export { StandardEventTypes } from '@core/types/events';
+export {
+  StandardEventTypes,
+  eventTypeId,
+  eventHandlerId,
+  eventPayloadVersion,
+} from './types/events';
 
 // Export job types for public SDK
 export type {
@@ -36,9 +41,14 @@ export type {
   JobHandlerRegistration,
   JobExecutionContext,
   JobStatusRecord,
-} from '@core/types/jobs';
+} from './types/jobs';
 
-export { StandardJobRetryPolicies } from '@core/types/jobs';
+export {
+  StandardJobRetryPolicies,
+  jobTypeId,
+  jobInstanceId,
+  jobPayloadVersion,
+} from './types/jobs';
 
 // Export task types for public SDK
 export type {
@@ -48,9 +58,15 @@ export type {
   TaskHandler,
   TaskHandlerRegistration,
   TaskStatusRecord,
-} from '@core/types/tasks';
+} from './types/tasks';
 
-export { StandardSchedules, StandardCronExpressions } from '@core/types/tasks';
+export {
+  StandardSchedules,
+  StandardCronExpressions,
+  taskTypeId,
+  intervalSchedule,
+  cronSchedule,
+} from './types/tasks';
 
 export type OwnerId = 'framework' | 'site' | `plugin:${string}`;
 

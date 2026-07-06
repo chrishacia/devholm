@@ -4,17 +4,17 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getDb } from '@/db';
 import {
   eventTypeId,
   eventHandlerId,
   eventPayloadVersion,
   StandardEventTypes,
-  type UserCreatedEvent,
-  type UserAuthenticatedEvent,
-  type PluginEnabledEvent,
 } from '@core/types/events';
-import { getEventRegistry, resetEventRegistry, setEventRegistry, EventRegistry } from '@core/lib/event-registry.server';
+import {
+  resetEventRegistry,
+  setEventRegistry,
+  EventRegistry,
+} from '@core/lib/event-registry.server';
 
 describe('Event System', () => {
   beforeEach(() => {
@@ -157,7 +157,7 @@ describe('Event System', () => {
       const handler = vi.fn();
       const registry = new EventRegistry();
       setEventRegistry(registry);
-      
+
       registry.register({
         handlerId: eventHandlerId('onUserCreated'),
         pluginId: 'test-plugin',
@@ -177,7 +177,9 @@ describe('Event System', () => {
       expect(() => eventPayloadVersion(-1)).toThrow();
       expect(() => eventPayloadVersion(1.5)).toThrow();
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect(eventPayloadVersion(1)).toEqual(1 as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect(eventPayloadVersion(100)).toEqual(100 as any);
     });
   });

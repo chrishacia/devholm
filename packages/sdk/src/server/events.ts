@@ -8,14 +8,14 @@
 import 'server-only';
 
 import type {
-  EventTypeId,
+  // EventTypeId - unused in this module
   EventHandlerId,
   DomainEvent,
   EventHandler,
   EventHandlerRegistration,
-} from '@core/types/events';
+} from '../types/events';
 import { getEventRegistry } from '@core/lib/event-registry.server';
-import { eventHandlerId } from '@core/types/events';
+import { eventHandlerId } from '../types/events';
 
 /**
  * Define and register an event handler for a plugin.

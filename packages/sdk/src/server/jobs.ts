@@ -7,8 +7,8 @@
 
 import 'server-only';
 
-import type { JobTypeId, JobHandlerRegistration, BaseJob } from '@core/types/jobs';
-import { jobTypeId as createJobTypeId } from '@core/types/jobs';
+import type { JobTypeId, JobHandlerRegistration, BaseJob } from '../types/jobs';
+import { jobTypeId as createJobTypeId } from '../types/jobs';
 import { getJobRegistry } from '@core/lib/job-registry.server';
 import { enqueueJob as enqueueJobImpl } from '@core/lib/job-queue.server';
 
@@ -23,10 +23,12 @@ import { enqueueJob as enqueueJobImpl } from '@core/lib/job-queue.server';
  *   handler: async (job) => {
  *     // Process the job
  *   },
- *   defaultRetryPolicy: StandardJobRetryPolicies.STANDARD,
+ *   retryPolicy: StandardJobRetryPolicies.STANDARD,
  * });
  * ```
  */
+// T is used in generic parameter for proper typing
+
 export function defineJobHandler<T extends BaseJob = BaseJob>(
   registration: JobHandlerRegistration<T>
 ): JobHandlerRegistration<T> {
@@ -41,6 +43,21 @@ export function defineJobHandler<T extends BaseJob = BaseJob>(
   }
   if (!registration.handler) {
     throw new Error('Job handler registration requires a handler function');
+  }
+  if (!registration.retryPolicy) {
+    throw new Error('Job handler registration requires a retryPolicy');
+  }
+  if (
+    typeof registration.retryPolicy.maxRetries !== 'number' ||
+    registration.retryPolicy.maxRetries < 0
+  ) {
+    throw new Error('Retry policy requires a non-negative maxRetries value');
+  }
+  if (
+    typeof registration.retryPolicy.backoffMs !== 'number' ||
+    registration.retryPolicy.backoffMs < 0
+  ) {
+    throw new Error('Retry policy requires a non-negative backoffMs value');
   }
 
   registry.register(registration as JobHandlerRegistration);
