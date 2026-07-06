@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.11.0](https://github.com/chrishacia/devholm/compare/v3.10.3...v3.11.0) (2026-07-06)
+
+### Features
+
+- **core:** add complete plugin system tests, acceptance proof, and linting fixes ([4789588](https://github.com/chrishacia/devholm/commit/47895888240b88b5618a9766e92816af11fe50c6))
+- **issue-11:** Add extension events, jobs, and tasks infrastructure ([77a25d4](https://github.com/chrishacia/devholm/commit/77a25d410cc65ede262dbc374c00f32ce68f8682))
+
+### Bug Fixes
+
+- **lib:** resolve all PR[#44](https://github.com/chrishacia/devholm/issues/44) review threads and fix CI E2E failures ([0924fe2](https://github.com/chrishacia/devholm/commit/0924fe2b224872ba035968cd8bfc65ddf891be9c))
+
 ## [3.10.3](https://github.com/chrishacia/devholm/compare/v3.10.2...v3.10.3) (2026-07-06)
 
 ### Documentation
