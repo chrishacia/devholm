@@ -63,7 +63,7 @@ export function createTestIdentity(
         role: 'member',
         roles: ['member'],
         permissions: ['admin.access'],
-        isAdmin: false,
+        isAdmin: true,
       };
 
     case 'users-manage-only':

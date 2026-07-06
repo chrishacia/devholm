@@ -419,4 +419,227 @@ describe('Stage 3 Server Action Authorization', () => {
       expect(usersManageResult.success).toBe(true);
     });
   });
+
+  // =========================================================================
+  // Authentication Service Failure Tests
+  // =========================================================================
+
+  describe('Authentication service failure handling', () => {
+    it('auth() exception in admin action returns policy-error', async () => {
+      const error = new Error('Database connection failed');
+      mockAuth.mockRejectedValueOnce(error);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      expect(result.success).toBe(false);
+      expect(result.result).toBe('policy-error');
+      expect(result.error).toBe('Authorization service unavailable');
+      expect(result.data).toBeUndefined();
+      // Verify raw error message is not exposed
+      expect(result.error).not.toContain('Database connection failed');
+      expect(result.error).not.toContain(error.message);
+    });
+
+    it('auth() exception in users-manage action returns policy-error', async () => {
+      const error = new Error('Session cache expired');
+      mockAuth.mockRejectedValueOnce(error);
+
+      const result = await stage3UsersManageAuthorizationProofAction();
+
+      expect(result.success).toBe(false);
+      expect(result.result).toBe('policy-error');
+      expect(result.error).toBe('Authorization service unavailable');
+      expect(result.data).toBeUndefined();
+      // Verify raw error message is not exposed
+      expect(result.error).not.toContain('Session cache expired');
+      expect(result.error).not.toContain(error.message);
+    });
+
+    it('policy-error result is distinguishable from ordinary forbidden', async () => {
+      // First test: ordinary forbidden (session exists but permission denied)
+      const deniedSession = createMockSession('member-123', 'member', [], false);
+      mockAuth.mockResolvedValueOnce(deniedSession);
+      const forbiddenResult = await stage3AdminAccessAuthorizationProofAction();
+
+      // Second test: policy-error (auth service failed)
+      mockAuth.mockRejectedValueOnce(new Error('Service unavailable'));
+      const policyErrorResult = await stage3AdminAccessAuthorizationProofAction();
+
+      // Both have success: false, but different result codes
+      expect(forbiddenResult.success).toBe(false);
+      expect(policyErrorResult.success).toBe(false);
+      expect(forbiddenResult.result).toBe('forbidden');
+      expect(policyErrorResult.result).toBe('policy-error');
+      expect(forbiddenResult.error).not.toBe(policyErrorResult.error);
+    });
+  });
+
+  // =========================================================================
+  // Malformed Session Tests
+  // =========================================================================
+
+  describe('Malformed session handling', () => {
+    it('session with empty userId returns unauthenticated', async () => {
+      const malformedSession: Session = {
+        user: {
+          id: '',
+          email: 'test@example.test',
+          name: 'Test User',
+          role: 'member',
+          roles: ['member'],
+          permissions: [],
+          isAdmin: false,
+          installCompleted: true,
+        },
+        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      mockAuth.mockResolvedValueOnce(malformedSession);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      expect(result.success).toBe(false);
+      expect(result.result).toBe('unauthenticated');
+      expect(result.data).toBeUndefined();
+    });
+
+    it('session with null userId fails safely', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const malformedSession: any = {
+        user: {
+          id: null,
+          email: 'test@example.test',
+          name: 'Test User',
+          role: 'member',
+          roles: ['member'],
+          permissions: [],
+          isAdmin: false,
+          installCompleted: true,
+        },
+        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      mockAuth.mockResolvedValueOnce(malformedSession);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      expect(result.success).toBe(false);
+      // Should fail safely with unauthenticated or forbidden, not crash
+      expect(['unauthenticated', 'forbidden']).toContain(result.result);
+      expect(result.data).toBeUndefined();
+    });
+
+    it('session with empty roles array fails closed', async () => {
+      const malformedSession: Session = {
+        user: {
+          id: 'user-123',
+          email: 'test@example.test',
+          name: 'Test User',
+          role: 'admin',
+          roles: [],
+          permissions: [],
+          isAdmin: true,
+          installCompleted: true,
+        },
+        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      mockAuth.mockResolvedValueOnce(malformedSession);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      // Empty roles array means no matching role, so should be denied
+      expect(result.success).toBe(false);
+      expect(result.result).toBe('forbidden');
+      expect(result.data).toBeUndefined();
+    });
+
+    it('session with null permissions array fails closed', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const malformedSession: any = {
+        user: {
+          id: 'user-123',
+          email: 'test@example.test',
+          name: 'Test User',
+          role: 'member',
+          roles: ['member'],
+          permissions: null,
+          isAdmin: false,
+          installCompleted: true,
+        },
+        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      mockAuth.mockResolvedValueOnce(malformedSession);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      // Null permissions means no permissions, so should be denied
+      expect(result.success).toBe(false);
+      expect(result.result).toBe('forbidden');
+      expect(result.data).toBeUndefined();
+    });
+  });
+
+  // =========================================================================
+  // Proof Payload Tests
+  // =========================================================================
+
+  describe('Proof payload structure and sanitization', () => {
+    it('successful admin action contains exact proof identifier', async () => {
+      const session = createMockSession('admin-123', 'admin', [], true);
+      mockAuth.mockResolvedValueOnce(session);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      expect(result.success).toBe(true);
+      expect(result.data).toBeDefined();
+      expect(result.data?.proof).toBe('admin-access-authorized');
+      expect(typeof result.data?.proof).toBe('string');
+    });
+
+    it('successful users-manage action contains exact proof identifier', async () => {
+      const session = createMockSession('member-123', 'member', ['users.manage'], false);
+      mockAuth.mockResolvedValueOnce(session);
+
+      const result = await stage3UsersManageAuthorizationProofAction();
+
+      expect(result.success).toBe(true);
+      expect(result.data).toBeDefined();
+      expect(result.data?.proof).toBe('users-manage-authorized');
+      expect(typeof result.data?.proof).toBe('string');
+    });
+
+    it('denied access does not include data field', async () => {
+      const session = createMockSession('member-123', 'member', [], false);
+      mockAuth.mockResolvedValueOnce(session);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      expect(result.success).toBe(false);
+      expect(result.data).toBeUndefined();
+    });
+
+    it('error message does not expose internal details', async () => {
+      mockAuth.mockRejectedValueOnce(new Error('Secret database error details'));
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      expect(result.error).toBeDefined();
+      expect(result.error).not.toContain('Secret database error details');
+      expect(result.error).not.toContain('Error:');
+      expect(result.error).not.toMatch(/at \w+/); // No stack traces
+    });
+
+    it('successful result is JSON serializable', async () => {
+      const session = createMockSession('admin-123', 'admin', [], true);
+      mockAuth.mockResolvedValueOnce(session);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      // Should not throw
+      const serialized = JSON.stringify(result);
+      expect(serialized).toBeDefined();
+      const deserialized = JSON.parse(serialized);
+      expect(deserialized.success).toBe(result.success);
+      expect(deserialized.result).toBe(result.result);
+      expect(deserialized.data?.proof).toBe('admin-access-authorized');
+    });
+  });
 });

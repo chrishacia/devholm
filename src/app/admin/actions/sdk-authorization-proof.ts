@@ -57,7 +57,20 @@ export interface ServerActionResult {
  */
 export async function stage3AdminAccessAuthorizationProofAction(): Promise<ServerActionResult> {
   // Step 1: Obtain session internally — no caller-supplied auth context
-  const session = await auth();
+  // Catch authentication service failures and return policy-error
+  let session;
+  try {
+    session = await auth();
+  } catch (
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _error
+  ) {
+    return {
+      success: false,
+      result: 'policy-error',
+      error: 'Authorization service unavailable',
+    };
+  }
 
   // Step 2: Evaluate authorization via Stage 3 SDK
   const authorization = await authorizeSessionAction(
@@ -102,7 +115,20 @@ export async function stage3AdminAccessAuthorizationProofAction(): Promise<Serve
  */
 export async function stage3UsersManageAuthorizationProofAction(): Promise<ServerActionResult> {
   // Obtain session internally — caller cannot supply or forge auth context
-  const session = await auth();
+  // Catch authentication service failures and return policy-error
+  let session;
+  try {
+    session = await auth();
+  } catch (
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _error
+  ) {
+    return {
+      success: false,
+      result: 'policy-error',
+      error: 'Authorization service unavailable',
+    };
+  }
 
   const authorization = await authorizeSessionAction(
     session,
