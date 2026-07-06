@@ -123,8 +123,12 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
     const response = await request.get('/api/admin/dashboard', {
       headers: { Cookie: cookie },
     });
+    const responseBody = await response.text();
 
-    expect(response.status()).toBe(200);
+    expect(
+      response.status(),
+      `GET /api/admin/dashboard returned ${response.status()}: ${responseBody}`
+    ).toBe(200);
   });
 
   test('admin-role: GET /api/admin/auth/users returns 200', async ({ request }) => {
@@ -134,8 +138,12 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
     const response = await request.get('/api/admin/auth/users', {
       headers: { Cookie: cookie },
     });
+    const responseBody = await response.text();
 
-    expect(response.status()).toBe(200);
+    expect(
+      response.status(),
+      `GET /api/admin/auth/users returned ${response.status()}: ${responseBody}`
+    ).toBe(200);
   });
 
   // =========================================================================
@@ -149,8 +157,12 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
     const response = await request.get('/api/admin/dashboard', {
       headers: { Cookie: cookie },
     });
+    const responseBody = await response.text();
 
-    expect(response.status()).toBe(200);
+    expect(
+      response.status(),
+      `GET /api/admin/dashboard returned ${response.status()}: ${responseBody}`
+    ).toBe(200);
   });
 
   test('superadmin-role: GET /api/admin/auth/users returns 200', async ({ request }) => {
@@ -160,8 +172,12 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
     const response = await request.get('/api/admin/auth/users', {
       headers: { Cookie: cookie },
     });
+    const responseBody = await response.text();
 
-    expect(response.status()).toBe(200);
+    expect(
+      response.status(),
+      `GET /api/admin/auth/users returned ${response.status()}: ${responseBody}`
+    ).toBe(200);
   });
 
   // =========================================================================
@@ -177,8 +193,12 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
     const response = await request.get('/api/admin/dashboard', {
       headers: { Cookie: cookie },
     });
+    const responseBody = await response.text();
 
-    expect(response.status()).toBe(200);
+    expect(
+      response.status(),
+      `GET /api/admin/dashboard returned ${response.status()}: ${responseBody}`
+    ).toBe(200);
   });
 
   test('admin.access permission only: GET /api/admin/auth/users returns 200', async ({
@@ -190,8 +210,12 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
     const response = await request.get('/api/admin/auth/users', {
       headers: { Cookie: cookie },
     });
+    const responseBody = await response.text();
 
-    expect(response.status()).toBe(200);
+    expect(
+      response.status(),
+      `GET /api/admin/auth/users returned ${response.status()}: ${responseBody}`
+    ).toBe(200);
   });
 
   // =========================================================================
@@ -220,8 +244,12 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
     const response = await request.get('/api/admin/auth/users', {
       headers: { Cookie: cookie },
     });
+    const responseBody = await response.text();
 
-    expect(response.status()).toBe(200);
+    expect(
+      response.status(),
+      `GET /api/admin/auth/users returned ${response.status()}: ${responseBody}`
+    ).toBe(200);
   });
 
   // =========================================================================

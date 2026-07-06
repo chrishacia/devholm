@@ -18,6 +18,30 @@ const COOKIE_NAME =
 const SECRET =
   process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'dev-secret-change-in-production';
 
+/**
+ * Deterministic UUID-format IDs for E2E-only fixture identities.
+ *
+ * These are stable across all test runs. They MUST remain valid UUIDs because
+ * the dashboard route calls getAuthOnboardingStatus(userId) → getLinkedAccountsForUser(userId)
+ * which queries auth_provider_accounts WHERE user_id = userId. That column is typed
+ * uuid in PostgreSQL (migration 20260604000000_add_auth_foundation.ts), so passing a
+ * non-UUID string (e.g. Date.now()) causes:
+ *   ERROR: invalid input syntax for type uuid
+ * which propagates as an unhandled exception → HTTP 500.
+ *
+ * Corresponding site_users rows are seeded by
+ * src/core/db/seeds/bootstrap/002_e2e_fixture_users.ts (CI/test only).
+ *
+ * Do NOT use these IDs in production code.
+ */
+export const E2E_FIXTURE_IDS = {
+  admin: 'e2e00000-0000-4000-8000-00000000a001',
+  superadmin: 'e2e00000-0000-4000-8000-00000000a002',
+  'admin-access-only': 'e2e00000-0000-4000-8000-00000000a003',
+  'users-manage-only': 'e2e00000-0000-4000-8000-00000000a004',
+  member: 'e2e00000-0000-4000-8000-00000000a005',
+} as const;
+
 export interface TestIdentity {
   id: string;
   email: string;
@@ -28,12 +52,15 @@ export interface TestIdentity {
 }
 
 /**
- * Create a test identity for Stage 3 authorization testing
+ * Create a test identity for Stage 3 authorization testing.
+ *
+ * Each identity type has a deterministic UUID-format ID that is stable across
+ * test runs and corresponds to a seeded site_users record (002_e2e_fixture_users.ts).
  */
 export function createTestIdentity(
   type: 'admin' | 'superadmin' | 'admin-access-only' | 'users-manage-only' | 'member'
 ): TestIdentity {
-  const baseId = `e2e-${type}-${Date.now()}`;
+  const baseId = E2E_FIXTURE_IDS[type];
 
   switch (type) {
     case 'admin':
