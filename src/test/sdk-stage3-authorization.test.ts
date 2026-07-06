@@ -816,3 +816,74 @@ describe('Revoked proxy — canonicalSubjectFromToken', () => {
     expect(subject.isAdmin).toBe(false);
   });
 });
+
+describe('Plain-object and null-prototype contract — toSafeObject', () => {
+  it('plain object → accepted', () => {
+    const { subject } = adaptLegacyToCanonical({ id: 'u1', role: 'admin' });
+    expect(subject.status).toBe(AuthenticationStatus.AUTHENTICATED);
+    expect(subject.userId).toBe('u1');
+  });
+
+  it('null-prototype object → accepted', () => {
+    const nullProto = Object.create(null);
+    nullProto.id = 'u1';
+    nullProto.role = 'admin';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { subject } = adaptLegacyToCanonical(nullProto as any);
+    expect(subject.status).toBe(AuthenticationStatus.AUTHENTICATED);
+    expect(subject.userId).toBe('u1');
+  });
+
+  it('class instance → rejected (non-Object.prototype)', () => {
+    class User {
+      id = 'u1';
+      role = 'admin';
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { subject } = adaptLegacyToCanonical(new User() as any);
+    expect(subject.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
+  });
+
+  it('Map instance → rejected (non-Object.prototype)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { subject } = adaptLegacyToCanonical(new Map([['id', 'u1']]) as any);
+    expect(subject.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
+  });
+
+  it('Set instance → rejected (non-Object.prototype)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { subject } = adaptLegacyToCanonical(new Set(['admin']) as any);
+    expect(subject.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
+  });
+
+  it('RegExp instance → rejected (non-Object.prototype)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { subject } = adaptLegacyToCanonical(/admin/ as any);
+    expect(subject.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
+  });
+
+  it('object with custom prototype → rejected', () => {
+    const customProto = { custom: true };
+    const obj = Object.create(customProto);
+    obj.id = 'u1';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { subject } = adaptLegacyToCanonical(obj as any);
+    expect(subject.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
+  });
+
+  it('proxy with throwing getPrototypeOf trap → rejected, no exception', () => {
+    const proxy = new Proxy(
+      { id: 'u1', role: 'admin' },
+      {
+        getPrototypeOf() {
+          throw new Error('getPrototypeOf threw');
+        },
+      }
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => adaptLegacyToCanonical(proxy as any)).not.toThrow();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { subject } = adaptLegacyToCanonical(proxy as any);
+    expect(subject.status).toBe(AuthenticationStatus.UNAUTHENTICATED);
+  });
+});

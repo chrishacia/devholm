@@ -74,7 +74,8 @@ export interface LegacyAuthorizationSubject {
  * Safely convert an unknown value to a non-null plain object or null.
  *
  * Accepted records: plain objects or null-prototype records with own data properties.
- * Rejected: null, undefined, non-objects, arrays, Date instances, functions.
+ * Rejected: null, undefined, non-objects, arrays, Date instances, functions, class instances,
+ * and any object whose prototype is neither Object.prototype nor null.
  *
  * Every inspection operation that may invoke a proxy trap is wrapped in an exception
  * boundary. Any exception during inspection causes this function to return null (fail
@@ -85,6 +86,8 @@ export interface LegacyAuthorizationSubject {
  *   operation throws — wrapped, returns null on exception.
  * - `instanceof Date`: invokes the [[GetPrototypeOf]] internal method — may throw on a
  *   revoked proxy — wrapped, returns null on exception (fail closed, not accepted).
+ * - `Object.getPrototypeOf`: may throw on a revoked proxy — wrapped, returns null on exception.
+ *   Only Object.prototype or null are accepted.
  */
 function toSafeObject(val: unknown): object | null {
   if (val === null || val === undefined) return null;
@@ -104,6 +107,19 @@ function toSafeObject(val: unknown): object | null {
     if (val instanceof Date) return null;
   } catch {
     return null; // fail closed: cannot safely inspect, reject
+  }
+  // Object.getPrototypeOf may throw on a revoked proxy. Fail closed: reject if
+  // we cannot safely inspect the prototype. Only plain objects (Object.prototype)
+  // and null-prototype records are accepted.
+  let prototype: object | null;
+  try {
+    prototype = Object.getPrototypeOf(val);
+  } catch {
+    return null; // fail closed: cannot safely inspect prototype
+  }
+  // Reject unless prototype is Object.prototype or null
+  if (prototype !== Object.prototype && prototype !== null) {
+    return null; // fail closed: class instance, Map, Set, RegExp, etc.
   }
   return val as object;
 }

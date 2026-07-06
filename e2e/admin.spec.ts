@@ -158,20 +158,29 @@ test.describe('Stage 3 SDK authorization: authenticated access matrix', () => {
   // Obtain a real session cookie for the seeded admin identity.
   // Failure to log in FAILS the test — a missing seed or broken login is a defect.
   async function loginAndGetSessionCookie(
-    page: import('@playwright/test').Page
+    page: import('@playwright/test').Page,
+    email: string
   ): Promise<{ name: string; value: string }> {
     await page.goto('/admin/login');
-    await page.getByRole('textbox', { name: /email/i }).fill('admin@example.test');
+    await page.getByRole('textbox', { name: /email/i }).fill(email);
     await page.locator('input[type="password"]').first().fill('e2e-test-password-change-me');
     await page.getByRole('button', { name: /sign in|log in/i }).click();
 
     // Wait for post-login redirect; if login fails the URL stays on /admin/login
-    await page.waitForURL(/\/admin(?!\/login)/, { timeout: 15000 });
+    try {
+      await page.waitForURL(/\/admin(?!\/login)/, { timeout: 15000 });
+    } catch {
+      throw new Error(
+        `E2E login failed for ${email}: still on /admin/login after submit or timeout. ` +
+          `Check that ${email} is seeded with the expected password.`
+      );
+    }
+
     const postLoginUrl = page.url();
     if (postLoginUrl.includes('/admin/login')) {
       throw new Error(
-        'E2E login failed: still on /admin/login after submit. ' +
-          'Check that admin@example.test is seeded with the expected password.'
+        `E2E login failed for ${email}: still on /admin/login after redirect. ` +
+          `Check that ${email} is seeded with the expected password.`
       );
     }
 
@@ -181,18 +190,22 @@ test.describe('Stage 3 SDK authorization: authenticated access matrix', () => {
     );
     if (!sessionCookie) {
       throw new Error(
-        'E2E login succeeded (redirected from login) but no session cookie was set. ' +
-          'Check NextAuth cookie configuration.'
+        `E2E login for ${email} succeeded (redirected from login) but no session cookie was set. ` +
+          `Check NextAuth cookie configuration.`
       );
     }
     return { name: sessionCookie.name, value: sessionCookie.value };
   }
 
+  // -----------------------------------------------------------------------
+  // Dashboard access matrix (adminAccessDeclaration)
+  // -----------------------------------------------------------------------
+
   test('authenticated admin-role caller: GET /api/admin/dashboard returns 200', async ({
     page,
     request,
   }) => {
-    const cookie = await loginAndGetSessionCookie(page);
+    const cookie = await loginAndGetSessionCookie(page, 'admin@example.test');
     const response = await request.get('/api/admin/dashboard', {
       headers: { Cookie: `${cookie.name}=${cookie.value}` },
     });
@@ -200,15 +213,79 @@ test.describe('Stage 3 SDK authorization: authenticated access matrix', () => {
     expect(response.status()).toBe(200);
   });
 
+  test('authenticated superadmin-role caller: GET /api/admin/dashboard returns 200', async ({
+    page,
+    request,
+  }) => {
+    const cookie = await loginAndGetSessionCookie(page, 'superadmin@example.test');
+    const response = await request.get('/api/admin/dashboard', {
+      headers: { Cookie: `${cookie.name}=${cookie.value}` },
+    });
+    // Superadmin role → Stage 3 adminAccessDeclaration (anyOf role-any[superadmin]) → 200
+    expect(response.status()).toBe(200);
+  });
+
+  test('authenticated member (denied): GET /api/admin/dashboard returns 403', async ({
+    page,
+    request,
+  }) => {
+    const cookie = await loginAndGetSessionCookie(page, 'member@example.test');
+    const response = await request.get('/api/admin/dashboard', {
+      headers: { Cookie: `${cookie.name}=${cookie.value}` },
+    });
+    // Member without admin role → Stage 3 unauthenticated for admin surface → 403
+    expect(response.status()).toBe(403);
+  });
+
+  // -----------------------------------------------------------------------
+  // Users management access matrix (usersManageDeclaration)
+  // -----------------------------------------------------------------------
+
   test('authenticated admin-role caller: GET /api/admin/auth/users returns 200', async ({
     page,
     request,
   }) => {
-    const cookie = await loginAndGetSessionCookie(page);
+    const cookie = await loginAndGetSessionCookie(page, 'admin@example.test');
     const response = await request.get('/api/admin/auth/users', {
       headers: { Cookie: `${cookie.name}=${cookie.value}` },
     });
     // Admin role → Stage 3 usersManageDeclaration anyOf → adminAccessDeclaration → 200
     expect(response.status()).toBe(200);
+  });
+
+  test('authenticated superadmin-role caller: GET /api/admin/auth/users returns 200', async ({
+    page,
+    request,
+  }) => {
+    const cookie = await loginAndGetSessionCookie(page, 'superadmin@example.test');
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: `${cookie.name}=${cookie.value}` },
+    });
+    // Superadmin role → Stage 3 usersManageDeclaration anyOf → adminAccessDeclaration → 200
+    expect(response.status()).toBe(200);
+  });
+
+  test('authenticated users.manage permission holder: GET /api/admin/auth/users returns 200', async ({
+    page,
+    request,
+  }) => {
+    const cookie = await loginAndGetSessionCookie(page, 'users-manage@example.test');
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: `${cookie.name}=${cookie.value}` },
+    });
+    // users.manage permission → Stage 3 usersManageDeclaration (permission-any branch) → 200
+    expect(response.status()).toBe(200);
+  });
+
+  test('authenticated member (denied): GET /api/admin/auth/users returns 403', async ({
+    page,
+    request,
+  }) => {
+    const cookie = await loginAndGetSessionCookie(page, 'member@example.test');
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: `${cookie.name}=${cookie.value}` },
+    });
+    // Member without permission/role → Stage 3 forbidden → 403
+    expect(response.status()).toBe(403);
   });
 });
