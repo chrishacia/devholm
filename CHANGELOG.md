@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.10.2](https://github.com/chrishacia/devholm/compare/v3.10.1...v3.10.2) (2026-07-06)
+
+### Bug Fixes
+
+- **sdk:** stage 3 proxy-safe hardening, server-action proof, and E2E authorization matrix ([5eb5460](https://github.com/chrishacia/devholm/commit/5eb5460ea53e288f9debe7ce91ca81260f02a56c))
+
 ## [3.10.1](https://github.com/chrishacia/devholm/compare/v3.10.0...v3.10.1) (2026-07-05)
 
 ### Bug Fixes
