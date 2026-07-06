@@ -226,16 +226,54 @@ Two real production API routes were migrated from legacy auth helpers to Stage 3
 
 ## E2E Access Matrix
 
-Playwright E2E tests in `e2e/admin.spec.ts` cover the following cases at the real HTTP boundary:
+Authoritative file: `e2e/stage3-complete-matrix.spec.ts`.
 
-| Identity                          | Dashboard | Users management | Note                |
-| --------------------------------- | --------- | ---------------- | ------------------- |
-| Anonymous                         | 401 ✅    | 401 ✅           | seeded; real HTTP   |
-| Admin role (`admin@example.test`) | 200 ✅    | 200 ✅           | seeded; real cookie |
+Session tokens are created with `next-auth/jwt` `encode()`/`decode()` directly from
+five deterministic `E2E_FIXTURE_IDS` constants. No credential login, no synthetic
+bootstrap users, and no `site_users` seed are required.
 
-Remaining matrix rows (superadmin, admin.access permission-only, users.manage permission-only, ordinary member denied) are covered by integration parity tests in `src/test/sdk-stage3-production-surfaces.test.ts`. E2E coverage for those identities requires additional seeded users beyond the current bootstrap.
+### Five identities
 
-**E2E failure policy:** login failure FAILS the test (no `test.skip`); a missing seed or broken login is a defect, not a skip condition.
+| Identity                 | Role       | Permissions  | `isAdmin` |
+| ------------------------ | ---------- | ------------ | --------- |
+| admin                    | admin      | —            | true      |
+| superadmin               | superadmin | —            | true      |
+| admin.access-only member | member     | admin.access | true      |
+| users.manage-only member | member     | users.manage | false     |
+| ordinary member          | member     | —            | false     |
+
+### Twelve logical HTTP authorization cases
+
+| Identity          | Dashboard | Users management |
+| ----------------- | --------- | ---------------- |
+| Anonymous         | 401 ✅    | 401 ✅           |
+| admin             | 200 ✅    | 200 ✅           |
+| superadmin        | 200 ✅    | 200 ✅           |
+| admin.access-only | 200 ✅    | 200 ✅           |
+| users.manage-only | 403 ✅    | 200 ✅           |
+| ordinary member   | 403 ✅    | 403 ✅           |
+
+### Five token encode/decode verification cases
+
+One round-trip `encode()`/`decode()` test per identity confirming id, email, role, roles,
+and `isAdmin` survive the JWE token. Permission-bearing identities (admin.access-only,
+users.manage-only, and member) also assert their permissions array.
+
+### Execution counts (final CI run `28768268806`)
+
+| Project       | Tests   |
+| ------------- | ------- |
+| Chromium      | 52      |
+| Firefox       | 52      |
+| WebKit        | 52      |
+| Mobile Chrome | 52      |
+| **Total**     | **208** |
+
+- Token-fixture executions (5 logical × 4 projects): **20**
+- HTTP-matrix executions (12 logical × 4 projects): **48**
+- Stage 3 total (17 logical × 4 projects): **68**
+
+Final run: 208 total, 208 expected, 0 unexpected, 0 flaky, 0 skipped Stage 3 tests.
 
 ---
 
