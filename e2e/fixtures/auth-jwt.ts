@@ -29,8 +29,9 @@ const SECRET =
  *   ERROR: invalid input syntax for type uuid
  * which propagates as an unhandled exception → HTTP 500.
  *
- * Corresponding site_users rows are seeded by
- * src/core/db/seeds/bootstrap/002_e2e_fixture_users.ts (CI/test only).
+ * A valid UUID with no matching rows in auth_provider_accounts returns an empty
+ * array — no persisted site_users row is required for the query to succeed.
+ * These IDs are signed session-claim fixtures for HTTP authorization testing only.
  *
  * Do NOT use these IDs in production code.
  */

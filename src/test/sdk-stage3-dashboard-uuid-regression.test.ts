@@ -19,26 +19,18 @@
  *   PostgreSQL to throw: invalid input syntax for type uuid
  *   which propagates as an unhandled exception → HTTP 500.
  *
+ *   A valid UUID with no matching rows returns an empty array — no persisted
+ *   site_users row is required for the query to succeed.
+ *
  * Fix applied:
  *   - e2e/fixtures/auth-jwt.ts: deterministic UUID-format IDs in E2E_FIXTURE_IDS
- *   - src/core/db/seeds/bootstrap/002_e2e_fixture_users.ts: seeds site_users rows
  *
- * This test file verifies the UUID contract is maintained and prevents regression.
+ * This test imports and validates the real fixture constants so that any change
+ * to E2E_FIXTURE_IDS is immediately detected here rather than silently regressing.
  */
 
 import { describe, it, expect } from 'vitest';
-
-/**
- * These must remain in sync with E2E_FIXTURE_IDS in e2e/fixtures/auth-jwt.ts.
- * If either changes, the regression is re-introduced.
- */
-const E2E_FIXTURE_IDS = {
-  admin: 'e2e00000-0000-4000-8000-00000000a001',
-  superadmin: 'e2e00000-0000-4000-8000-00000000a002',
-  'admin-access-only': 'e2e00000-0000-4000-8000-00000000a003',
-  'users-manage-only': 'e2e00000-0000-4000-8000-00000000a004',
-  member: 'e2e00000-0000-4000-8000-00000000a005',
-} as const;
+import { E2E_FIXTURE_IDS } from '../../e2e/fixtures/auth-jwt';
 
 // PostgreSQL accepts uuid values matching RFC 4122.
 // Version 4: third group starts with 4
