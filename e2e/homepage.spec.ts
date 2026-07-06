@@ -22,16 +22,25 @@ test.describe('Homepage', () => {
     const isMobileViewport = viewport !== null && viewport.width < 768;
 
     if (isMobileViewport) {
-      // On mobile the desktop nav is not rendered (conditional: {!isMobile && <nav>}).
-      // Instead, a hamburger button opens a slide-out Drawer with aria-label "Mobile navigation".
-      // Verify the menu toggle button is accessible — this proves site navigation exists on mobile.
+      // On mobile the desktop nav ({!isMobile && <nav aria-label="Main navigation">}) is
+      // not rendered. A hamburger button opens a Drawer that contains:
+      //   <List component="nav" aria-label="Mobile navigation">
+      // with ListItemButton component={Link} items rendering as <a> links.
       const menuToggle = page.getByRole('button', { name: /toggle menu/i });
       await expect(menuToggle).toBeVisible();
+      await menuToggle.click();
+
+      const mobileNavigation = page.getByRole('navigation', { name: /mobile navigation/i });
+      await expect(mobileNavigation.getByRole('link', { name: /^home$/i })).toBeVisible();
+      await expect(mobileNavigation.getByRole('link', { name: /^about$/i })).toBeVisible();
+      await expect(mobileNavigation.getByRole('link', { name: /^blog$/i })).toBeVisible();
     } else {
+      // Desktop: <Box component="nav" aria-label="Main navigation"> with Button component={Link}
+      // items that render as <a> links.
       const mainNavigation = page.getByRole('navigation', { name: /main navigation/i });
-      await expect(mainNavigation.getByRole('link', { name: /^home$/i })).toBeAttached();
-      await expect(mainNavigation.getByRole('link', { name: /^about$/i })).toBeAttached();
-      await expect(mainNavigation.getByRole('link', { name: /^blog$/i })).toBeAttached();
+      await expect(mainNavigation.getByRole('link', { name: /^home$/i })).toBeVisible();
+      await expect(mainNavigation.getByRole('link', { name: /^about$/i })).toBeVisible();
+      await expect(mainNavigation.getByRole('link', { name: /^blog$/i })).toBeVisible();
     }
   });
 
