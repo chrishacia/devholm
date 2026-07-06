@@ -53,7 +53,7 @@ export interface TestIdentity {
 }
 
 /**
- * Create a signed-session identity for Stage 3 authorization testing.
+ * Create an Auth.js JWE session-token identity for Stage 3 authorization testing.
  *
  * Each identity uses a deterministic UUID-v4 value that is stable across test
  * runs and safe to pass to PostgreSQL UUID comparisons. No persisted site_users

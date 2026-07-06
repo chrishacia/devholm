@@ -255,8 +255,9 @@ bootstrap users, and no `site_users` seed are required.
 
 ### Five token encode/decode verification cases
 
-One round-trip `encode()`/`decode()` test per identity confirming id, email, role,
-roles, permissions, and `isAdmin` fields survive the JWE session token.
+One round-trip `encode()`/`decode()` test per identity confirming id, email, role, roles,
+and `isAdmin` survive the JWE token. Permission-bearing identities (admin.access-only,
+users.manage-only, and member) also assert their permissions array.
 
 ### Execution counts (final CI run `28768268806`)
 
