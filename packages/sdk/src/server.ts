@@ -7,6 +7,9 @@ export * from './server/policy';
 export * from './server/normalization';
 export * from './server/compatibility-adapter';
 export * from './server/authorization-wrappers';
+export * from './server/events';
+export * from './server/jobs';
+export * from './server/tasks';
 
 if (typeof window !== 'undefined') {
   throw new Error(

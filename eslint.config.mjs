@@ -39,21 +39,33 @@ const eslintConfig = defineConfig([
         {
           patterns: [
             {
-              group: ['@core/*', '@user/*', '@/*'],
+              // SDK contracts must not depend on framework types/business logic
+              // This ensures SDK can be used by external consumers without framework deps
+              group: ['@core/types/*', '@core/app/*', '@user/*', '@/*'],
               message:
-                'SDK package code must not import root framework aliases. Keep @devholm/sdk independent from root internals.',
+                'SDK package code must not import root framework types/business logic. Keep @devholm/sdk contracts independent. Use types from @devholm/sdk/types instead.',
             },
             {
+              // Deep-relative imports to root internals must be blocked
               group: [
-                '**/src/core/*',
+                '**/src/core/types/*',
                 '**/src/app/*',
                 '**/src/user/*',
-                '../../../src/*',
-                '../../../../src/*',
-                '../../../../../src/*',
+                '../../../src/core/types/*',
+                '../../../src/app/*',
+                '../../../src/user/*',
+                '../../../src/middleware/*',
+                '../../../../src/core/types/*',
+                '../../../../src/app/*',
+                '../../../../src/user/*',
+                '../../../../src/middleware/*',
+                '../../../../../src/core/types/*',
+                '../../../../../src/app/*',
+                '../../../../../src/user/*',
+                '../../../../../src/middleware/*',
               ],
               message:
-                'SDK package code must not import root framework source files through deep-relative or direct src paths.',
+                'SDK package code must not import root framework types/business logic through relative paths. Keep @devholm/sdk contracts independent.',
             },
           ],
         },

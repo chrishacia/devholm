@@ -35,7 +35,8 @@ globalThis.ResizeObserver = vi.fn().mockImplementation(() => ({
 if (typeof window !== 'undefined') {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
-    value: vi.fn().mockImplementation((query) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    value: vi.fn().mockImplementation((query: any) => ({
       matches: false,
       media: query,
       onchange: null,

@@ -1,5 +1,73 @@
 import { SDK_RUNTIME_NEUTRAL } from './internal/runtime-tags';
 
+// Export event types for public SDK
+export type {
+  EventTypeId,
+  EventHandlerId,
+  EventPayloadVersion,
+  BaseEvent,
+  UserAuthenticatedEvent,
+  UserCreatedEvent,
+  UserDeletedEvent,
+  ContentCreatedEvent,
+  ContentUpdatedEvent,
+  ContentDeletedEvent,
+  PluginEnabledEvent,
+  PluginDisabledEvent,
+  SettingsChangedEvent,
+  RequestCompletedEvent,
+  DomainEvent,
+  EventHandler,
+  EventHandlerRegistration,
+  EventEmissionContext,
+} from './types/events';
+
+export {
+  StandardEventTypes,
+  eventTypeId,
+  eventHandlerId,
+  eventPayloadVersion,
+} from './types/events';
+
+// Export job types for public SDK
+export type {
+  JobTypeId,
+  JobInstanceId,
+  JobPayloadVersion,
+  JobStatus,
+  JobRetryPolicy,
+  BaseJob,
+  JobHandler,
+  JobHandlerRegistration,
+  JobExecutionContext,
+  JobStatusRecord,
+} from './types/jobs';
+
+export {
+  StandardJobRetryPolicies,
+  jobTypeId,
+  jobInstanceId,
+  jobPayloadVersion,
+} from './types/jobs';
+
+// Export task types for public SDK
+export type {
+  TaskTypeId,
+  TaskSchedule,
+  TaskExecutionContext,
+  TaskHandler,
+  TaskHandlerRegistration,
+  TaskStatusRecord,
+} from './types/tasks';
+
+export {
+  StandardSchedules,
+  StandardCronExpressions,
+  taskTypeId,
+  intervalSchedule,
+  cronSchedule,
+} from './types/tasks';
+
 export type OwnerId = 'framework' | 'site' | `plugin:${string}`;
 
 export type PermissionId = string & {
