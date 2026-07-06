@@ -18,6 +18,7 @@
 import { test, expect } from '@playwright/test';
 import {
   createTestIdentity,
+  createSessionToken,
   createSessionCookieHeader,
   verifySessionTokenRoundTrip,
   decodeSessionToken,
@@ -31,10 +32,7 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
   test.describe('Auth.js token fixture verification', () => {
     test('admin-role token encodes and decodes correctly', async () => {
       const identity = createTestIdentity('admin');
-      const token = await (async () => {
-        const h = await import('./fixtures/auth-jwt');
-        return h.createSessionToken(identity);
-      })();
+      const token = await createSessionToken(identity);
       const decoded = await decodeSessionToken(token);
       expect(decoded).toBeDefined();
       expect(decoded?.id).toBe(identity.id);
@@ -46,10 +44,7 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
 
     test('superadmin-role token encodes and decodes correctly', async () => {
       const identity = createTestIdentity('superadmin');
-      const token = await (async () => {
-        const h = await import('./fixtures/auth-jwt');
-        return h.createSessionToken(identity);
-      })();
+      const token = await createSessionToken(identity);
       const decoded = await decodeSessionToken(token);
       expect(decoded).toBeDefined();
       expect(decoded?.id).toBe(identity.id);
@@ -61,10 +56,7 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
 
     test('admin.access permission-only token encodes and decodes correctly', async () => {
       const identity = createTestIdentity('admin-access-only');
-      const token = await (async () => {
-        const h = await import('./fixtures/auth-jwt');
-        return h.createSessionToken(identity);
-      })();
+      const token = await createSessionToken(identity);
       const decoded = await decodeSessionToken(token);
       expect(decoded).toBeDefined();
       expect(decoded?.id).toBe(identity.id);
@@ -77,10 +69,7 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
 
     test('users.manage permission-only token encodes and decodes correctly', async () => {
       const identity = createTestIdentity('users-manage-only');
-      const token = await (async () => {
-        const h = await import('./fixtures/auth-jwt');
-        return h.createSessionToken(identity);
-      })();
+      const token = await createSessionToken(identity);
       const decoded = await decodeSessionToken(token);
       expect(decoded).toBeDefined();
       expect(decoded?.id).toBe(identity.id);
@@ -95,10 +84,7 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
       const identity = createTestIdentity('member');
       const roundTripValid = await verifySessionTokenRoundTrip(identity);
       expect(roundTripValid).toBe(true);
-      const token = await (async () => {
-        const h = await import('./fixtures/auth-jwt');
-        return h.createSessionToken(identity);
-      })();
+      const token = await createSessionToken(identity);
       const decoded = await decodeSessionToken(token);
       expect(decoded).toBeDefined();
       expect(decoded?.id).toBe(identity.id);
