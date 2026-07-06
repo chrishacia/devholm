@@ -53,10 +53,11 @@ export interface TestIdentity {
 }
 
 /**
- * Create a test identity for Stage 3 authorization testing.
+ * Create a signed-session identity for Stage 3 authorization testing.
  *
- * Each identity type has a deterministic UUID-format ID that is stable across
- * test runs and corresponds to a seeded site_users record (002_e2e_fixture_users.ts).
+ * Each identity uses a deterministic UUID-v4 value that is stable across test
+ * runs and safe to pass to PostgreSQL UUID comparisons. No persisted site_users
+ * record or synthetic bootstrap seed is required.
  */
 export function createTestIdentity(
   type: 'admin' | 'superadmin' | 'admin-access-only' | 'users-manage-only' | 'member'
