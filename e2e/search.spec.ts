@@ -14,8 +14,8 @@ test.describe('Search', () => {
     // Wait for page to be ready
     await page.waitForLoadState('networkidle');
 
-    // Press Cmd+K (or Ctrl+K on Windows/Linux)
-    await page.keyboard.press('Meta+k');
+    // Press Ctrl+K (works on all browsers/OS in CI; app also accepts Cmd+K on macOS)
+    await page.keyboard.press('Control+k');
 
     // Search dialog should appear
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 2000 });
@@ -39,7 +39,7 @@ test.describe('Search', () => {
     await page.waitForLoadState('networkidle');
 
     // Open search dialog
-    await page.keyboard.press('Meta+k');
+    await page.keyboard.press('Control+k');
     await expect(page.getByRole('dialog')).toBeVisible({ timeout: 2000 });
 
     // Close with Escape

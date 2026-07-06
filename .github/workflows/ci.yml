@@ -428,7 +428,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps
 
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -477,7 +477,7 @@ jobs:
           NEXTAUTH_SECRET: 'test-secret'
 
       - name: Run E2E tests
-        run: pnpm test:e2e --project=chromium
+        run: pnpm test:e2e
         env:
           DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
           DATABASE_HOST: 'localhost'

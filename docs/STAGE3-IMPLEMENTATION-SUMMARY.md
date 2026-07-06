@@ -1,6 +1,6 @@
 # SDK Stage 3: Server-Side Authorization Enforcement
 
-**Status:** Corrected via `fix/sdk-stage3-closeout` (follow-up to PR #40)
+**Status:** Final hardening via `fix/sdk-stage3-proxy-action-hardening` (follow-up to PR #41)
 **Related:** ADR-0002, Stage 2 (#31), issue #39, parent #6
 
 ---
@@ -45,7 +45,7 @@ export interface CanonicalAuthorizationSubject {
 
 ---
 
-## Accessor-Safe Field Reading
+## Accessor-Safe Field Reading and Revoked-Proxy Boundaries
 
 All field reads from untrusted source objects use `Object.getOwnPropertyDescriptor` rather than optional-chaining property access.
 
@@ -58,10 +58,28 @@ All field reads from untrusted source objects use `Object.getOwnPropertyDescript
 - If the descriptor has `value` (i.e., it's a data property), reads the value safely
 - Wraps all descriptor reads in `try/catch` to handle revoked-proxy exceptions and throwing `getOwnPropertyDescriptor` traps
 
-**Limitation:** Proxy objects' `[[GetOwnProperty]]` trap is still invoked by `getOwnPropertyDescriptor`. This cannot be avoided. The safety guarantee is:
+**Fully protected operations** (every one is inside a try/catch, fail-closed):
+
+| Operation                                                 | Protected | Fail-closed behavior                       |
+| --------------------------------------------------------- | --------- | ------------------------------------------ |
+| `Array.isArray(val)` in `safeStringElements`              | ✅        | returns frozen `[]`                        |
+| `Array.isArray(val)` in `toSafeObject`                    | ✅        | returns `null` (rejects object)            |
+| `val instanceof Date` in `toSafeObject`                   | ✅        | returns `null` (fail closed, not accepted) |
+| `Object.getOwnPropertyNames(arr)` in `safeStringElements` | ✅        | returns frozen `[]`                        |
+| `Object.getOwnPropertyDescriptor(obj, key)` per property  | ✅        | returns `undefined` for that property      |
+
+**Important: no "accept on failure" paths.** A previous version of `toSafeObject` accepted objects when the `instanceof Date` check threw. This has been corrected: any inspection exception causes the object to be **rejected** (fail closed), never accepted.
+
+**Accepted records:** plain objects or null-prototype records with own data properties.
+**Rejected:** null, undefined, non-objects, arrays, Date instances, functions, and any object that cannot be safely inspected.
+
+**Proxy safety guarantee:**
 
 - For **regular objects with accessor properties**: getters are **never invoked**
-- For **proxy objects**: traps may execute, but exceptions are **caught and fail closed**
+- For **revoked proxies** as top-level input: caught, result is unauthenticated
+- For **proxy with throwing traps**: all known trapping operations are inside try/catch; exceptions fail closed
+- For **revoked proxies as roles/permissions arrays**: `Array.isArray` is the first operation called, now inside try/catch; revoked proxies return empty frozen array
+- For **proxy whose `instanceof` check throws**: `toSafeObject` returns `null` (fail closed)
 
 Array element reads use the same descriptor-safe approach: each index is inspected via `getOwnPropertyDescriptor` before reading its value. Accessor-backed array indices are skipped.
 
@@ -130,17 +148,58 @@ Transport table:
 
 ---
 
-## Server-Action Wrapper
+## Server-Action Wrapper and Real Authentication Pattern
 
-`evaluateServerActionAuthorization(session, declaration, owner, registry, options?)`:
+**Next.js Server Actions must not accept a `NextRequest` from the caller.** The caller cannot supply a request object — authentication context must be obtained inside the action.
 
-- Same evaluation logic as the route wrapper
-- Returns `ServerActionAuthorizationResult` with an explicit `allowed: boolean` flag
-- No HTTP status codes — oriented for server-action return values
-- Sanitized `errorMessage` when not allowed
-- Fails closed on all errors
+### Correct pattern
 
-Application-level adapter: `authorizeServerAction(request, declaration, owner, options?)` in `src/core/lib/sdk-authorization.ts`.
+```typescript
+'use server';
+
+import { auth } from '@/auth';
+import {
+  authorizeSessionAction,
+  adminAccessDeclaration,
+  adminAccessOwner,
+} from '@/lib/sdk-authorization';
+
+export async function dismissOnboardingAction(formData: FormData) {
+  // Step 1: Obtain session internally — no caller-supplied auth context
+  const session = await auth();
+
+  // Step 2: Evaluate authorization via Stage 3 SDK
+  const authorization = await authorizeSessionAction(
+    session,
+    adminAccessDeclaration,
+    adminAccessOwner
+  );
+
+  // Step 3: Reject non-allowed results (fail closed)
+  if (!authorization.allowed) {
+    return {
+      success: false,
+      result: authorization.result,
+      error: authorization.errorMessage ?? 'Not authorized',
+    };
+  }
+
+  // Step 4: Execute action body — only reached when allowed
+  return { success: true, result: authorization.result };
+}
+```
+
+### Application helpers
+
+- `authorizeSessionAction(session, declaration, owner, options?)` — correct helper for Server Actions; takes a session from `auth()`, no NextRequest
+- `authorizeServerAction(request, declaration, owner, options?)` — for API route handlers only (accepts NextRequest); not for Server Actions
+- `evaluateServerActionAuthorization(session, declaration, owner, registry, options?)` — SDK-level primitive; called by `authorizeSessionAction`
+
+**Security invariants:**
+
+- `policy-error` result → `allowed: false` always (never downgraded)
+- `errorMessage` is sanitized — no raw exception messages, stack traces, or internal details
+- No client-supplied role, permission, or visibility value can influence the result
 
 ---
 
@@ -162,6 +221,21 @@ Two real production API routes were migrated from legacy auth helpers to Stage 3
 - **Declaration:** `anyOf[permission-any[users.manage], adminAccessDeclaration]`
 - **Allowed:** users.manage permission, admin.access permission, admin role, superadmin role
 - **Denied:** ordinary members, anonymous
+
+---
+
+## E2E Access Matrix
+
+Playwright E2E tests in `e2e/admin.spec.ts` cover the following cases at the real HTTP boundary:
+
+| Identity                          | Dashboard | Users management | Note                |
+| --------------------------------- | --------- | ---------------- | ------------------- |
+| Anonymous                         | 401 ✅    | 401 ✅           | seeded; real HTTP   |
+| Admin role (`admin@example.test`) | 200 ✅    | 200 ✅           | seeded; real cookie |
+
+Remaining matrix rows (superadmin, admin.access permission-only, users.manage permission-only, ordinary member denied) are covered by integration parity tests in `src/test/sdk-stage3-production-surfaces.test.ts`. E2E coverage for those identities requires additional seeded users beyond the current bootstrap.
+
+**E2E failure policy:** login failure FAILS the test (no `test.skip`); a missing seed or broken login is a defect, not a skip condition.
 
 ---
 
@@ -211,3 +285,8 @@ issue state before starting work, as issue purpose may evolve.
 - Stage 6: Acceptance proof — not implemented
 - Capability service implementation — not implemented
 - Plugin publication — not implemented
+
+**Status:** Corrected via `fix/sdk-stage3-proxy-action-hardening` (follow-up to PR #41)
+**Related:** ADR-0002, Stage 2 (#31), issue #39, parent #6
+
+---
