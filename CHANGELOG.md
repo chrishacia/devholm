@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.10.3](https://github.com/chrishacia/devholm/compare/v3.10.2...v3.10.3) (2026-07-06)
+
+### Documentation
+
+- **sdk:** correct Stage 3 final evidence and E2E fixture documentation ([0453905](https://github.com/chrishacia/devholm/commit/04539056d43cec22bc5baf13469b8ab52fd8d2e7)), closes [#39](https://github.com/chrishacia/devholm/issues/39) [#6](https://github.com/chrishacia/devholm/issues/6) [#42](https://github.com/chrishacia/devholm/issues/42)
+
 ## [3.10.2](https://github.com/chrishacia/devholm/compare/v3.10.1...v3.10.2) (2026-07-06)
 
 ### Bug Fixes
