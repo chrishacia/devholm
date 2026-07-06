@@ -204,4 +204,95 @@ describe('Event System', () => {
       expect(customHandlerId).toBeDefined();
     });
   });
+
+  describe('Handler re-registration and collision determinism', () => {
+    it('should clean up stale per-eventType entries when handlerId is re-registered for a different eventType', () => {
+      const registry = new EventRegistry();
+      setEventRegistry(registry);
+
+      const hId = eventHandlerId('movingHandler');
+      const pluginId = 'plugin-a';
+
+      // Register for USER_CREATED
+      registry.register({
+        handlerId: hId,
+        pluginId,
+        eventTypeId: StandardEventTypes.USER_CREATED,
+        handler: vi.fn(),
+      });
+      expect(registry.getHandlersForEventType(StandardEventTypes.USER_CREATED)).toHaveLength(1);
+      expect(registry.getHandlersForEventType(StandardEventTypes.USER_AUTHENTICATED)).toHaveLength(
+        0
+      );
+
+      // Re-register for USER_AUTHENTICATED (different eventType, same pluginId)
+      registry.register({
+        handlerId: hId,
+        pluginId,
+        eventTypeId: StandardEventTypes.USER_AUTHENTICATED,
+        handler: vi.fn(),
+      });
+
+      // Stale USER_CREATED entry must be gone
+      expect(registry.getHandlersForEventType(StandardEventTypes.USER_CREATED)).toHaveLength(0);
+      // New USER_AUTHENTICATED entry must be present
+      expect(registry.getHandlersForEventType(StandardEventTypes.USER_AUTHENTICATED)).toHaveLength(
+        1
+      );
+      // Overall size stays at 1
+      expect(registry.size()).toBe(1);
+    });
+
+    it('should throw when two different plugins try to register with the same handlerId', () => {
+      const registry = new EventRegistry();
+      setEventRegistry(registry);
+
+      registry.register({
+        handlerId: eventHandlerId('sharedId'),
+        pluginId: 'plugin-a',
+        eventTypeId: StandardEventTypes.USER_CREATED,
+        handler: vi.fn(),
+      });
+
+      // Second plugin claiming the same handlerId must throw
+      expect(() => {
+        registry.register({
+          handlerId: eventHandlerId('sharedId'),
+          pluginId: 'plugin-b',
+          eventTypeId: StandardEventTypes.USER_CREATED,
+          handler: vi.fn(),
+        });
+      }).toThrow(/collision/i);
+    });
+
+    it('should allow same plugin to overwrite its own handler registration deterministically', () => {
+      const registry = new EventRegistry();
+      setEventRegistry(registry);
+
+      const hId = eventHandlerId('updatableHandler');
+      const pluginId = 'plugin-a';
+      const handlerV1 = vi.fn();
+      const handlerV2 = vi.fn();
+
+      registry.register({
+        handlerId: hId,
+        pluginId,
+        eventTypeId: StandardEventTypes.USER_CREATED,
+        handler: handlerV1,
+      });
+
+      // Overwrite with new handler (same pluginId, same eventTypeId)
+      registry.register({
+        handlerId: hId,
+        pluginId,
+        eventTypeId: StandardEventTypes.USER_CREATED,
+        handler: handlerV2,
+      });
+
+      const handlers = registry.getHandlersForEventType(StandardEventTypes.USER_CREATED);
+      expect(handlers).toHaveLength(1);
+      expect(handlers[0].handler).toBe(handlerV2);
+      expect(registry.size()).toBe(1);
+    });
+  });
 });

@@ -56,6 +56,7 @@ type EventHandler = (event: DomainEvent) => void | Promise<void>;
 ```
 
 Handlers can be synchronous or asynchronous. If a handler throws an error:
+
 - The error is caught and logged
 - Other handlers continue executing
 - The error does not propagate to the caller
@@ -83,6 +84,7 @@ Event handlers only execute if their plugin is enabled. Framework checks `site_s
 Event handlers should be idempotent - safe to invoke multiple times for the same event. The framework may retry handlers on transient failures.
 
 If your handler modifies state, consider:
+
 - Using unique event identifiers to detect duplicates
 - Storing processed event IDs to skip re-processing
 - Designing operations as idempotent operations
@@ -121,7 +123,7 @@ await enqueueJob(
     subject: 'Welcome!',
   },
   {
-    jobInstanceId: 'email-welcome-123', // For deduplication
+    idempotencyKey: 'email-welcome-123', // For deduplication
   }
 );
 ```
@@ -131,17 +133,20 @@ await enqueueJob(
 The framework provides standard retry policies:
 
 #### NO_RETRY
+
 - Maximum retries: 0
 - Backoff: 0ms
 - Use for: jobs that should not be retried
 
 #### STANDARD
+
 - Maximum retries: 3
 - Initial backoff: 1000ms
 - Backoff multiplier: 2x (1s → 2s → 4s)
 - Use for: most background jobs
 
 #### AGGRESSIVE
+
 - Maximum retries: 5
 - Initial backoff: 500ms
 - Backoff multiplier: 1.5x
@@ -153,11 +158,11 @@ Job handlers receive a context with:
 
 ```typescript
 interface JobExecutionContext {
-  readonly jobInstanceId: JobInstanceId;      // Unique job instance ID
-  readonly jobTypeId: JobTypeId;              // Job type
-  readonly attempt: number;                   // Current attempt (1-based)
-  readonly enqueuedAt: Date;                  // When job was queued
-  readonly startedAt: Date;                   // When execution started
+  readonly jobInstanceId: JobInstanceId; // Unique job instance ID
+  readonly jobTypeId: JobTypeId; // Job type
+  readonly attempt: number; // Current attempt (1-based)
+  readonly enqueuedAt: Date; // When job was queued
+  readonly startedAt: Date; // When execution started
 }
 ```
 
@@ -168,7 +173,9 @@ Job payloads support versioning for schema evolution:
 ```typescript
 const payload = {
   version: jobPayloadVersion(2), // Current schema version
-  data: { /* ... */ },
+  data: {
+    /* ... */
+  },
 };
 ```
 
@@ -188,13 +195,13 @@ defineJobHandler({
   pluginId: 'reporting-plugin',
   handler: async (context) => {
     const reportId = `report-${context.jobInstanceId}`;
-    
+
     // Check if report already exists (idempotency)
     const existing = await getReport(reportId);
     if (existing) {
       return; // Already processed
     }
-    
+
     // Create report
     await createReport(reportId, context.payload);
   },
@@ -234,10 +241,10 @@ Fixed time intervals:
 import { intervalSchedule } from '@devholm/sdk/server';
 
 // Every 5 minutes
-intervalSchedule(5 * 60 * 1000)
+intervalSchedule(5 * 60 * 1000);
 
 // Every 5 minutes, starting 30 seconds from now
-intervalSchedule(5 * 60 * 1000, 30 * 1000)
+intervalSchedule(5 * 60 * 1000, 30 * 1000);
 ```
 
 Standard intervals provided:
@@ -256,13 +263,13 @@ For precise timing, use cron expressions:
 import { cronSchedule } from '@devholm/sdk/server';
 
 // Every day at midnight
-cronSchedule('0 0 * * *')
+cronSchedule('0 0 * * *');
 
 // Every Monday at 9 AM
-cronSchedule('0 9 * * 1')
+cronSchedule('0 9 * * 1');
 
 // Every 15 minutes
-cronSchedule('*/15 * * * *')
+cronSchedule('*/15 * * * *');
 ```
 
 Standard cron expressions provided:
@@ -270,12 +277,12 @@ Standard cron expressions provided:
 ```typescript
 import { StandardCronExpressions } from '@devholm/sdk/server';
 
-StandardCronExpressions.EVERY_MINUTE          // * * * * *
-StandardCronExpressions.EVERY_5_MINUTES       // */5 * * * *
-StandardCronExpressions.EVERY_HOUR            // 0 * * * *
-StandardCronExpressions.EVERY_DAY_MIDNIGHT    // 0 0 * * *
-StandardCronExpressions.EVERY_DAY_NOON        // 0 12 * * *
-StandardCronExpressions.EVERY_MONDAY_MIDNIGHT // 0 0 * * 1
+StandardCronExpressions.EVERY_MINUTE; // * * * * *
+StandardCronExpressions.EVERY_5_MINUTES; // */5 * * * *
+StandardCronExpressions.EVERY_HOUR; // 0 * * * *
+StandardCronExpressions.EVERY_DAY_MIDNIGHT; // 0 0 * * *
+StandardCronExpressions.EVERY_DAY_NOON; // 0 12 * * *
+StandardCronExpressions.EVERY_MONDAY_MIDNIGHT; // 0 0 * * 1
 ```
 
 ### Task Execution Context
@@ -284,10 +291,10 @@ Task handlers receive a context with:
 
 ```typescript
 interface TaskExecutionContext {
-  readonly taskTypeId: TaskTypeId;     // Task type
-  readonly pluginId: string;           // Plugin that owns the task
-  readonly lastExecutedAt?: Date;      // When task last executed
-  readonly nextExecutionAt: Date;      // When task will next execute
+  readonly taskTypeId: TaskTypeId; // Task type
+  readonly pluginId: string; // Plugin that owns the task
+  readonly lastExecutedAt?: Date; // When task last executed
+  readonly nextExecutionAt: Date; // When task will next execute
 }
 ```
 
@@ -305,7 +312,7 @@ defineScheduledTask({
     } catch (error) {
       // Log error for monitoring
       console.error('Sync failed:', error);
-      
+
       // Decide whether to throw (mark task as failed) or recover
       // For transient failures, consider retrying with backoff
       if (error instanceof TransientError) {
@@ -323,9 +330,9 @@ defineScheduledTask({
 Plugins can test their extensions using public SDK exports:
 
 ```typescript
-import { 
-  defineEventHandler, 
-  defineJobHandler, 
+import {
+  defineEventHandler,
+  defineJobHandler,
   defineScheduledTask,
   StandardEventTypes,
   StandardSchedules,
@@ -335,14 +342,14 @@ import {
 describe('My Plugin', () => {
   it('should handle user creation events', () => {
     const handler = vi.fn();
-    
+
     defineEventHandler({
       handlerId: defineEventHandlerId('test-handler'),
       pluginId: 'test-plugin',
       eventTypeId: StandardEventTypes.USER_CREATED,
       handler,
     });
-    
+
     // Verify registration and test behavior
     expect(handler).toBeDefined();
   });
@@ -359,6 +366,7 @@ plugin:{pluginId}:enabled = 'false' // Disable plugin
 ```
 
 When a plugin is disabled:
+
 - **Event handlers** are skipped (not invoked)
 - **Queued jobs** won't execute
 - **Scheduled tasks** won't run
@@ -381,7 +389,7 @@ defineEventHandler({
     await enqueueJob(
       defineJobTypeId('send-welcome-email'),
       { userId: event.userId },
-      { jobInstanceId: `welcome-${event.userId}` }
+      { idempotencyKey: `welcome-${event.userId}` }
     );
   },
 });
@@ -406,7 +414,7 @@ defineScheduledTask({
   pluginId: 'storage-plugin',
   handler: async (context) => {
     const deletedCount = await cleanupTempFiles();
-    
+
     // Emit event for monitoring
     // (In future: dispatchEvent available to plugins)
   },

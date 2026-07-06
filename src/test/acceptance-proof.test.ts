@@ -7,37 +7,27 @@
  * 3. Schedule recurring tasks through public SDK contracts
  * 4. All without modifying src/core/** code
  *
+ * Type contracts are imported exclusively from @devholm/sdk/types – the public
+ * package surface – proving plugin authors have no need for @core/** type paths.
+ * Registry helpers (setEventRegistry, resetJobRegistry, …) are @core/lib imports
+ * used only for test isolation setup; they are NOT part of plugin-author code.
+ *
  * Each test is fully deterministic and verifies the expected behavior.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+// All type contracts come from the public SDK – no @core/types imports
+import { eventTypeId, eventHandlerId, StandardEventTypes } from '@devholm/sdk/types';
+import { jobTypeId, jobPayloadVersion, StandardJobRetryPolicies } from '@devholm/sdk/types';
+import { taskTypeId, cronSchedule, StandardSchedules } from '@devholm/sdk/types';
+// Registry helpers are @core/lib – test infrastructure only (not plugin-author code)
 import {
-  eventTypeId,
-  eventHandlerId,
-  eventPayloadVersion,
-  StandardEventTypes,
-  type UserCreatedEvent,
-} from '@core/types/events';
-import { jobTypeId, jobPayloadVersion, StandardJobRetryPolicies } from '@core/types/jobs';
-import { taskTypeId, cronSchedule, StandardSchedules } from '@core/types/tasks';
-import {
-  getEventRegistry,
   resetEventRegistry,
   setEventRegistry,
   EventRegistry,
 } from '@core/lib/event-registry.server';
-import {
-  getJobRegistry,
-  resetJobRegistry,
-  setJobRegistry,
-  JobRegistry,
-} from '@core/lib/job-registry.server';
-import {
-  getTaskRegistry,
-  resetTaskRegistry,
-  setTaskRegistry,
-  TaskRegistry,
-} from '@core/lib/task-registry.server';
+import { resetJobRegistry, setJobRegistry, JobRegistry } from '@core/lib/job-registry.server';
+import { resetTaskRegistry, setTaskRegistry, TaskRegistry } from '@core/lib/task-registry.server';
 
 describe('Issue #11: Plugin System Acceptance Proof', () => {
   beforeEach(() => {

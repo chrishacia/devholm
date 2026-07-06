@@ -23,10 +23,35 @@ class EventRegistry {
 
   /**
    * Register an event handler for a plugin.
-   * Duplicate handler IDs overwrite previous registrations for the same plugin.
+   *
+   * If a handler with the same handlerId already exists:
+   * - Same pluginId: overwrites (update use case). Stale per-eventType entries are
+   *   cleaned up so no ghost entries remain.
+   * - Different pluginId: throws to prevent accidental cross-plugin handlerId collisions.
    */
   register<T extends DomainEvent = DomainEvent>(registration: EventHandlerRegistration<T>): void {
     const { eventTypeId, handlerId, pluginId } = registration;
+
+    // Guard against cross-plugin handlerId collisions
+    const existing = this.handlerMap.get(handlerId);
+    if (existing && existing.pluginId !== pluginId) {
+      throw new Error(
+        `Handler ID collision: "${handlerId}" is already registered by plugin "${existing.pluginId}". ` +
+          `Plugin "${pluginId}" cannot re-use an existing handler ID from another plugin.`
+      );
+    }
+
+    // If re-registering the same handlerId (same plugin, different eventTypeId),
+    // remove the stale entry from the old event type's map first.
+    if (existing && existing.eventTypeId !== eventTypeId) {
+      const oldEventHandlers = this.handlers.get(existing.eventTypeId);
+      if (oldEventHandlers) {
+        oldEventHandlers.delete(handlerId);
+        if (oldEventHandlers.size === 0) {
+          this.handlers.delete(existing.eventTypeId);
+        }
+      }
+    }
 
     // Add to event type map
     if (!this.handlers.has(eventTypeId)) {
@@ -34,13 +59,13 @@ class EventRegistry {
     }
     this.handlers.get(eventTypeId)!.set(handlerId, registration as EventHandlerRegistration);
 
-    // Add to plugin index
+    // Add to plugin index (idempotent; Set handles duplicates)
     if (!this.handlersByPlugin.has(pluginId)) {
       this.handlersByPlugin.set(pluginId, new Set());
     }
     this.handlersByPlugin.get(pluginId)!.add(handlerId);
 
-    // Add to handler map
+    // Add to handler map (overwrites any previous registration for this handlerId)
     this.handlerMap.set(handlerId, registration as EventHandlerRegistration);
   }
 

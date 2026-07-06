@@ -84,7 +84,7 @@ export function defineJobTypeId(value: string): JobTypeId {
  * });
  * ```
  */
-export async function enqueueJob<T extends BaseJob>(
+export async function enqueueJob(
   jobTypeId: JobTypeId,
   payload: unknown,
   options?: {

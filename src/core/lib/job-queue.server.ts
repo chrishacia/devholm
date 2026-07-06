@@ -47,8 +47,7 @@ function generateJobInstanceId(): JobInstanceId {
  * @param payload - The job payload
  * @param options - Additional options (idempotency key, retries, etc.)
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function enqueueJob<T extends BaseJob>(
+export async function enqueueJob(
   jobTypeId: JobTypeId,
   payload: unknown,
   options?: {

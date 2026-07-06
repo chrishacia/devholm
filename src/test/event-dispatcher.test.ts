@@ -5,11 +5,79 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getDb } from '@/db';
+
+// Stateful in-memory mock for site_settings – scoped to this test file only.
+// Must NOT go in setup.ts because that would override the real Knex instance
+// used by src/core/lib/__tests__/plugin-lifecycle-postgres.integration.test.ts.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(globalThis as any).__mockSiteSettings = new Map<
+  string,
+  { key: string; value: string; type: string }
+>();
+
+class QueryBuilder {
+  private whereColumn: string | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private whereValue: any = null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  where(column: string, op: string | any = '=', value?: any): this {
+    if (arguments.length === 2) {
+      this.whereColumn = column;
+      this.whereValue = op;
+    } else {
+      this.whereColumn = column;
+      this.whereValue = value;
+    }
+    return this;
+  }
+
+  select(_cols: string | string[]): this {
+    return this;
+  }
+
+  async first() {
+    if (this.whereColumn === null || this.whereValue === null) return null;
+    if (this.whereColumn === 'key') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = (globalThis as any).__mockSiteSettings.get(this.whereValue);
+      return result || null;
+    }
+    return null;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async insert(data: any) {
+    const items = Array.isArray(data) ? data : [data];
+    for (const item of items) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__mockSiteSettings.set(item.key, item);
+    }
+    return this;
+  }
+
+  async del() {
+    if (this.whereColumn === null) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__mockSiteSettings.clear();
+    } else if (this.whereColumn === 'key') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__mockSiteSettings.delete(this.whereValue);
+    }
+    return this;
+  }
+}
+
+vi.mock('@/db', () => ({
+  getDb: vi.fn(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (_tableName: any) => new QueryBuilder();
+  }),
+}));
 import {
   eventHandlerId,
   eventPayloadVersion,
   StandardEventTypes,
-  // eventTypeId - unused in this test
   type UserCreatedEvent,
   type UserAuthenticatedEvent,
 } from '@core/types/events';

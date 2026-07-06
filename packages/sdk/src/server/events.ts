@@ -8,7 +8,6 @@
 import 'server-only';
 
 import type {
-  // EventTypeId - unused in this module
   EventHandlerId,
   DomainEvent,
   EventHandler,

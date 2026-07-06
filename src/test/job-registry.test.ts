@@ -9,7 +9,6 @@ import {
   jobInstanceId,
   jobPayloadVersion,
   StandardJobRetryPolicies,
-  // type BaseJob - unused in this test
 } from '@core/types/jobs';
 import {
   getJobRegistry,
