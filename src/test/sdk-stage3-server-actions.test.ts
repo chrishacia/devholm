@@ -80,6 +80,7 @@ describe('Stage 3 Server Action Authorization', () => {
       expect(result.success).toBe(true);
       expect(result.result).toBe('allow');
       expect(result.data).toBeDefined();
+      expect(result.data?.proof).toBe('admin-access-authorized');
       expect(result.data?.authorizedUserId).toBe('admin-123');
     });
 
@@ -93,6 +94,7 @@ describe('Stage 3 Server Action Authorization', () => {
       expect(result.success).toBe(true);
       expect(result.result).toBe('allow');
       expect(result.data).toBeDefined();
+      expect(result.data?.proof).toBe('admin-access-authorized');
       expect(result.data?.authorizedUserId).toBe('superadmin-456');
     });
 
@@ -106,6 +108,7 @@ describe('Stage 3 Server Action Authorization', () => {
       expect(result.success).toBe(true);
       expect(result.result).toBe('allow');
       expect(result.data).toBeDefined();
+      expect(result.data?.proof).toBe('admin-access-authorized');
       expect(result.data?.authorizedUserId).toBe('member-789');
     });
 
@@ -174,6 +177,7 @@ describe('Stage 3 Server Action Authorization', () => {
       expect(result.success).toBe(true);
       expect(result.result).toBe('allow');
       expect(result.data).toBeDefined();
+      expect(result.data?.proof).toBe('users-manage-authorized');
       expect(result.data?.authorizedUserId).toBe('admin-123');
     });
 
@@ -187,6 +191,7 @@ describe('Stage 3 Server Action Authorization', () => {
       expect(result.success).toBe(true);
       expect(result.result).toBe('allow');
       expect(result.data).toBeDefined();
+      expect(result.data?.proof).toBe('users-manage-authorized');
       expect(result.data?.authorizedUserId).toBe('superadmin-456');
     });
 
@@ -200,6 +205,7 @@ describe('Stage 3 Server Action Authorization', () => {
       expect(result.success).toBe(true);
       expect(result.result).toBe('allow');
       expect(result.data).toBeDefined();
+      expect(result.data?.proof).toBe('users-manage-authorized');
       expect(result.data?.authorizedUserId).toBe('member-manage');
     });
 
@@ -213,6 +219,7 @@ describe('Stage 3 Server Action Authorization', () => {
       expect(result.success).toBe(true);
       expect(result.result).toBe('allow');
       expect(result.data).toBeDefined();
+      expect(result.data?.proof).toBe('users-manage-authorized');
       expect(result.data?.authorizedUserId).toBe('member-access');
     });
 
@@ -251,6 +258,107 @@ describe('Stage 3 Server Action Authorization', () => {
       const deserialized = JSON.parse(serialized) as ServerActionResult;
       expect(deserialized.success).toBe(result.success);
       expect(deserialized.result).toBe(result.result);
+    });
+  });
+
+  // =========================================================================
+  // Failure scenario tests
+  // =========================================================================
+
+  describe('Failure scenarios and edge cases', () => {
+    it('should handle malformed session (no userId)', async () => {
+      const session: Session = {
+        user: {
+          id: '',
+          email: 'test@example.test',
+          name: 'Test User',
+          role: 'member',
+          roles: ['member'],
+          permissions: [],
+          isAdmin: false,
+          installCompleted: true,
+        },
+        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      mockAuth.mockResolvedValueOnce(session);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      expect(result.success).toBe(false);
+      expect(result.data).toBeUndefined();
+    });
+
+    it('should handle session with empty roles array', async () => {
+      const session: Session = {
+        user: {
+          id: 'user-123',
+          email: 'test@example.test',
+          name: 'Test User',
+          role: 'member',
+          roles: [],
+          permissions: [],
+          isAdmin: false,
+          installCompleted: true,
+        },
+        expires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+      mockAuth.mockResolvedValueOnce(session);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      expect(result.success).toBe(false);
+      expect(result.result).toBe('forbidden');
+      expect(result.data).toBeUndefined();
+    });
+
+    it('successful admin action returns proof payload with authorizedUserId', async () => {
+      const session = createMockSession('admin-123', 'admin', [], true);
+      mockAuth.mockResolvedValueOnce(session);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      expect(result.success).toBe(true);
+      expect(result.data).toBeDefined();
+      expect(result.data?.proof).toBe('admin-access-authorized');
+      expect(result.data?.authorizedUserId).toBe('admin-123');
+      expect(typeof result.data?.proof).toBe('string');
+      expect(typeof result.data?.authorizedUserId).toBe('string');
+    });
+
+    it('successful users-manage action returns proof payload with authorizedUserId', async () => {
+      const session = createMockSession('member-123', 'member', ['users.manage'], false);
+      mockAuth.mockResolvedValueOnce(session);
+
+      const result = await stage3UsersManageAuthorizationProofAction();
+
+      expect(result.success).toBe(true);
+      expect(result.data).toBeDefined();
+      expect(result.data?.proof).toBe('users-manage-authorized');
+      expect(result.data?.authorizedUserId).toBe('member-123');
+      expect(typeof result.data?.proof).toBe('string');
+      expect(typeof result.data?.authorizedUserId).toBe('string');
+    });
+
+    it('error message should not expose internal implementation details', async () => {
+      mockAuth.mockResolvedValueOnce(null);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      expect(result.error).toBeDefined();
+      expect(result.error).not.toMatch(/Error:|thrown|exception|internal|stack/i);
+      expect(result.error?.length).toBeGreaterThan(0);
+      expect(result.error?.length).toBeLessThan(500); // Reasonable length
+    });
+
+    it('denied access should not include data field', async () => {
+      const session = createMockSession('member-ordinary', 'member', [], false);
+      mockAuth.mockResolvedValueOnce(session);
+
+      const result = await stage3AdminAccessAuthorizationProofAction();
+
+      expect(result.success).toBe(false);
+      expect(result.data).toBeUndefined();
+      expect(result.data?.authorizedUserId).toBeUndefined();
     });
   });
 

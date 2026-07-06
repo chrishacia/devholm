@@ -6,20 +6,47 @@
  * - 5 identity types (admin, superadmin, admin.access-only, users.manage-only, member)
  * - Anonymous (no authentication)
  *
- * Total: 12 test cases covering all authorization pathways
+ * Total: 12 authorization-result test cases
  *
  * Each test:
- * 1. Creates a JWT session token for the test identity (or omits for anonymous)
- * 2. Sets the session cookie in the request context
- * 3. Makes the HTTP request
- * 4. Verifies the expected status code per Stage 3 authorization rules
- * 5. Validates the token claims before sending (proof of proper fixture)
+ * 1. Creates a test identity
+ * 2. Encodes an Auth.js session token
+ * 3. Sends the HTTP request with the session cookie header
+ * 4. Verifies the expected authorization result
  */
 
-import { test, expect, type BrowserContext } from '@playwright/test';
-import { createTestIdentity, setTestIdentitySession, type TestIdentity } from './fixtures/auth-jwt';
+import { test, expect } from '@playwright/test';
+import {
+  createTestIdentity,
+  createSessionCookieHeader,
+  verifySessionTokenRoundTrip,
+} from './fixtures/auth-jwt';
 
 test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
+  // =========================================================================
+  // Fixture Verification: Auth.js Token Encode/Decode Round-Trip
+  // =========================================================================
+
+  test.describe('Auth.js token fixture verification', () => {
+    test('admin-role token encodes and decodes correctly', async () => {
+      const identity = createTestIdentity('admin');
+      const roundTripValid = await verifySessionTokenRoundTrip(identity);
+      expect(roundTripValid).toBe(true);
+    });
+
+    test('permission-only token encodes and decodes correctly', async () => {
+      const identity = createTestIdentity('admin-access-only');
+      const roundTripValid = await verifySessionTokenRoundTrip(identity);
+      expect(roundTripValid).toBe(true);
+    });
+
+    test('member token encodes and decodes correctly', async () => {
+      const identity = createTestIdentity('member');
+      const roundTripValid = await verifySessionTokenRoundTrip(identity);
+      expect(roundTripValid).toBe(true);
+    });
+  });
+
   // =========================================================================
   // Anonymous Access (no authentication)
   // =========================================================================
@@ -37,256 +64,320 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
   });
 
   // =========================================================================
-  // Admin-role identity
+  // Admin-role identity (2 tests: 12-case matrix part 1-2)
   // =========================================================================
 
-  test.describe('Admin-role identity', () => {
-    let adminIdentity: TestIdentity;
-    let adminContext: BrowserContext;
+  test('admin-role: GET /api/admin/dashboard returns 200', async ({ request }) => {
+    const identity = createTestIdentity('admin');
+    const cookie = await createSessionCookieHeader(identity);
 
-    test.beforeAll(async ({ context }) => {
-      adminIdentity = createTestIdentity('admin');
-      adminContext = context;
-      await setTestIdentitySession(adminContext, adminIdentity);
+    const response = await request.get('/api/admin/dashboard', {
+      headers: { Cookie: cookie },
     });
 
-    test('should have correct token claims', async ({ context }) => {
-      const cookies = await context.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
-      expect(sessionCookie?.value.length).toBeGreaterThan(0);
-      // Token is signed and contains admin role
-      expect(adminIdentity.role).toBe('admin');
-      expect(adminIdentity.isAdmin).toBe(true);
+    expect(response.status()).toBe(200);
+  });
+
+  test('admin-role: GET /api/admin/auth/users returns 200', async ({ request }) => {
+    const identity = createTestIdentity('admin');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: cookie },
     });
 
-    test('GET /api/admin/dashboard returns 200 (adminAccessDeclaration matches)', async ({
-      request,
-    }) => {
-      const cookies = await adminContext.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
+    expect(response.status()).toBe(200);
+  });
 
-      const response = await request.get('/api/admin/dashboard', {
-        headers: { Cookie: `${sessionCookie!.name}=${sessionCookie!.value}` },
-      });
-      expect(response.status()).toBe(200);
+  // =========================================================================
+  // Superadmin-role identity (2 tests: 12-case matrix part 3-4)
+  // =========================================================================
+
+  test('superadmin-role: GET /api/admin/dashboard returns 200', async ({ request }) => {
+    const identity = createTestIdentity('superadmin');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/dashboard', {
+      headers: { Cookie: cookie },
     });
 
-    test('GET /api/admin/auth/users returns 200 (usersManageDeclaration anyOf branch)', async ({
-      request,
-    }) => {
-      const cookies = await adminContext.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
+    expect(response.status()).toBe(200);
+  });
 
-      const response = await request.get('/api/admin/auth/users', {
-        headers: { Cookie: `${sessionCookie!.name}=${sessionCookie!.value}` },
-      });
-      expect(response.status()).toBe(200);
+  test('superadmin-role: GET /api/admin/auth/users returns 200', async ({ request }) => {
+    const identity = createTestIdentity('superadmin');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: cookie },
+    });
+
+    expect(response.status()).toBe(200);
+  });
+
+  // =========================================================================
+  // admin.access permission-only (2 tests: 12-case matrix part 5-6)
+  // =========================================================================
+
+  test('admin.access permission only: GET /api/admin/dashboard returns 200', async ({
+    request,
+  }) => {
+    const identity = createTestIdentity('admin-access-only');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/dashboard', {
+      headers: { Cookie: cookie },
+    });
+
+    expect(response.status()).toBe(200);
+  });
+
+  test('admin.access permission only: GET /api/admin/auth/users returns 200', async ({
+    request,
+  }) => {
+    const identity = createTestIdentity('admin-access-only');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: cookie },
+    });
+
+    expect(response.status()).toBe(200);
+  });
+
+  // =========================================================================
+  // users.manage permission-only (2 tests: 12-case matrix part 7-8)
+  // =========================================================================
+
+  test('users.manage permission only: GET /api/admin/dashboard returns 403', async ({
+    request,
+  }) => {
+    const identity = createTestIdentity('users-manage-only');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/dashboard', {
+      headers: { Cookie: cookie },
+    });
+
+    expect(response.status()).toBe(403);
+  });
+
+  test('users.manage permission only: GET /api/admin/auth/users returns 200', async ({
+    request,
+  }) => {
+    const identity = createTestIdentity('users-manage-only');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: cookie },
+    });
+
+    expect(response.status()).toBe(200);
+  });
+
+  // =========================================================================
+  // Ordinary member (2 tests: 12-case matrix part 9-10)
+  // =========================================================================
+
+  test('ordinary member: GET /api/admin/dashboard returns 403', async ({ request }) => {
+    const identity = createTestIdentity('member');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/dashboard', {
+      headers: { Cookie: cookie },
+    });
+
+    expect(response.status()).toBe(403);
+  });
+
+  test('ordinary member: GET /api/admin/auth/users returns 403', async ({ request }) => {
+    const identity = createTestIdentity('member');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: cookie },
+    });
+
+    expect(response.status()).toBe(403);
+  });
+});
+
+test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
+  // =========================================================================
+  // Fixture Verification: Auth.js Token Encode/Decode Round-Trip
+  // =========================================================================
+
+  test.describe('Auth.js token fixture verification', () => {
+    test('admin-role token encodes and decodes correctly', async () => {
+      const identity = createTestIdentity('admin');
+      const roundTripValid = await verifySessionTokenRoundTrip(identity);
+      expect(roundTripValid).toBe(true);
+    });
+
+    test('permission-only token encodes and decodes correctly', async () => {
+      const identity = createTestIdentity('admin-access-only');
+      const roundTripValid = await verifySessionTokenRoundTrip(identity);
+      expect(roundTripValid).toBe(true);
+    });
+
+    test('member token encodes and decodes correctly', async () => {
+      const identity = createTestIdentity('member');
+      const roundTripValid = await verifySessionTokenRoundTrip(identity);
+      expect(roundTripValid).toBe(true);
     });
   });
 
   // =========================================================================
-  // Superadmin-role identity
+  // Anonymous Access (no authentication)
   // =========================================================================
 
-  test.describe('Superadmin-role identity', () => {
-    let superadminIdentity: TestIdentity;
-    let superadminContext: BrowserContext;
-
-    test.beforeAll(async ({ context }) => {
-      superadminIdentity = createTestIdentity('superadmin');
-      superadminContext = context;
-      await setTestIdentitySession(superadminContext, superadminIdentity);
+  test.describe('Anonymous (unauthenticated)', () => {
+    test('GET /api/admin/dashboard returns 401', async ({ request }) => {
+      const response = await request.get('/api/admin/dashboard');
+      expect(response.status()).toBe(401);
     });
 
-    test('should have correct token claims', async ({ context }) => {
-      const cookies = await context.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
-      expect(superadminIdentity.role).toBe('superadmin');
-      expect(superadminIdentity.isAdmin).toBe(true);
-    });
-
-    test('GET /api/admin/dashboard returns 200 (adminAccessDeclaration matches)', async ({
-      request,
-    }) => {
-      const cookies = await superadminContext.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
-
-      const response = await request.get('/api/admin/dashboard', {
-        headers: { Cookie: `${sessionCookie!.name}=${sessionCookie!.value}` },
-      });
-      expect(response.status()).toBe(200);
-    });
-
-    test('GET /api/admin/auth/users returns 200 (usersManageDeclaration anyOf branch)', async ({
-      request,
-    }) => {
-      const cookies = await superadminContext.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
-
-      const response = await request.get('/api/admin/auth/users', {
-        headers: { Cookie: `${sessionCookie!.name}=${sessionCookie!.value}` },
-      });
-      expect(response.status()).toBe(200);
+    test('GET /api/admin/auth/users returns 401', async ({ request }) => {
+      const response = await request.get('/api/admin/auth/users');
+      expect(response.status()).toBe(401);
     });
   });
 
   // =========================================================================
-  // admin.access permission-only (member role with specific permission)
+  // Admin-role identity (2 tests: 12-case matrix part 1-2)
   // =========================================================================
 
-  test.describe('admin.access permission-only', () => {
-    let adminAccessIdentity: TestIdentity;
-    let adminAccessContext: BrowserContext;
+  test('admin-role: GET /api/admin/dashboard returns 200', async ({ request }) => {
+    const identity = createTestIdentity('admin');
+    const cookie = await createSessionCookieHeader(identity);
 
-    test.beforeAll(async ({ context }) => {
-      adminAccessIdentity = createTestIdentity('admin-access-only');
-      adminAccessContext = context;
-      await setTestIdentitySession(adminAccessContext, adminAccessIdentity);
+    const response = await request.get('/api/admin/dashboard', {
+      headers: { Cookie: cookie },
     });
 
-    test('should have correct token claims (member role, admin.access permission)', async ({
-      context,
-    }) => {
-      const cookies = await context.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
-      expect(adminAccessIdentity.role).toBe('member');
-      expect(adminAccessIdentity.permissions).toContain('admin.access');
-      expect(adminAccessIdentity.isAdmin).toBe(false);
+    expect(response.status()).toBe(200);
+  });
+
+  test('admin-role: GET /api/admin/auth/users returns 200', async ({ request }) => {
+    const identity = createTestIdentity('admin');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: cookie },
     });
 
-    test('GET /api/admin/dashboard returns 200 (adminAccessDeclaration permission match)', async ({
-      request,
-    }) => {
-      const cookies = await adminAccessContext.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
-
-      const response = await request.get('/api/admin/dashboard', {
-        headers: { Cookie: `${sessionCookie!.name}=${sessionCookie!.value}` },
-      });
-      expect(response.status()).toBe(200);
-    });
-
-    test('GET /api/admin/auth/users returns 200 (usersManageDeclaration admin.access branch)', async ({
-      request,
-    }) => {
-      const cookies = await adminAccessContext.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
-
-      const response = await request.get('/api/admin/auth/users', {
-        headers: { Cookie: `${sessionCookie!.name}=${sessionCookie!.value}` },
-      });
-      expect(response.status()).toBe(200);
-    });
+    expect(response.status()).toBe(200);
   });
 
   // =========================================================================
-  // users.manage permission-only (member role with specific permission)
+  // Superadmin-role identity (2 tests: 12-case matrix part 3-4)
   // =========================================================================
 
-  test.describe('users.manage permission-only', () => {
-    let usersManageIdentity: TestIdentity;
-    let usersManageContext: BrowserContext;
+  test('superadmin-role: GET /api/admin/dashboard returns 200', async ({ request }) => {
+    const identity = createTestIdentity('superadmin');
+    const cookie = await createSessionCookieHeader(identity);
 
-    test.beforeAll(async ({ context }) => {
-      usersManageIdentity = createTestIdentity('users-manage-only');
-      usersManageContext = context;
-      await setTestIdentitySession(usersManageContext, usersManageIdentity);
+    const response = await request.get('/api/admin/dashboard', {
+      headers: { Cookie: cookie },
     });
 
-    test('should have correct token claims (member role, users.manage permission)', async ({
-      context,
-    }) => {
-      const cookies = await context.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
-      expect(usersManageIdentity.role).toBe('member');
-      expect(usersManageIdentity.permissions).toContain('users.manage');
-      expect(usersManageIdentity.isAdmin).toBe(false);
+    expect(response.status()).toBe(200);
+  });
+
+  test('superadmin-role: GET /api/admin/auth/users returns 200', async ({ request }) => {
+    const identity = createTestIdentity('superadmin');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: cookie },
     });
 
-    test('GET /api/admin/dashboard returns 403 (adminAccessDeclaration denied)', async ({
-      request,
-    }) => {
-      const cookies = await usersManageContext.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
-
-      const response = await request.get('/api/admin/dashboard', {
-        headers: { Cookie: `${sessionCookie!.name}=${sessionCookie!.value}` },
-      });
-      expect(response.status()).toBe(403);
-    });
-
-    test('GET /api/admin/auth/users returns 200 (usersManageDeclaration permission match)', async ({
-      request,
-    }) => {
-      const cookies = await usersManageContext.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
-
-      const response = await request.get('/api/admin/auth/users', {
-        headers: { Cookie: `${sessionCookie!.name}=${sessionCookie!.value}` },
-      });
-      expect(response.status()).toBe(200);
-    });
+    expect(response.status()).toBe(200);
   });
 
   // =========================================================================
-  // Ordinary member (no special roles or permissions)
+  // admin.access permission-only (2 tests: 12-case matrix part 5-6)
   // =========================================================================
 
-  test.describe('Ordinary member (denied access)', () => {
-    let memberIdentity: TestIdentity;
-    let memberContext: BrowserContext;
+  test('admin.access permission only: GET /api/admin/dashboard returns 200', async ({
+    request,
+  }) => {
+    const identity = createTestIdentity('admin-access-only');
+    const cookie = await createSessionCookieHeader(identity);
 
-    test.beforeAll(async ({ context }) => {
-      memberIdentity = createTestIdentity('member');
-      memberContext = context;
-      await setTestIdentitySession(memberContext, memberIdentity);
+    const response = await request.get('/api/admin/dashboard', {
+      headers: { Cookie: cookie },
     });
 
-    test('should have correct token claims (member role, no permissions)', async ({ context }) => {
-      const cookies = await context.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
-      expect(memberIdentity.role).toBe('member');
-      expect(memberIdentity.permissions).toEqual([]);
-      expect(memberIdentity.isAdmin).toBe(false);
+    expect(response.status()).toBe(200);
+  });
+
+  test('admin.access permission only: GET /api/admin/auth/users returns 200', async ({
+    request,
+  }) => {
+    const identity = createTestIdentity('admin-access-only');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: cookie },
     });
 
-    test('GET /api/admin/dashboard returns 403 (adminAccessDeclaration denied)', async ({
-      request,
-    }) => {
-      const cookies = await memberContext.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
+    expect(response.status()).toBe(200);
+  });
 
-      const response = await request.get('/api/admin/dashboard', {
-        headers: { Cookie: `${sessionCookie!.name}=${sessionCookie!.value}` },
-      });
-      expect(response.status()).toBe(403);
+  // =========================================================================
+  // users.manage permission-only (2 tests: 12-case matrix part 7-8)
+  // =========================================================================
+
+  test('users.manage permission only: GET /api/admin/dashboard returns 403', async ({
+    request,
+  }) => {
+    const identity = createTestIdentity('users-manage-only');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/dashboard', {
+      headers: { Cookie: cookie },
     });
 
-    test('GET /api/admin/auth/users returns 403 (usersManageDeclaration denied)', async ({
-      request,
-    }) => {
-      const cookies = await memberContext.cookies();
-      const sessionCookie = cookies.find((c) => c.name === 'authjs.session-token');
-      expect(sessionCookie).toBeDefined();
+    expect(response.status()).toBe(403);
+  });
 
-      const response = await request.get('/api/admin/auth/users', {
-        headers: { Cookie: `${sessionCookie!.name}=${sessionCookie!.value}` },
-      });
-      expect(response.status()).toBe(403);
+  test('users.manage permission only: GET /api/admin/auth/users returns 200', async ({
+    request,
+  }) => {
+    const identity = createTestIdentity('users-manage-only');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: cookie },
     });
+
+    expect(response.status()).toBe(200);
+  });
+
+  // =========================================================================
+  // Ordinary member (2 tests: 12-case matrix part 9-10)
+  // =========================================================================
+
+  test('ordinary member: GET /api/admin/dashboard returns 403', async ({ request }) => {
+    const identity = createTestIdentity('member');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/dashboard', {
+      headers: { Cookie: cookie },
+    });
+
+    expect(response.status()).toBe(403);
+  });
+
+  test('ordinary member: GET /api/admin/auth/users returns 403', async ({ request }) => {
+    const identity = createTestIdentity('member');
+    const cookie = await createSessionCookieHeader(identity);
+
+    const response = await request.get('/api/admin/auth/users', {
+      headers: { Cookie: cookie },
+    });
+
+    expect(response.status()).toBe(403);
   });
 });

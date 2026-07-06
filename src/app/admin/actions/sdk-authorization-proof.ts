@@ -76,13 +76,12 @@ export async function stage3AdminAccessAuthorizationProofAction(): Promise<Serve
   }
 
   // Step 4: Action body — only reached when authorization.allowed is true.
-  // Proof operation: return the authorized subject's userId as evidence the
-  // action body executed. In production this would call dismissAuthOnboardingStatus().
+  // Proof payload: return proof of authorization with authorized subject ID.
   return {
     success: true,
     result: authorization.result,
     data: {
-      dismissed: true,
+      proof: 'admin-access-authorized',
       authorizedUserId: authorization.subject.userId,
     },
   };
@@ -119,13 +118,12 @@ export async function stage3UsersManageAuthorizationProofAction(): Promise<Serve
     };
   }
 
-  // Action body — proof operation only (returns empty list)
-  // In production this would call listAuthUsers() etc.
+  // Action body — proof payload: return proof of authorization with authorized subject ID.
   return {
     success: true,
     result: authorization.result,
     data: {
-      users: [],
+      proof: 'users-manage-authorized',
       authorizedUserId: authorization.subject.userId,
     },
   };
