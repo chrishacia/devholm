@@ -656,8 +656,10 @@ describe('authorizeSessionAction — application Server Action adapter', () => {
 // ---------------------------------------------------------------------------
 // Exported Server Actions — Pattern Verification
 // ===========================================================================
-// Note: Full E2E testing of Server Actions (dismissOnboardingAction,
-// listUsersAction) is covered in e2e/admin.spec.ts with real session cookies.
+// Note: Full E2E testing of Server Actions (stage3AdminAccessAuthorizationProofAction,
+// stage3UsersManageAuthorizationProofAction) is covered in:
+// - e2e/stage3-complete-matrix.spec.ts with real JWT-signed session cookies
+// - src/test/sdk-stage3-server-actions.test.ts with mocked auth context
 //
 // These tests verify the authorization patterns used in the exported actions:
 // - Server Actions call auth() internally (no caller-supplied auth context)
@@ -667,7 +669,7 @@ describe('authorizeSessionAction — application Server Action adapter', () => {
 // ---------------------------------------------------------------------------
 
 describe('Exported Server Action patterns', () => {
-  it('dismissOnboardingAction and listUsersAction use authorizeSessionAction', async () => {
+  it('proof actions use authorizeSessionAction with correct declarations', async () => {
     // Integration test: verify that authorizeSessionAction is used in action implementations
     // Full coverage via E2E tests in e2e/admin.spec.ts
     // This test verifies the adapter works for both action patterns

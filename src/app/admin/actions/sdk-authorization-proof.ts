@@ -46,13 +46,16 @@ export interface ServerActionResult {
 }
 
 /**
- * Dismiss onboarding (admin-only Server Action).
+ * Stage 3 admin access authorization proof (admin-only Server Action).
  *
  * Stage 3 pattern: session is obtained INSIDE the action via auth().
  * Evaluates adminAccessDeclaration (role-any[admin,superadmin] OR permission-any[admin.access]).
  * The action body is a harmless proof operation (returns the authorized userId).
+ *
+ * NOTE: This is a proof-of-authorization Server Action for testing Stage 3 enforcement.
+ * In production, this would connect to a real admin operation.
  */
-export async function dismissOnboardingAction(): Promise<ServerActionResult> {
+export async function stage3AdminAccessAuthorizationProofAction(): Promise<ServerActionResult> {
   // Step 1: Obtain session internally — no caller-supplied auth context
   const session = await auth();
 
@@ -86,7 +89,7 @@ export async function dismissOnboardingAction(): Promise<ServerActionResult> {
 }
 
 /**
- * List users (users-manage Server Action).
+ * Stage 3 users management authorization proof (users.manage permission or admin Server Action).
  *
  * Evaluates usersManageDeclaration:
  *   anyOf[permission-any[users.manage], adminAccessDeclaration]
@@ -94,8 +97,11 @@ export async function dismissOnboardingAction(): Promise<ServerActionResult> {
  * Allowed for: users.manage permission, admin.access permission,
  *              admin role, superadmin role.
  * Denied for: ordinary members, anonymous callers.
+ *
+ * NOTE: This is a proof-of-authorization Server Action for testing Stage 3 enforcement.
+ * In production, this would connect to a real users management operation.
  */
-export async function listUsersAction(): Promise<ServerActionResult> {
+export async function stage3UsersManageAuthorizationProofAction(): Promise<ServerActionResult> {
   // Obtain session internally — caller cannot supply or forge auth context
   const session = await auth();
 
