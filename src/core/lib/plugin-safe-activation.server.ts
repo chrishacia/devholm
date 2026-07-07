@@ -224,7 +224,7 @@ export async function performSafePluginUpdate(
   } catch (error) {
     // Automatic rollback on error
     // Record the failed update attempt
-    await recordPluginUpdate(pluginId, fromVersion, toVersion, 'failed', initiatedBy);
+    await recordPluginUpdate(pluginId, fromVersion, toVersion, 'rolled_back', initiatedBy);
 
     try {
       await engine.rollbackActivation(
