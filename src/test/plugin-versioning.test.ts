@@ -12,32 +12,32 @@ import type { DevholmPluginManifest } from '@core/types/plugins';
 describe('plugin-versioning: compatibility checking', () => {
   describe('isCompatibleWithDevholm', () => {
     it('allows plugin without DevHolm version requirement', () => {
-      const result = isCompatibleWithDevholm('1.0.0', undefined, '3.11.0');
+      const result = isCompatibleWithDevholm(undefined, '3.11.0');
       expect(result.compatible).toBe(true);
     });
 
     it('accepts compatible DevHolm versions', () => {
-      const result = isCompatibleWithDevholm('1.0.0', '>=3.0.0', '3.11.0');
+      const result = isCompatibleWithDevholm('>=3.0.0', '3.11.0');
       expect(result.compatible).toBe(true);
     });
 
     it('rejects incompatible DevHolm versions', () => {
-      const result = isCompatibleWithDevholm('1.0.0', '>=4.0.0', '3.11.0');
+      const result = isCompatibleWithDevholm('>=4.0.0', '3.11.0');
       expect(result.compatible).toBe(false);
     });
 
     it('handles pre-release versions', () => {
-      const result = isCompatibleWithDevholm('1.0.0', '>=3.11.0-beta', '3.11.0-beta.1');
+      const result = isCompatibleWithDevholm('>=3.11.0-beta', '3.11.0-beta.1');
       expect(result.compatible).toBe(true);
     });
 
     it('validates DevHolm version format', () => {
-      const result = isCompatibleWithDevholm('1.0.0', '>=3.0.0', 'invalid');
+      const result = isCompatibleWithDevholm('>=3.0.0', 'invalid');
       expect(result.compatible).toBe(false);
     });
 
     it('validates range format', () => {
-      const result = isCompatibleWithDevholm('1.0.0', 'invalid-range', '3.11.0');
+      const result = isCompatibleWithDevholm('invalid-range', '3.11.0');
       expect(result.compatible).toBe(false);
     });
   });
