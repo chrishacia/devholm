@@ -155,6 +155,9 @@ export function buildUpdatePreflight(
   );
 
   // Check dependency compatibility
+  if (!devholmCompat.compatible && devholmCompat.reason) {
+    warnings.push(devholmCompat.reason);
+  }
   const depCompat = checkDependencyCompatibility(proposedManifest, getInstalledPluginVersion);
   if (!depCompat.compatible) {
     warnings.push(...depCompat.warnings);

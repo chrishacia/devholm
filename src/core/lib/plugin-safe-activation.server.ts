@@ -136,8 +136,8 @@ export class PluginSafeActivationEngine {
     // Record failed update with rollback
     await recordPluginUpdate(
       pluginId,
-      checkpoint.version,
       previousLock.version,
+      checkpoint.version,
       'rolled_back',
       initiatedBy
     );
