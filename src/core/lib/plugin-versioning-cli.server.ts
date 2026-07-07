@@ -62,7 +62,7 @@ export async function listPluginVersions() {
     const lock = lockfile.packages[manifest.id];
     const pin = await getPluginUpdatePin(manifest.id);
     const latestVersion = findLatestCompatibleVersion(
-      [manifest.version, '1.0.0'], // would be extended with registry versions
+      [manifest.version],
       pin?.compatibleRange || '*'
     );
 
@@ -124,11 +124,16 @@ export async function getUpdatePreflight(
 
   // Find manifest from bundled plugins
   const manifests = getBundledPluginManifests();
-  const currentManifest = manifests.find((m) => m.id === pluginId);
-  const proposedManifest = manifests.find((m) => m.id === pluginId); // would fetch from registry
+  const pluginManifests = manifests.filter((m) => m.id === pluginId);
+  const currentManifest =
+    pluginManifests.find((m) => m.version === lock.version) || pluginManifests[0];
+  const proposedManifest = pluginManifests.find((m) => m.version === proposedVersion);
 
   if (!currentManifest || !proposedManifest) {
-    throw new Error(`Plugin manifest not found for ${pluginId}`);
+    const availableVersions = pluginManifests.map((m) => m.version).join(', ');
+    throw new Error(
+      `Plugin manifest not found for ${pluginId}@${proposedVersion}. Available bundled versions: ${availableVersions || 'none'}`
+    );
   }
 
   // Pre-fetch all plugin locks for dependency checking

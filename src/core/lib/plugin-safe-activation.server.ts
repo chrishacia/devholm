@@ -1,4 +1,3 @@
-import { getDb } from '@/db';
 import { getPluginLock, lockPluginVersion, recordPluginUpdate } from '@core/db/plugin-versioning';
 import type {
   PluginActivationCheckpoint,

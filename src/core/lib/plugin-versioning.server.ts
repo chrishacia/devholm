@@ -2,6 +2,7 @@ import { satisfies, valid, validRange, maxSatisfying } from 'semver';
 import type {
   DevholmPluginManifest,
   PluginUpdatePreflight,
+  PluginMigration,
   PluginMigrationMetadata,
   MigrationReversibility,
 } from '@core/types/plugins';
@@ -10,7 +11,6 @@ import type {
  * Check if a plugin version is compatible with the current DevHolm version
  */
 export function isCompatibleWithDevholm(
-  pluginVersion: string,
   pluginDevholmRange: string | undefined,
   currentDevholmVersion: string
 ): { compatible: boolean; reason?: string } {
@@ -47,6 +47,15 @@ export function isCompatibleWithDevholm(
   }
 
   return { compatible: true };
+}
+
+function normalizeMigrationMetadata(
+  migration: PluginMigration | PluginMigrationMetadata
+): PluginMigrationMetadata {
+  return {
+    ...migration,
+    reversibility: getMigrationReversibility(migration),
+  };
 }
 
 /**
@@ -149,7 +158,6 @@ export function buildUpdatePreflight(
 
   // Check DevHolm compatibility
   const devholmCompat = isCompatibleWithDevholm(
-    proposedVersion,
     proposedManifest.devholmVersion,
     currentDevholmVersion
   );
@@ -164,8 +172,8 @@ export function buildUpdatePreflight(
   }
 
   // Analyze migrations
-  const proposedMigrations = (proposedManifest.migrations || []) as PluginMigrationMetadata[];
-  const currentMigrations = (currentManifest.migrations || []) as PluginMigrationMetadata[];
+  const proposedMigrations = (proposedManifest.migrations || []).map(normalizeMigrationMetadata);
+  const currentMigrations = (currentManifest.migrations || []).map(normalizeMigrationMetadata);
 
   const currentMigrationIds = new Set(currentMigrations.map((m) => m.id));
   const proposedMigrationIds = new Set(proposedMigrations.map((m) => m.id));

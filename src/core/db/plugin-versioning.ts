@@ -1,4 +1,5 @@
 import { getDb } from '@/db';
+import { createHash } from 'crypto';
 import type {
   PluginLockfile,
   PluginPackageLock,
@@ -8,6 +9,27 @@ import type {
   PluginPackageSource,
   PluginPackageIntegrity,
 } from '@core/types/plugins';
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b)
+    );
+    return `{${entries
+      .map(([key, val]) => `${JSON.stringify(key)}:${stableStringify(val)}`)
+      .join(',')}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function sha256Hex(payload: unknown): string {
+  return createHash('sha256').update(stableStringify(payload)).digest('hex');
+}
 
 /**
  * Get the locked version of a specific plugin
@@ -40,10 +62,12 @@ export async function getPluginLock(pluginId: string): Promise<PluginPackageLock
  */
 export async function getAllPluginLocks(): Promise<PluginLockfile> {
   const db = getDb();
-  const rows = await db('plugin_lockfile');
+  const rows = await db('plugin_lockfile')
+    .orderBy('updated_at', 'desc')
+    .orderBy('plugin_id', 'asc');
   const packages: Record<string, PluginPackageLock> = {};
 
-  let devholmVersion = '';
+  const devholmVersion = rows[0]?.devholm_version || '';
   let latestUpdatedAt = new Date(0).toISOString();
 
   for (const row of rows) {
@@ -62,14 +86,17 @@ export async function getAllPluginLocks(): Promise<PluginLockfile> {
     };
 
     packages[row.plugin_id] = lock;
-    devholmVersion = row.devholm_version;
     if (row.updated_at.toISOString() > latestUpdatedAt) {
       latestUpdatedAt = row.updated_at.toISOString();
     }
   }
 
-  // For now, generate a simple checksum from the packages
-  const lockfileChecksum = Buffer.from(JSON.stringify(packages)).toString('hex').slice(0, 32);
+  const lockfileChecksum = sha256Hex({
+    lockfileVersion: 1,
+    devholmVersion,
+    packages,
+    updatedAt: latestUpdatedAt,
+  });
 
   return {
     lockfileVersion: 1,
@@ -99,9 +126,7 @@ export async function lockPluginVersion(
       plugin_id: pluginId,
       version,
       devholm_version: devholmVersion,
-      lockfile_checksum: Buffer.from(JSON.stringify({ pluginId, version }))
-        .toString('hex')
-        .slice(0, 32),
+      lockfile_checksum: sha256Hex({ pluginId, version, devholmVersion }),
       package_source: JSON.stringify(source),
       package_checksum: integrity.packageChecksum,
       manifest_checksum: integrity.manifestChecksum,

@@ -122,7 +122,7 @@ const checkpoint = await engine.startActivation(pluginId, targetVersion, checksu
 // Stage 2: Pre-migration (capture previous state)
 engine.advanceToPreMigration(pluginId);
 
-// Stage 3: Execute migrations (transactional)
+// Stage 3: Execute migrations (with staged checkpoints)
 await runMigrations();
 
 // Stage 4: Post-migration (verify)
@@ -344,7 +344,7 @@ Six deterministic test scenarios validate issue #7:
 2. **Compatible updates**: Allow plugin-b updates within ^2.0.0
 3. **Preview update plan**: Show preflight with all changes (migrations, dependencies, capabilities, warnings)
 4. **Reject incompatible**: Prevent update when DevHolm or dependency incompatible
-5. **Safe upgrade**: Complete staged update with transaction rollback safety
+5. **Safe upgrade**: Complete staged update with lockfile/state rollback safety
 6. **Rollback on failure**: Preserve previous version, restore on update failure
 
 All scenarios are covered by deterministic tests in:
