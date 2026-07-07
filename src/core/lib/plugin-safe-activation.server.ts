@@ -133,11 +133,11 @@ export class PluginSafeActivationEngine {
       initiatedBy
     );
 
-    // Record failed update with rollback
+    // Record failed update with rollback (FROM attempted version TO previous working version)
     await recordPluginUpdate(
       pluginId,
-      previousLock.version,
       checkpoint.version,
+      previousLock.version,
       'rolled_back',
       initiatedBy
     );
@@ -223,6 +223,9 @@ export async function performSafePluginUpdate(
     };
   } catch (error) {
     // Automatic rollback on error
+    // Record the failed update attempt
+    await recordPluginUpdate(pluginId, fromVersion, toVersion, 'failed', initiatedBy);
+
     try {
       await engine.rollbackActivation(
         pluginId,
