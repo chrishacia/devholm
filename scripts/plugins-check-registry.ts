@@ -107,7 +107,7 @@ function main(): void {
   const generatedJson = JSON.stringify(generated);
   if (expectedJson !== generatedJson) {
     throw new Error(
-      'Generated registry is stale. Run pnpm plugins:generate and commit the result.'
+      'Generated registry is stale. Run pnpm plugins:generate to refresh derived plugin assets.'
     );
   }
 

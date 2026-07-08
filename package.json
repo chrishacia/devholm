@@ -11,7 +11,7 @@
   "private": false,
   "scripts": {
     "dev": "next dev",
-    "build": "pnpm plugins:check && NODE_ENV=production next build --webpack",
+    "build": "pnpm plugins:generate && pnpm plugins:check && NODE_ENV=production next build --webpack",
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",

@@ -295,6 +295,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate plugin registry
+        run: pnpm plugins:generate
+
       - name: Run ESLint
         run: pnpm lint
 
@@ -348,6 +351,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate plugin registry
+        run: pnpm plugins:generate
+
       - name: Run database migrations
         run: pnpm db:migrate
 
@@ -387,6 +393,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Generate plugin registry
+        run: pnpm plugins:generate
 
       - name: Build application
         run: pnpm build
@@ -449,6 +458,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Generate plugin registry
+        run: pnpm plugins:generate
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps
