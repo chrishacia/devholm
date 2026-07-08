@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test';
+import { createSessionToken, createTestIdentity } from './fixtures/auth-jwt';
 
-const ADMIN_EMAIL = 'admin@localhost.com';
-const ADMIN_PASSWORD = 'changeme123';
-const SHORT_CODE = `e2e-${Date.now()}`;
 const DESTINATION_URL = 'http://localhost:3000/about';
 
 test.describe('URL Shortener MVP', () => {
-  test('supports create, redirect, analytics, and plugin disable/reenable', async ({ page }) => {
+  test('supports create, redirect, analytics, and plugin disable/reenable', async ({
+    page,
+  }, testInfo) => {
     let originalRoutePrefix = '/s';
     let originalPublicCreationMode: 'admin-only' | 'authenticated' | 'public-with-approval' =
       'admin-only';
@@ -38,17 +38,20 @@ test.describe('URL Shortener MVP', () => {
       await expect.poll(async () => toggle.isChecked(), { timeout: 20000 }).toBe(enabled);
     };
 
-    await page.goto('/admin/login');
-    await expect(page.getByRole('heading', { name: /admin login/i })).toBeVisible();
+    const adminIdentity = createTestIdentity('admin');
+    const sessionToken = await createSessionToken(adminIdentity);
+    await page.context().addCookies([
+      {
+        name: 'authjs.session-token',
+        value: sessionToken,
+        url: 'http://localhost:3000',
+        httpOnly: true,
+        sameSite: 'Lax',
+        secure: false,
+      },
+    ]);
 
-    // Ensure CSRF token is issued before credentials sign-in submission.
-    const csrfResponse = await page.request.get('/api/auth/csrf');
-    expect(csrfResponse.ok()).toBeTruthy();
-
-    await page.getByRole('textbox', { name: /^email$/i }).fill(ADMIN_EMAIL);
-    await page.locator('input[type="password"]').first().fill(ADMIN_PASSWORD);
-    await page.getByRole('button', { name: /sign in|log in/i }).click();
-
+    await page.goto('/admin');
     await expect(page).toHaveURL(/\/admin(\/?$|\?)/, { timeout: 15000 });
 
     await setPluginEnabledState(true);
@@ -72,17 +75,22 @@ test.describe('URL Shortener MVP', () => {
     originalPublicCreationMode = settingsPayload.settings?.publicCreationMode || 'admin-only';
     originalLegacyPrefixEnabled = Boolean(settingsPayload.settings?.legacyPrefixEnabled);
 
+    const uniqueShortCode = `e2e-${Date.now()}-${testInfo.project.name}-${testInfo.retry}`
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-')
+      .slice(0, 64);
+
     await page
       .getByLabel(/Custom code/i)
       .first()
-      .fill(SHORT_CODE);
+      .fill(uniqueShortCode);
     await page
       .getByLabel(/Destination URL/i)
       .first()
       .fill(DESTINATION_URL);
     await page.getByRole('button', { name: /create link/i }).click();
 
-    await expect(page.getByText(`/${SHORT_CODE}`)).toBeVisible();
+    await expect(page.getByText(`/${uniqueShortCode}`)).toBeVisible();
     await expect(page.getByText('Short link created successfully.')).toBeVisible();
 
     await expect
@@ -98,16 +106,16 @@ test.describe('URL Shortener MVP', () => {
           };
 
           const createdLink = (linksPayload.links ?? []).find(
-            (link) => link.destinationUrl === DESTINATION_URL && link.code === SHORT_CODE
+            (link) => link.destinationUrl === DESTINATION_URL && link.code === uniqueShortCode
           );
 
           return createdLink?.code ?? null;
         },
         { timeout: 20000 }
       )
-      .toBe(SHORT_CODE);
+      .toBe(uniqueShortCode);
 
-    const createdCode = SHORT_CODE;
+    const createdCode = uniqueShortCode;
 
     const shortUrlPath = `/s/${createdCode}`;
 
