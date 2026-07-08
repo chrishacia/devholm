@@ -124,6 +124,7 @@ export function createTestIdentity(
 export async function createSessionToken(identity: TestIdentity): Promise<string> {
   const token = await encode({
     token: {
+      sub: identity.id,
       id: identity.id,
       email: identity.email,
       role: identity.role,
@@ -175,6 +176,7 @@ export async function verifySessionTokenRoundTrip(identity: TestIdentity): Promi
 
   // Verify all critical claims are present and correct
   return (
+    decoded.sub === identity.id &&
     decoded.id === identity.id &&
     decoded.email === identity.email &&
     decoded.role === identity.role &&
