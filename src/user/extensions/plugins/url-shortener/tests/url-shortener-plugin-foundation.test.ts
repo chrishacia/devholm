@@ -2,8 +2,19 @@ import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
 import type { NextRequest } from 'next/server';
+import { getDb } from '@/db';
+import { getPluginLock, lockPluginVersion } from '@core/db/plugin-versioning';
+import { performSafePluginUpdate } from '@core/lib/plugin-safe-activation.server';
 import { resolvePublicRouteExtension } from '@core/lib/public-route-dispatcher.server';
 import { bundledPlugins } from '@user/extensions/plugins/registry';
+import {
+  createUrlShortenerLink,
+  getUrlShortenerLinkByCode,
+  getUrlShortenerOverview,
+  getUrlShortenerSettings,
+  recordUrlShortenerClick,
+  updateUrlShortenerSettings,
+} from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
 import {
   URL_SHORTENER_ALLOWED_CREATION_MODES,
   URL_SHORTENER_DEFAULT_PREFIX,
@@ -149,5 +160,120 @@ describe('url shortener validation', () => {
     const resolution = await resolvePublicRouteExtension('/api/health', mockRequest('/api/health'));
 
     expect(resolution.type).toBe('no-match');
+  });
+
+  it('preserves URL shortener data through safe plugin update flow', async () => {
+    const db = getDb();
+    const code = `upgrade-${Date.now().toString(36)}`;
+    const originalSettings = await getUrlShortenerSettings(db);
+    const originalLock = await getPluginLock(URL_SHORTENER_PLUGIN_ID);
+
+    let linkId: string | null = null;
+
+    try {
+      const link = await createUrlShortenerLink(
+        {
+          code,
+          destinationUrl: 'https://example.com/upgrade-check',
+          title: 'Upgrade Coverage Link',
+        },
+        db
+      );
+      linkId = link.id;
+
+      await updateUrlShortenerSettings(
+        {
+          routePrefix: originalSettings.routePrefix,
+          publicCreationMode: 'authenticated',
+          legacyPrefixEnabled: originalSettings.legacyPrefixEnabled,
+        },
+        db
+      );
+
+      await recordUrlShortenerClick(
+        link.id,
+        new Request(`http://localhost:3000/s/${code}`, {
+          headers: new Headers({
+            referer: 'https://example.com/',
+            'user-agent': 'vitest-upgrade-check',
+          }),
+        }),
+        db
+      );
+
+      const overviewBefore = await getUrlShortenerOverview(db);
+
+      const fromVersion = urlShortenerPluginManifest.version;
+      const toVersion = `${fromVersion}-upgrade-check`;
+
+      await lockPluginVersion(
+        URL_SHORTENER_PLUGIN_ID,
+        fromVersion,
+        '3.11.0',
+        { type: 'bundled' },
+        {
+          packageChecksum: 'sha256-url-shortener-before',
+          manifestChecksum: 'manifest-url-shortener-before',
+          migrationChecksums: {},
+        },
+        'vitest'
+      );
+
+      const updateResult = await performSafePluginUpdate(
+        URL_SHORTENER_PLUGIN_ID,
+        fromVersion,
+        toVersion,
+        { type: 'bundled' },
+        {
+          packageChecksum: 'sha256-url-shortener-after',
+          manifestChecksum: 'manifest-url-shortener-after',
+          migrationChecksums: {},
+        },
+        '3.11.0',
+        {
+          pluginId: URL_SHORTENER_PLUGIN_ID,
+          fromVersion,
+          toVersion,
+        },
+        undefined,
+        undefined,
+        'vitest'
+      );
+
+      expect(updateResult.success).toBe(true);
+
+      const linkAfter = await getUrlShortenerLinkByCode(code, db);
+      const settingsAfter = await getUrlShortenerSettings(db);
+      const overviewAfter = await getUrlShortenerOverview(db);
+      const lockAfter = await getPluginLock(URL_SHORTENER_PLUGIN_ID);
+
+      expect(linkAfter).not.toBeNull();
+      expect(linkAfter?.destinationUrl).toBe('https://example.com/upgrade-check');
+      expect((linkAfter?.cachedClickCount ?? 0) >= 1).toBe(true);
+      expect(settingsAfter.publicCreationMode).toBe('authenticated');
+      expect(overviewAfter.totalClicks >= overviewBefore.totalClicks).toBe(true);
+      expect(lockAfter?.version).toBe(toVersion);
+    } finally {
+      await updateUrlShortenerSettings(originalSettings, db);
+
+      if (originalLock) {
+        await lockPluginVersion(
+          originalLock.pluginId,
+          originalLock.version,
+          originalLock.devholmVersion,
+          originalLock.source,
+          originalLock.integrity,
+          originalLock.lockedBy ?? 'vitest'
+        );
+      } else {
+        await db('plugin_lockfile').where({ plugin_id: URL_SHORTENER_PLUGIN_ID }).delete();
+      }
+
+      if (linkId) {
+        await db('u_url_shortener_daily_stats').where({ link_id: linkId }).delete();
+        await db('u_url_shortener_click_events').where({ link_id: linkId }).delete();
+        await db('u_url_shortener_links').where({ id: linkId }).delete();
+      }
+    }
   });
 });
