@@ -16,6 +16,10 @@ import {
   updateUrlShortenerSettings,
 } from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
 import {
+  down as teardownUrlShortenerSchema,
+  up as setupUrlShortenerSchema,
+} from '@user/extensions/plugins/url-shortener/db/migrations/20260701010000_url_shortener_foundation';
+import {
   URL_SHORTENER_ALLOWED_CREATION_MODES,
   URL_SHORTENER_DEFAULT_PREFIX,
   URL_SHORTENER_ENABLEMENT_KEY,
@@ -165,6 +169,14 @@ describe('url shortener validation', () => {
   it('preserves URL shortener data through safe plugin update flow', async () => {
     const db = getDb();
     const code = `upgrade-${Date.now().toString(36)}`;
+    const linksTableExists = await db.schema.hasTable('u_url_shortener_links');
+    let schemaBootstrappedByTest = false;
+
+    if (!linksTableExists) {
+      await setupUrlShortenerSchema(db);
+      schemaBootstrappedByTest = true;
+    }
+
     const originalSettings = await getUrlShortenerSettings(db);
     const originalLock = await getPluginLock(URL_SHORTENER_PLUGIN_ID);
 
@@ -273,6 +285,10 @@ describe('url shortener validation', () => {
         await db('u_url_shortener_daily_stats').where({ link_id: linkId }).delete();
         await db('u_url_shortener_click_events').where({ link_id: linkId }).delete();
         await db('u_url_shortener_links').where({ id: linkId }).delete();
+      }
+
+      if (schemaBootstrappedByTest) {
+        await teardownUrlShortenerSchema(db);
       }
     }
   });
