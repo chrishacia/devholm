@@ -13,6 +13,24 @@ test.describe('URL Shortener MVP', () => {
     let originalLegacyPrefixEnabled = false;
 
     const setPluginEnabledState = async (enabled: boolean) => {
+      const listBeforeResponse = await page.request.get('/api/admin/plugins');
+      expect(listBeforeResponse.ok()).toBeTruthy();
+      const listBeforePayload = (await listBeforeResponse.json()) as {
+        plugins?: Array<{ id: string; isEnabled: boolean; installed: boolean }>;
+      };
+      const urlShortenerBefore = (listBeforePayload.plugins ?? []).find(
+        (plugin) => plugin.id === 'url-shortener'
+      );
+
+      if (!urlShortenerBefore?.installed) {
+        const installResponse = await page.request.post('/api/admin/plugins', {
+          data: {
+            pluginId: 'url-shortener',
+          },
+        });
+        expect(installResponse.ok()).toBeTruthy();
+      }
+
       const updateResponse = await page.request.patch('/api/admin/plugins', {
         data: {
           pluginId: 'url-shortener',
