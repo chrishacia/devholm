@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { createSessionToken, createTestIdentity } from './fixtures/auth-jwt';
+import {
+  createSessionToken,
+  createTestIdentity,
+  ensureInstallCompleted,
+} from './fixtures/auth-jwt';
 
 const DESTINATION_URL = 'http://localhost:3000/about';
 
@@ -65,6 +69,8 @@ test.describe('URL Shortener MVP', () => {
     };
 
     const adminIdentity = createTestIdentity('admin');
+    await ensureInstallCompleted(page.request, adminIdentity);
+
     const sessionToken = await createSessionToken(adminIdentity);
     await page.context().addCookies([
       {

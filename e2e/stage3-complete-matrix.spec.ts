@@ -37,6 +37,7 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
       expect(decoded).toBeDefined();
       expect(decoded?.sub).toBe(identity.id);
       expect(decoded?.id).toBe(identity.id);
+      expect(decoded?.installCompleted).toBe(identity.installCompleted);
       expect(decoded?.email).toBe(identity.email);
       expect(decoded?.role).toBe('admin');
       expect(decoded?.roles).toEqual(['admin']);
@@ -50,6 +51,7 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
       expect(decoded).toBeDefined();
       expect(decoded?.sub).toBe(identity.id);
       expect(decoded?.id).toBe(identity.id);
+      expect(decoded?.installCompleted).toBe(identity.installCompleted);
       expect(decoded?.email).toBe(identity.email);
       expect(decoded?.role).toBe('superadmin');
       expect(decoded?.roles).toEqual(['superadmin']);
@@ -63,6 +65,7 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
       expect(decoded).toBeDefined();
       expect(decoded?.sub).toBe(identity.id);
       expect(decoded?.id).toBe(identity.id);
+      expect(decoded?.installCompleted).toBe(identity.installCompleted);
       expect(decoded?.email).toBe(identity.email);
       expect(decoded?.role).toBe('member');
       expect(decoded?.roles).toEqual(['member']);
@@ -77,6 +80,7 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
       expect(decoded).toBeDefined();
       expect(decoded?.sub).toBe(identity.id);
       expect(decoded?.id).toBe(identity.id);
+      expect(decoded?.installCompleted).toBe(identity.installCompleted);
       expect(decoded?.email).toBe(identity.email);
       expect(decoded?.role).toBe('member');
       expect(decoded?.roles).toEqual(['member']);
@@ -93,6 +97,7 @@ test.describe('Stage 3 Authorization: Complete E2E HTTP Matrix', () => {
       expect(decoded).toBeDefined();
       expect(decoded?.sub).toBe(identity.id);
       expect(decoded?.id).toBe(identity.id);
+      expect(decoded?.installCompleted).toBe(identity.installCompleted);
       expect(decoded?.email).toBe(identity.email);
       expect(decoded?.role).toBe('member');
       expect(decoded?.roles).toEqual(['member']);

@@ -10,6 +10,7 @@
  */
 
 import { encode, decode } from 'next-auth/jwt';
+import type { APIRequestContext } from '@playwright/test';
 
 // Use production-compatible configuration
 const COOKIE_NAME =
@@ -50,6 +51,7 @@ export interface TestIdentity {
   roles: string[];
   permissions: string[];
   isAdmin: boolean;
+  installCompleted: boolean;
 }
 
 /**
@@ -73,6 +75,7 @@ export function createTestIdentity(
         roles: ['admin'],
         permissions: [],
         isAdmin: true,
+        installCompleted: true,
       };
 
     case 'superadmin':
@@ -83,6 +86,7 @@ export function createTestIdentity(
         roles: ['superadmin'],
         permissions: [],
         isAdmin: true,
+        installCompleted: true,
       };
 
     case 'admin-access-only':
@@ -93,6 +97,7 @@ export function createTestIdentity(
         roles: ['member'],
         permissions: ['admin.access'],
         isAdmin: true,
+        installCompleted: true,
       };
 
     case 'users-manage-only':
@@ -103,6 +108,7 @@ export function createTestIdentity(
         roles: ['member'],
         permissions: ['users.manage'],
         isAdmin: false,
+        installCompleted: true,
       };
 
     case 'member':
@@ -113,6 +119,7 @@ export function createTestIdentity(
         roles: ['member'],
         permissions: [],
         isAdmin: false,
+        installCompleted: true,
       };
   }
 }
@@ -131,7 +138,7 @@ export async function createSessionToken(identity: TestIdentity): Promise<string
       roles: identity.roles,
       permissions: identity.permissions,
       isAdmin: identity.isAdmin,
-      installCompleted: true,
+      installCompleted: identity.installCompleted,
     },
     secret: SECRET,
     salt: COOKIE_NAME,
@@ -163,6 +170,35 @@ export async function createSessionCookieHeader(identity: TestIdentity): Promise
 }
 
 /**
+ * Ensure install wizard gating is completed for a fixture admin identity.
+ *
+ * This aligns session-token fixtures with auth settings read by the server-side
+ * JWT/session callbacks, which can source install state from site settings.
+ */
+export async function ensureInstallCompleted(
+  request: APIRequestContext,
+  identity: TestIdentity
+): Promise<void> {
+  const cookie = await createSessionCookieHeader(identity);
+
+  const response = await request.patch('/api/admin/auth/config', {
+    headers: { Cookie: cookie },
+    data: {
+      settings: {
+        installCompleted: true,
+      },
+    },
+  });
+
+  if (!response.ok()) {
+    const body = await response.text();
+    throw new Error(
+      `Failed to enforce installCompleted for fixture identity: ${response.status()} ${body}`
+    );
+  }
+}
+
+/**
  * Regression test: verify encode/decode round-trip
  * This test should be called in the test suite to prove the fixture is working
  */
@@ -182,6 +218,7 @@ export async function verifySessionTokenRoundTrip(identity: TestIdentity): Promi
     decoded.role === identity.role &&
     JSON.stringify(decoded.roles) === JSON.stringify(identity.roles) &&
     JSON.stringify(decoded.permissions) === JSON.stringify(identity.permissions) &&
-    decoded.isAdmin === identity.isAdmin
+    decoded.isAdmin === identity.isAdmin &&
+    decoded.installCompleted === identity.installCompleted
   );
 }
