@@ -166,7 +166,22 @@ export async function getRobotsExtensionRules() {
 }
 
 export function resolveApiExtension(path: string[]): ApiExtension | undefined {
-  return resolveByPath(apiExtensions, `/api/${path.join('/')}`);
+  const candidate = `/api/${path.join('/')}`;
+  const exactMatch = resolveByPath(apiExtensions, candidate);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const normalizedCandidate = normalizePath(candidate);
+
+  return apiExtensions
+    .filter((extension) => {
+      const extensionPath = normalizePath(extension.path);
+      return (
+        normalizedCandidate === extensionPath || normalizedCandidate.startsWith(`${extensionPath}/`)
+      );
+    })
+    .sort((left, right) => right.path.length - left.path.length)[0];
 }
 
 export async function runApiExtension(

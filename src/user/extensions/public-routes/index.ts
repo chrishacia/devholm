@@ -32,8 +32,9 @@
  */
 
 import type { PublicRouteExtension } from '@core/types/extensions.server';
-import { bundledPlugins } from '@user/extensions/plugins/registry';
+import { urlShortenerPublicRouteExtension } from '@user/extensions/plugins/url-shortener/public-routes/url-shortener-public-route.server';
 
-export const publicRouteExtensions: PublicRouteExtension[] = bundledPlugins.flatMap(
-  (plugin) => plugin.publicRouteExtensions ?? []
-);
+// Keep middleware/public-route loading Edge-safe by importing only route declarations.
+// Avoid importing full bundled plugin modules here because they include server-only
+// admin/API modules that pull Node-only dependencies into the middleware graph.
+export const publicRouteExtensions: PublicRouteExtension[] = [urlShortenerPublicRouteExtension];

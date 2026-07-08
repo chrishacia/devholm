@@ -43,7 +43,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -65,7 +65,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [extension],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -84,7 +84,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         handle: vi.fn(),
       };
 
-      const getHelpers = vi.fn(() => ({
+      const getHelpers = vi.fn(async () => ({
         auth: vi.fn(),
         getDb: vi.fn(),
         verifyAdmin: vi.fn(),
@@ -116,7 +116,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [extension],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -144,7 +144,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [extension],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -166,7 +166,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         handle: vi.fn().mockResolvedValue(new Response('ok')),
       };
 
-      const getHelpers = vi.fn(() => ({
+      const getHelpers = vi.fn(async () => ({
         auth: vi.fn(),
         getDb: vi.fn(),
         verifyAdmin: vi.fn(),
@@ -208,7 +208,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
           extensions: [ext1, ext2],
           isPluginEnabled: async () => true,
           getReservedRoutes: () => new Set(),
-          getHelpers: () => ({
+          getHelpers: async () => ({
             auth: vi.fn(),
             getDb: vi.fn(),
             verifyAdmin: vi.fn(),
@@ -242,7 +242,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [ext1, ext2],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -267,7 +267,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         handle: vi.fn(),
       };
 
-      const getHelpers = vi.fn(() => ({
+      const getHelpers = vi.fn(async () => ({
         auth: vi.fn(),
         getDb: vi.fn(),
         verifyAdmin: vi.fn(),
@@ -305,7 +305,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [disabledExtension],
         isPluginEnabled: async (pluginId) => pluginId !== 'disabled-plugin',
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -330,7 +330,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [enabledExtension],
         isPluginEnabled: async (pluginId) => pluginId === 'enabled-plugin',
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -354,7 +354,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [extension],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(['/admin']),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -376,7 +376,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [extension],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(['/admin']),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -400,7 +400,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [extension],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -422,7 +422,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [extension],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -445,7 +445,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [extension],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -468,7 +468,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [extension],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -494,7 +494,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [extension],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -521,7 +521,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [extension],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),
@@ -554,7 +554,7 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
         extensions: [throwingExt, successfulExt],
         isPluginEnabled: async () => true,
         getReservedRoutes: () => new Set(),
-        getHelpers: () => ({
+        getHelpers: async () => ({
           auth: vi.fn(),
           getDb: vi.fn(),
           verifyAdmin: vi.fn(),

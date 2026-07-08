@@ -5,6 +5,7 @@ const verifyAdmin = vi.hoisted(() => vi.fn());
 const listPluginStates = vi.hoisted(() => vi.fn());
 const enablePlugin = vi.hoisted(() => vi.fn());
 const disablePlugin = vi.hoisted(() => vi.fn());
+const installPlugin = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/auth-helpers', () => ({
   verifyAdmin,
@@ -17,9 +18,10 @@ vi.mock('@/db/plugins', () => ({
 vi.mock('@core/lib/plugin-lifecycle.server', () => ({
   enablePlugin,
   disablePlugin,
+  installPlugin,
 }));
 
-import { PATCH } from './route';
+import { PATCH, POST } from './route';
 
 describe('admin plugins PATCH route', () => {
   beforeEach(() => {
@@ -32,6 +34,7 @@ describe('admin plugins PATCH route', () => {
     listPluginStates.mockResolvedValue([{ id: 'url-shortener' }]);
     enablePlugin.mockResolvedValue(undefined);
     disablePlugin.mockResolvedValue(undefined);
+    installPlugin.mockResolvedValue(undefined);
   });
 
   it('delegates enable requests to enablePlugin with initiator identity', async () => {
@@ -94,5 +97,37 @@ describe('admin plugins PATCH route', () => {
 
     expect(response.status).toBe(409);
     expect(body.error).toContain('requires it');
+  });
+
+  it('delegates install requests to installPlugin with initiator identity', async () => {
+    const request = new NextRequest('http://localhost:3000/api/admin/plugins', {
+      method: 'POST',
+      body: JSON.stringify({ pluginId: 'url-shortener' }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+    expect(installPlugin).toHaveBeenCalledWith('url-shortener', {
+      initiatedBy: 'admin@example.com',
+    });
+  });
+
+  it('returns conflict response for install dependency rejection', async () => {
+    installPlugin.mockRejectedValue(
+      new Error('Plugin dependency dep-a is not installed for url-shortener')
+    );
+
+    const request = new NextRequest('http://localhost:3000/api/admin/plugins', {
+      method: 'POST',
+      body: JSON.stringify({ pluginId: 'url-shortener' }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toContain('not installed');
   });
 });

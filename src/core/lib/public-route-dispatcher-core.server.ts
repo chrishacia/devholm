@@ -16,7 +16,7 @@ export interface PublicRouteDispatcherDependencies {
   extensions: PublicRouteExtension[];
   isPluginEnabled: (pluginId: string | undefined) => Promise<boolean>;
   getReservedRoutes: () => Set<string>;
-  getHelpers: () => ExtensionHelpers;
+  getHelpers: () => Promise<ExtensionHelpers>;
   /** Optional: pre-created match context for testing */
   createMatchContext?: (reservedRoutes: ReadonlySet<string>) => PublicRouteMatchContext;
 }
@@ -168,7 +168,7 @@ export async function dispatchPublicRoute(
     try {
       // Phase 3: Call handle() - side effects allowed here
       if (helpers === null) {
-        helpers = dependencies.getHelpers();
+        helpers = await dependencies.getHelpers();
       }
       const response = await extension.handle(match, request, helpers);
 

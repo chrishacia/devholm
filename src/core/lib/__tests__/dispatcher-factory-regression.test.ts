@@ -8,42 +8,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createPublicRouteDispatcherDependencies } from '@core/lib/public-route-dispatcher.server';
 
-// Mock all production dependencies
-vi.mock('@/db/plugins', () => ({
-  isPluginEnabled: vi.fn(async () => true),
-}));
-
-vi.mock('@/db/settings', () => ({
-  getSetting: vi.fn(async (key: string) => {
-    const settings: Record<string, unknown> = {
-      'plugin:test:enabled': true,
-    };
-    return settings[key];
-  }),
-  getSettings: vi.fn(async (keys: string[]) => {
-    const settings: Record<string, unknown> = {
-      'plugin:test:enabled': true,
-    };
-    return keys.reduce(
-      (acc, key) => {
-        if (key in settings) {
-          acc[key] = settings[key];
-        }
-        return acc;
-      },
-      {} as Record<string, unknown>
-    );
-  }),
-}));
-
-vi.mock('@core/lib/extension-helpers.server', () => ({
-  getExtensionHelpers: vi.fn(() => ({
-    auth: vi.fn(),
-    getDb: vi.fn(),
-    verifyAdmin: vi.fn(),
-  })),
-}));
-
 vi.mock('@user/extensions/public-routes', () => ({
   publicRouteExtensions: [],
 }));
@@ -97,7 +61,7 @@ describe('createPublicRouteDispatcherDependencies - Regression Test', () => {
     expect((context as unknown as Record<string, unknown>).getDb).toBeUndefined();
   });
 
-  it('should read mocked settings through context', async () => {
+  it('should return null from settings.get in DB-free proxy context', async () => {
     const deps = createPublicRouteDispatcherDependencies();
 
     expect(deps.createMatchContext).toBeDefined();
@@ -105,10 +69,10 @@ describe('createPublicRouteDispatcherDependencies - Regression Test', () => {
     const context = deps.createMatchContext!(new Set(['/admin']));
 
     const value = await context.settings.get('plugin:test:enabled');
-    expect(value).toBe(true);
+    expect(value).toBeNull();
   });
 
-  it('should read multiple settings through getMany', async () => {
+  it('should return empty object from settings.getMany in DB-free proxy context', async () => {
     const deps = createPublicRouteDispatcherDependencies();
 
     expect(deps.createMatchContext).toBeDefined();
@@ -116,7 +80,13 @@ describe('createPublicRouteDispatcherDependencies - Regression Test', () => {
     const context = deps.createMatchContext!(new Set(['/admin']));
 
     const values = await context.settings.getMany(['plugin:test:enabled']);
-    expect(values).toEqual({ 'plugin:test:enabled': true });
+    expect(values).toEqual({});
+  });
+
+  it('should treat plugin routes as statically eligible in proxy context', async () => {
+    const deps = createPublicRouteDispatcherDependencies();
+
+    await expect(deps.isPluginEnabled('url-shortener')).resolves.toBe(true);
   });
 
   it('should provide all required dispatcher dependencies', () => {

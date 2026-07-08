@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 import { dispatchPublicRoute } from '@core/lib/public-route-dispatcher-core.server';
 import type { ExtensionHelpers } from '@core/types/extensions.server';
@@ -8,6 +8,7 @@ function mockRequest(pathname: string): NextRequest {
   return {
     method: 'GET',
     nextUrl: { pathname },
+    url: `http://localhost:3000${pathname}`,
     headers: {
       get: () => null,
       has: () => false,
@@ -54,19 +55,16 @@ describe('url shortener public route extension', () => {
     });
   });
 
-  it('matches custom prefix from settings', async () => {
+  it('does not match custom prefixes in proxy-safe static mode', async () => {
     const match = await urlShortenerPublicRouteExtension.match('/go/xyz', mockRequest('/go/xyz'), {
       reservedRoutes: new Set(['/api', '/admin']),
       settings: {
-        get: async (key) => (key.includes('route-prefix') ? '/go/' : null),
+        get: async () => null,
         getMany: async () => ({}),
       },
     });
 
-    expect(match).toEqual({
-      code: 'xyz',
-      prefix: '/go',
-    });
+    expect(match).toBeNull();
   });
 
   it('does not match nested paths', async () => {
@@ -128,7 +126,7 @@ describe('url shortener public route extension', () => {
       extensions: [urlShortenerPublicRouteExtension],
       isPluginEnabled: async () => false,
       getReservedRoutes: () => new Set(['/api', '/admin']),
-      getHelpers: () =>
+      getHelpers: async () =>
         ({
           auth: (() => Promise.resolve(null)) as ExtensionHelpers['auth'],
           getDb: (() => {
@@ -148,5 +146,55 @@ describe('url shortener public route extension', () => {
     });
 
     expect(result).toEqual({ type: 'no-match' });
+  });
+
+  it('rewrites /s/<code> requests to the Node public API route', async () => {
+    const result = await dispatchPublicRoute('/s/abc123', mockRequest('/s/abc123'), {
+      extensions: [urlShortenerPublicRouteExtension],
+      isPluginEnabled: async () => true,
+      getReservedRoutes: () => new Set(['/api', '/admin']),
+      getHelpers: async () => ({}) as ExtensionHelpers,
+      createMatchContext: (reservedRoutes) => ({
+        reservedRoutes,
+        settings: {
+          get: async () => null,
+          getMany: async () => ({}),
+        },
+      }),
+    });
+
+    expect(result.type).toBe('match');
+    if (result.type === 'match') {
+      expect(result.response.status).toBe(200);
+      expect(result.response.headers.get('x-middleware-rewrite')).toContain(
+        '/api/public/url-shortener/abc123'
+      );
+    }
+  });
+
+  it('does not claim reserved /api paths', async () => {
+    const matchSpy = vi.spyOn(urlShortenerPublicRouteExtension, 'match');
+
+    const result = await dispatchPublicRoute(
+      '/api/public/url-shortener/abc123',
+      mockRequest('/api/public/url-shortener/abc123'),
+      {
+        extensions: [urlShortenerPublicRouteExtension],
+        isPluginEnabled: async () => true,
+        getReservedRoutes: () => new Set(['/api', '/admin']),
+        getHelpers: async () => ({}) as ExtensionHelpers,
+        createMatchContext: (reservedRoutes) => ({
+          reservedRoutes,
+          settings: {
+            get: async () => null,
+            getMany: async () => ({}),
+          },
+        }),
+      }
+    );
+
+    expect(result.type).toBe('no-match');
+    expect(matchSpy).not.toHaveBeenCalled();
+    matchSpy.mockRestore();
   });
 });
