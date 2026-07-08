@@ -171,10 +171,27 @@ describe('url shortener validation', () => {
     const code = `upgrade-${Date.now().toString(36)}`;
     const linksTableExists = await db.schema.hasTable('u_url_shortener_links');
     let schemaBootstrappedByTest = false;
+    const existingPluginRow = await db('devholm_plugins')
+      .where({ plugin_id: URL_SHORTENER_PLUGIN_ID })
+      .first();
+    let pluginRowBootstrappedByTest = false;
 
     if (!linksTableExists) {
       await setupUrlShortenerSchema(db);
       schemaBootstrappedByTest = true;
+    }
+
+    if (!existingPluginRow) {
+      await db('devholm_plugins').insert({
+        plugin_id: URL_SHORTENER_PLUGIN_ID,
+        bundled_version: urlShortenerPluginManifest.version,
+        installed_version: urlShortenerPluginManifest.version,
+        enabled: false,
+        lifecycle_state: 'installed',
+        operation_status: 'idle',
+        updated_at: new Date(),
+      });
+      pluginRowBootstrappedByTest = true;
     }
 
     const originalSettings = await getUrlShortenerSettings(db);
@@ -289,6 +306,10 @@ describe('url shortener validation', () => {
 
       if (schemaBootstrappedByTest) {
         await teardownUrlShortenerSchema(db);
+      }
+
+      if (pluginRowBootstrappedByTest) {
+        await db('devholm_plugins').where({ plugin_id: URL_SHORTENER_PLUGIN_ID }).delete();
       }
     }
   });
