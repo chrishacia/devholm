@@ -49,6 +49,7 @@ export interface PluginSettingsDefinition {
 export interface DevholmBundledPlugin {
   manifest: DevholmPluginManifest;
   settings?: readonly PluginSettingsDefinition[];
+  apiExtensions?: readonly import('@core/types/extensions.server').ApiExtension[];
   publicRouteExtensions?: readonly import('@core/types/extensions.server').PublicRouteExtension[];
   adminPageExtensions?: readonly import('@core/types/extensions.server').AdminPageExtension[];
 }

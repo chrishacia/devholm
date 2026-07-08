@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
+import type { NextRequest } from 'next/server';
+import { resolvePublicRouteExtension } from '@core/lib/public-route-dispatcher.server';
 import { bundledPlugins } from '@user/extensions/plugins/registry';
 import {
   URL_SHORTENER_ALLOWED_CREATION_MODES,
@@ -20,11 +22,24 @@ import {
 } from '@user/extensions/plugins/url-shortener/validation/schemas';
 import { validateRoutePrefix } from '@user/extensions/plugins/url-shortener/validation/prefix-validation';
 
+function mockRequest(pathname: string): NextRequest {
+  return {
+    method: 'GET',
+    nextUrl: { pathname },
+    headers: {
+      get: () => null,
+      has: () => false,
+    },
+    url: `http://localhost:3000${pathname}`,
+  } as unknown as NextRequest;
+}
+
 describe('url shortener plugin manifest and registration', () => {
   it('registers plugin in bundled registry with public route and admin pages', () => {
     const plugin = bundledPlugins.find((item) => item.manifest.id === URL_SHORTENER_PLUGIN_ID);
 
     expect(plugin).toBeDefined();
+    expect(plugin?.apiExtensions?.length).toBe(1);
     expect(plugin?.publicRouteExtensions?.length).toBe(1);
     expect(plugin?.adminPageExtensions?.length).toBe(5);
   });
@@ -116,5 +131,23 @@ describe('url shortener validation', () => {
     });
 
     expect(parsed.code).toBe('my-code');
+  });
+
+  it('claims and rewrites /s/<code> through proxy-safe dispatcher', async () => {
+    const resolution = await resolvePublicRouteExtension('/s/abc123', mockRequest('/s/abc123'));
+
+    expect(resolution.type).toBe('match');
+    if (resolution.type === 'match') {
+      expect(resolution.response.status).toBe(200);
+      expect(resolution.response.headers.get('x-middleware-rewrite')).toContain(
+        '/api/public/url-shortener/abc123'
+      );
+    }
+  });
+
+  it('does not claim reserved API paths', async () => {
+    const resolution = await resolvePublicRouteExtension('/api/health', mockRequest('/api/health'));
+
+    expect(resolution.type).toBe('no-match');
   });
 });

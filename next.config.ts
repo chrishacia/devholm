@@ -41,7 +41,7 @@ const nextConfig: NextConfig = {
     formats: ['image/avif', 'image/webp'],
   },
 
-  // Security headers are handled in middleware.ts
+  // Security headers are handled in proxy.ts
   // but we can add some here as well
   async headers() {
     return [

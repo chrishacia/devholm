@@ -6,12 +6,9 @@
  */
 
 import type { NextRequest } from 'next/server';
-import { isPluginEnabled } from '@/db/plugins';
-import { getSetting, getSettings } from '@/db/settings';
-import { getExtensionHelpers } from '@core/lib/extension-helpers.server';
 import { publicRouteExtensions } from '@user/extensions/public-routes';
 import { getReservedRoutes } from '@core/lib/reserved-routes.server';
-import { createReadOnlySettingsAccessor } from '@core/lib/public-route-adapters.server';
+import type { ExtensionHelpers } from '@core/types/extensions.server';
 import {
   dispatchPublicRoute,
   type PublicRouteDispatcherDependencies,
@@ -23,21 +20,22 @@ import {
  * Creates fully-wired dispatcher dependencies
  */
 export function createPublicRouteDispatcherDependencies(): PublicRouteDispatcherDependencies {
-  const helpers = getExtensionHelpers();
+  // Proxy/interception path must remain DB-free. Enablement, settings, and
+  // redirect/storage logic are validated and enforced in Node route handlers.
+  const edgeSafeHelpers = {} as ExtensionHelpers;
 
   return {
     extensions: publicRouteExtensions,
-    isPluginEnabled,
+    isPluginEnabled: async () => true,
     getReservedRoutes,
-    getHelpers: () => helpers,
-    createMatchContext: (reservedRoutes: ReadonlySet<string>) => {
-      const settingsAccessor = createReadOnlySettingsAccessor(getSetting, getSettings);
-
-      return {
-        reservedRoutes,
-        settings: settingsAccessor,
-      };
-    },
+    getHelpers: async () => edgeSafeHelpers,
+    createMatchContext: (reservedRoutes: ReadonlySet<string>) => ({
+      reservedRoutes,
+      settings: {
+        get: async () => null,
+        getMany: async () => ({}),
+      },
+    }),
   };
 }
 

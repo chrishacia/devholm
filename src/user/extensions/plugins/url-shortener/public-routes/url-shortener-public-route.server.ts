@@ -1,11 +1,9 @@
 import type { PublicRouteExtension } from '@core/types/extensions.server';
+import { URL_SHORTENER_DEFAULT_PREFIX } from '@user/extensions/plugins/url-shortener/constants';
 import { URL_SHORTENER_PLUGIN_ID } from '@user/extensions/plugins/url-shortener/constants';
+import { NextResponse } from 'next/server';
 import type { UrlShortenerMatchState } from '@user/extensions/plugins/url-shortener/types';
 import { shortCodeSchema } from '@user/extensions/plugins/url-shortener/validation/schemas';
-import {
-  resolveConfiguredPrefix,
-  validateRoutePrefix,
-} from '@user/extensions/plugins/url-shortener/validation/prefix-validation';
 
 function splitPath(pathname: string): string[] {
   return pathname.split('/').filter(Boolean);
@@ -14,9 +12,8 @@ function splitPath(pathname: string): string[] {
 export const urlShortenerPublicRouteExtension: PublicRouteExtension<UrlShortenerMatchState> = {
   pluginId: URL_SHORTENER_PLUGIN_ID,
   id: 'url-shortener:redirect',
-  async match(pathname, _request, context) {
-    const prefix = await resolveConfiguredPrefix((key) => context.settings.get(key));
-    const safePrefix = validateRoutePrefix(prefix);
+  async match(pathname) {
+    const safePrefix = URL_SHORTENER_DEFAULT_PREFIX;
 
     const prefixSegments = splitPath(safePrefix);
     const pathSegments = splitPath(pathname);
@@ -41,12 +38,12 @@ export const urlShortenerPublicRouteExtension: PublicRouteExtension<UrlShortener
       prefix: safePrefix,
     };
   },
-  async handle() {
-    return new Response('URL shortener redirect handling is not implemented yet', {
-      status: 501,
-      headers: {
-        'content-type': 'text/plain; charset=utf-8',
-      },
-    });
+  async handle(match, request) {
+    // Keep proxy path Edge-safe: hand off redirect/data work to a Node route handler.
+    const rewriteUrl = new URL(
+      `/api/public/url-shortener/${encodeURIComponent(match.code)}`,
+      request.url
+    );
+    return NextResponse.rewrite(rewriteUrl);
   },
 };
