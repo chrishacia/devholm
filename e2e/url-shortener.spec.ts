@@ -28,7 +28,11 @@ test.describe('URL Shortener MVP', () => {
             pluginId: 'url-shortener',
           },
         });
-        expect(installResponse.ok()).toBeTruthy();
+        const installBody = await installResponse.text();
+        expect(
+          installResponse.ok(),
+          `POST /api/admin/plugins failed with ${installResponse.status()}: ${installBody}`
+        ).toBeTruthy();
       }
 
       const updateResponse = await page.request.patch('/api/admin/plugins', {
@@ -37,7 +41,11 @@ test.describe('URL Shortener MVP', () => {
           isEnabled: enabled,
         },
       });
-      expect(updateResponse.ok()).toBeTruthy();
+      const updateBody = await updateResponse.text();
+      expect(
+        updateResponse.ok(),
+        `PATCH /api/admin/plugins failed with ${updateResponse.status()}: ${updateBody}`
+      ).toBeTruthy();
 
       const listResponse = await page.request.get('/api/admin/plugins');
       expect(listResponse.ok()).toBeTruthy();

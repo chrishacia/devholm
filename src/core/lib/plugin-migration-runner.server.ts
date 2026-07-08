@@ -30,7 +30,7 @@ async function executeMigration(
   absolutePath: string,
   trx: Awaited<ReturnType<typeof getDb>>
 ): Promise<void> {
-  const mod = await import(pathToFileURL(absolutePath).href);
+  const mod = await import(/* webpackIgnore: true */ pathToFileURL(absolutePath).href);
   if (typeof mod.up !== 'function') {
     throw new Error(`Plugin migration ${absolutePath} does not export an up() function`);
   }
@@ -42,7 +42,7 @@ async function executeMigrationDown(
   absolutePath: string,
   trx: Awaited<ReturnType<typeof getDb>>
 ): Promise<void> {
-  const mod = await import(pathToFileURL(absolutePath).href);
+  const mod = await import(/* webpackIgnore: true */ pathToFileURL(absolutePath).href);
   if (typeof mod.down !== 'function') {
     throw new Error(`Plugin migration ${absolutePath} does not export a down() function`);
   }
