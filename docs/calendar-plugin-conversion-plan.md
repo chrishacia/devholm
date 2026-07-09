@@ -106,3 +106,14 @@ Phase 7: remove old direct core registrations
 - Calendar embed behavior remains core-owned in Phase 3 to preserve behavior and avoid duplicate
   registration until a bundled embed contract bridge is defined.
 - Calendar sitemap/public-navigation behavior remains core-owned in Phase 3 for the same reason.
+
+## Phase 4 framework gaps (current)
+
+- Calendar admin and API access metadata can be declared in plugin extension adapters, but runtime
+  enforcement for Calendar still lives in existing filesystem-owned routes.
+- Admin Calendar API routes currently enforce coarse `verifyAdmin` checks in core route handlers;
+  plugin metadata remains declarative in Phase 4 to avoid behavior regression.
+- Public Calendar view and booking policy expectations are declared as metadata in Phase 4, while
+  runtime booking/public rules remain in existing filesystem APIs.
+- Embed and sitemap/navigation bundled-plugin contract bridges are still not first-class and remain
+  deferred to later phases.

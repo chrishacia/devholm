@@ -1,7 +1,15 @@
 import type { DevholmPluginManifest } from '@core/types/plugins';
 import {
   CALENDAR_ADMIN_PAGE_HREF,
+  CALENDAR_CAPABILITY_ADMIN_MANAGEMENT,
+  CALENDAR_CAPABILITY_EMBED_USAGE,
+  CALENDAR_CAPABILITY_PUBLIC_BOOKING,
+  CALENDAR_CAPABILITY_PUBLIC_VIEWING,
   CALENDAR_ENABLEMENT_KEY,
+  CALENDAR_PERMISSION_ADMIN_MANAGE,
+  CALENDAR_PERMISSION_EMBED_VIEW,
+  CALENDAR_PERMISSION_PUBLIC_BOOK,
+  CALENDAR_PERMISSION_PUBLIC_VIEW,
   CALENDAR_PLUGIN_ID,
   CALENDAR_PUBLIC_ROUTE_EXTENSION_ID,
 } from '@user/extensions/plugins/calendar/constants';
@@ -25,6 +33,38 @@ export const calendarPluginManifest: DevholmPluginManifest = {
     plugins: {},
     packages: {},
   },
+  permissions: [
+    {
+      key: CALENDAR_PERMISSION_ADMIN_MANAGE,
+      capability: CALENDAR_CAPABILITY_ADMIN_MANAGEMENT,
+      scope: 'admin',
+      description:
+        'Manage Calendar collections, scheduling blocks, and event types via admin APIs.',
+      runtimeOwner: 'core-filesystem',
+    },
+    {
+      key: CALENDAR_PERMISSION_PUBLIC_VIEW,
+      capability: CALENDAR_CAPABILITY_PUBLIC_VIEWING,
+      scope: 'public',
+      description: 'View public Calendar collection and event-type availability surfaces.',
+      runtimeOwner: 'core-filesystem',
+    },
+    {
+      key: CALENDAR_PERMISSION_PUBLIC_BOOK,
+      capability: CALENDAR_CAPABILITY_PUBLIC_BOOKING,
+      scope: 'policy-scoped',
+      description: 'Create public booking requests for booking-enabled Calendar collections.',
+      runtimeOwner: 'core-filesystem',
+    },
+    {
+      key: CALENDAR_PERMISSION_EMBED_VIEW,
+      capability: CALENDAR_CAPABILITY_EMBED_USAGE,
+      scope: 'future',
+      description:
+        'Future embed rendering policy for Calendar shortcodes once bundled contract exists.',
+      runtimeOwner: 'core-filesystem',
+    },
+  ],
   settings: calendarSettingsDefinitions,
   adminPageHrefs: [CALENDAR_ADMIN_PAGE_HREF],
   publicRouteExtensionIds: [CALENDAR_PUBLIC_ROUTE_EXTENSION_ID],

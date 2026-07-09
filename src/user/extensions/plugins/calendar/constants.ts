@@ -21,3 +21,13 @@ export const CALENDAR_API_BASE_PATH = '/api/calendar' as const;
 export const CALENDAR_ADMIN_API_BASE_PATH = '/api/admin/calendar' as const;
 
 export const CALENDAR_PUBLIC_ROUTE_EXTENSION_ID = 'calendar:public-routes';
+
+export const CALENDAR_CAPABILITY_ADMIN_MANAGEMENT = 'calendar.admin-management' as const;
+export const CALENDAR_CAPABILITY_PUBLIC_VIEWING = 'calendar.public-viewing' as const;
+export const CALENDAR_CAPABILITY_PUBLIC_BOOKING = 'calendar.public-booking' as const;
+export const CALENDAR_CAPABILITY_EMBED_USAGE = 'calendar.embed-usage' as const;
+
+export const CALENDAR_PERMISSION_ADMIN_MANAGE = 'plugin:calendar:admin.manage' as const;
+export const CALENDAR_PERMISSION_PUBLIC_VIEW = 'plugin:calendar:public.view' as const;
+export const CALENDAR_PERMISSION_PUBLIC_BOOK = 'plugin:calendar:public.book' as const;
+export const CALENDAR_PERMISSION_EMBED_VIEW = 'plugin:calendar:embed.view' as const;
