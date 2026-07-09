@@ -139,8 +139,6 @@ Phase 7: remove old direct core registrations
 ## Deferred after Phase 5
 
 - Phase 6 remains deferred: lifecycle/regression/E2E expansion for Calendar conversion.
-- Phase 7 remains deferred: removing direct core Calendar registrations and moving runtime ownership
-  off filesystem routes.
 
 ## Phase 6 behavior (implemented)
 
@@ -164,7 +162,45 @@ Phase 7: remove old direct core registrations
 
 ## Deferred after Phase 6
 
-- Phase 7 remains deferred: remove direct core Calendar registrations and migrate runtime route
-  ownership away from filesystem routes.
-- Phase 7 remains deferred: remove hardcoded Calendar admin sidebar/nav wiring after runtime
-  ownership migration is complete.
+## Phase 7 behavior (implemented)
+
+- Removed legacy direct core Calendar plugin definition ownership from `src/core/lib/plugins.ts`.
+- Calendar ownership now resolves from bundled plugin metadata (`src/user/extensions/plugins/*`) via
+  `getPluginDefinitions()`.
+- Removed hardcoded Calendar/Gallery admin nav entries from `src/app/admin/AdminLayoutClient.tsx`.
+- Admin nav now derives Calendar/Gallery entries from plugin metadata (`listPluginStates`
+  `adminSurface` + navigation capability) and keeps existing href/label behavior.
+- Existing filesystem-owned runtime routes remain in place for public/admin/API Calendar behavior.
+- Existing non-destructive lifecycle semantics remain in place (disable/uninstall retain data,
+  purge blocked when data exists).
+
+## Phase 7 retained direct references (intentional)
+
+- `src/core/lib/embeds/calendar.ts` remains the runtime Calendar embed implementation.
+  Reason: bundled-plugin embed registration bridge is not first-class yet.
+- `src/app/sitemap.xml/route.ts` retains direct Calendar sitemap DB wiring.
+  Reason: bundled-plugin sitemap entry bridge is not first-class yet.
+- `src/core/lib/reserved-routes.server.ts` retains `/calendar` reservation and
+  `src/app/calendar/[slug]/page.tsx` remains filesystem-owned.
+  Reason: plugin public-route adapter is metadata-only and intentionally non-claiming.
+- Filesystem-owned admin/public/API Calendar route handlers remain runtime owners.
+  Reason: no plugin-owned dispatcher replacement path exists yet that preserves current behavior.
+- Shared migration `20260629010000_add_calendar_gallery_and_media_transforms` is retained as-is.
+  Reason: Phase 7 does not copy/rerun/rename/split shared migration history.
+
+## Phase 7 framework gaps (current)
+
+- No first-class bundled-plugin embed registration contract bridge yet.
+- No first-class bundled-plugin sitemap/navigation runtime entry bridge yet.
+- Calendar public-route adapter remains declarative metadata because framework route-ownership
+  migration path is not yet available without behavior risk.
+
+## Issue #9 readiness checklist
+
+- [x] Calendar bundled plugin manifest + ownership boundary established.
+- [x] Lifecycle safety policies and hooks implemented (non-destructive disable/uninstall, gated purge).
+- [x] Focused regression coverage added for plugin metadata/registry/lifecycle/public/admin routes.
+- [x] Direct core Calendar plugin registration removed.
+- [x] Hardcoded Calendar admin sidebar/nav wiring removed in favor of plugin metadata-driven nav.
+- [ ] Runtime ownership migration for embeds/sitemap/public-route claiming (blocked on framework gaps).
+- [ ] Full broad UI E2E expansion for Calendar conversion (deferred due fixture/auth orchestration).

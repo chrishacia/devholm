@@ -3,25 +3,6 @@ import { pluginDefinitions as userPluginDefinitions } from '@user/extensions/plu
 
 const CORE_PLUGIN_DEFINITIONS: DevHolmPluginDefinition[] = [
   {
-    id: 'calendar',
-    name: 'Calendar',
-    description: 'Booking and schedule publishing surfaces.',
-    source: 'core',
-    enabledByDefault: true,
-    adminSurface: {
-      href: '/admin/calendar',
-      label: 'Calendar',
-    },
-    capabilities: {
-      admin: true,
-      api: true,
-      publicRoutes: true,
-      navigation: true,
-      sitemap: true,
-      embeds: true,
-    },
-  },
-  {
     id: 'gallery',
     name: 'Gallery',
     description: 'Media gallery publishing and embeds.',

@@ -74,7 +74,13 @@ interface NavItem {
   pluginId?: string;
 }
 
-const CORE_NAV_ITEMS: NavItem[] = [
+interface PluginAdminNavItem {
+  pluginId: string;
+  href: string;
+  label: string;
+}
+
+export const CORE_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: <Dashboard /> },
   { label: 'Blog Posts', href: '/admin/posts', icon: <Article /> },
   { label: 'Pages', href: '/admin/pages', icon: <Description /> },
@@ -84,25 +90,57 @@ const CORE_NAV_ITEMS: NavItem[] = [
   { label: 'Messages', href: '/admin/inbox', icon: <Inbox /> },
   { label: 'Media', href: '/admin/media', icon: <ImageIcon /> },
   { label: 'Plugins', href: '/admin/plugins', icon: <Extension /> },
-  { label: 'Calendar', href: '/admin/calendar', icon: <CalendarToday />, pluginId: 'calendar' },
-  { label: 'Galleries', href: '/admin/gallery', icon: <ImageIcon />, pluginId: 'gallery' },
   { label: 'Analytics', href: '/admin/analytics', icon: <Analytics /> },
   { label: 'Updates', href: '/admin/updates', icon: <SystemUpdateAlt /> },
   { label: 'Users', href: '/admin/users', icon: <Group /> },
   { label: 'Settings', href: '/admin/settings', icon: <Settings /> },
 ];
 
+function iconForPluginAdminNav(pluginId: string): ReactNode {
+  if (pluginId === 'calendar') {
+    return <CalendarToday />;
+  }
+
+  if (pluginId === 'gallery') {
+    return <ImageIcon />;
+  }
+
+  return <Extension />;
+}
+
 /**
  * Merge user-registered admin extension nav items into the core nav list.
  * Items with no position are appended before 'Settings'.
  */
-function buildNavItems(pluginEnabledMap: Record<string, boolean>): NavItem[] {
+export function buildNavItems(
+  pluginEnabledMap: Record<string, boolean>,
+  pluginNavItems: readonly PluginAdminNavItem[]
+): NavItem[] {
   const extensions = config.extensions?.admin ?? [];
-  const items = CORE_NAV_ITEMS.filter(
+  const items: NavItem[] = CORE_NAV_ITEMS.filter(
     (item) => !item.pluginId || pluginEnabledMap[item.pluginId] !== false
   );
 
-  if (!extensions.length) return items;
+  const resolvedPluginItems = pluginNavItems
+    .filter((item) => pluginEnabledMap[item.pluginId] !== false)
+    .map((item) => ({
+      label: item.label,
+      href: item.href,
+      icon: iconForPluginAdminNav(item.pluginId),
+      pluginId: item.pluginId,
+    }));
+
+  const analyticsIndex = items.findIndex((item) => item.href === '/admin/analytics');
+  const pluginInsertIndex = analyticsIndex === -1 ? items.length : analyticsIndex;
+  items.splice(pluginInsertIndex, 0, ...resolvedPluginItems);
+
+  const dedupedItems = items.filter(
+    (item, index, list) => list.findIndex((candidate) => candidate.href === item.href) === index
+  );
+
+  if (!extensions.length) {
+    return dedupedItems;
+  }
 
   for (const ext of extensions) {
     if (ext.pluginId && pluginEnabledMap[ext.pluginId] === false) {
@@ -117,30 +155,35 @@ function buildNavItems(pluginEnabledMap: Record<string, boolean>): NavItem[] {
       items.splice(0, 0, navItem);
     } else if (position.startsWith('after:')) {
       const segment = position.slice('after:'.length);
-      const idx = items.findIndex((item) => item.href.endsWith('/' + segment));
+      const idx = dedupedItems.findIndex((item) => item.href.endsWith('/' + segment));
       if (idx !== -1) {
-        items.splice(idx + 1, 0, navItem);
+        dedupedItems.splice(idx + 1, 0, navItem);
       } else {
         // Fallback: insert before Settings
-        const settingsIdx = items.findIndex((item) => item.label === 'Settings');
-        items.splice(settingsIdx > 0 ? settingsIdx : items.length - 1, 0, navItem);
+        const settingsIdx = dedupedItems.findIndex((item) => item.label === 'Settings');
+        dedupedItems.splice(settingsIdx > 0 ? settingsIdx : dedupedItems.length - 1, 0, navItem);
       }
     } else {
       // Default: before Settings
-      const settingsIdx = items.findIndex((item) => item.label === 'Settings');
-      items.splice(settingsIdx > 0 ? settingsIdx : items.length - 1, 0, navItem);
+      const settingsIdx = dedupedItems.findIndex((item) => item.label === 'Settings');
+      dedupedItems.splice(settingsIdx > 0 ? settingsIdx : dedupedItems.length - 1, 0, navItem);
     }
   }
 
-  return items;
+  return dedupedItems;
 }
 
 interface AdminLayoutClientProps {
   children: ReactNode;
   pluginEnabledMap: Record<string, boolean>;
+  pluginNavItems: readonly PluginAdminNavItem[];
 }
 
-export default function AdminLayoutClient({ children, pluginEnabledMap }: AdminLayoutClientProps) {
+export default function AdminLayoutClient({
+  children,
+  pluginEnabledMap,
+  pluginNavItems,
+}: AdminLayoutClientProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -188,7 +231,7 @@ export default function AdminLayoutClient({ children, pluginEnabledMap }: AdminL
     return <>{children}</>;
   }
 
-  const navItems = buildNavItems(pluginEnabledMap);
+  const navItems = buildNavItems(pluginEnabledMap, pluginNavItems);
 
   const handleDrawerToggle = () => {
     if (isMobile) {

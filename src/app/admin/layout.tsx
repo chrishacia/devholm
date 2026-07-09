@@ -17,9 +17,16 @@ interface AdminLayoutProps {
   children: ReactNode;
 }
 
+type PluginAdminNavItem = {
+  pluginId: string;
+  href: string;
+  label: string;
+};
+
 export default async function AdminLayout({ children }: AdminLayoutProps) {
   let session = null;
   let pluginEnabledMap: Record<string, boolean> = {};
+  let pluginNavItems: PluginAdminNavItem[] = [];
   try {
     session = await auth();
   } catch {
@@ -48,13 +55,23 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
   try {
     const plugins = await listPluginStates();
     pluginEnabledMap = Object.fromEntries(plugins.map((plugin) => [plugin.id, plugin.isEnabled]));
+    pluginNavItems = plugins
+      .filter((plugin) => plugin.capabilities.navigation && plugin.adminSurface?.href)
+      .map((plugin) => ({
+        pluginId: plugin.id,
+        href: plugin.adminSurface?.href ?? `/admin/${plugin.id}`,
+        label: plugin.adminSurface?.label || plugin.name,
+      }));
   } catch {
     pluginEnabledMap = {};
+    pluginNavItems = [];
   }
 
   return (
     <SessionProvider session={session}>
-      <AdminLayoutClient pluginEnabledMap={pluginEnabledMap}>{children}</AdminLayoutClient>
+      <AdminLayoutClient pluginEnabledMap={pluginEnabledMap} pluginNavItems={pluginNavItems}>
+        {children}
+      </AdminLayoutClient>
     </SessionProvider>
   );
 }
