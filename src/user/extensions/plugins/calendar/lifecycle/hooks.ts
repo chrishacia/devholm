@@ -20,6 +20,25 @@ async function ensureCalendarBaselineSchema(): Promise<void> {
   }
 }
 
+async function countRowsForTable(tableName: string): Promise<number> {
+  const db = getDb();
+  const row = await db(tableName).count<{ row_count: string | number }>({ row_count: '*' }).first();
+  const rawCount = row?.row_count ?? 0;
+  const parsedCount =
+    typeof rawCount === 'number' ? rawCount : Number.parseInt(String(rawCount), 10);
+  return Number.isNaN(parsedCount) ? 0 : parsedCount;
+}
+
+async function collectCalendarTableCounts(): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+
+  for (const tableName of CALENDAR_BASELINE_TABLES) {
+    counts[tableName] = await countRowsForTable(tableName);
+  }
+
+  return counts;
+}
+
 export async function calendarAfterInstall(): Promise<void> {
   await ensureCalendarBaselineSchema();
 }
@@ -29,14 +48,24 @@ export async function calendarAfterUpgrade(): Promise<void> {
 }
 
 export async function calendarBeforeDisable(): Promise<void> {
-  return Promise.resolve();
+  await ensureCalendarBaselineSchema();
 }
 
 export async function calendarBeforeUninstall(): Promise<void> {
-  return Promise.resolve();
+  await ensureCalendarBaselineSchema();
 }
 
 export async function calendarPurge(): Promise<void> {
-  // Intentionally non-destructive in Phase 1/2.
-  return Promise.resolve();
+  await ensureCalendarBaselineSchema();
+
+  const tableCounts = await collectCalendarTableCounts();
+  const totalRows = Object.values(tableCounts).reduce((acc, count) => acc + count, 0);
+  if (totalRows > 0) {
+    const summary = Object.entries(tableCounts)
+      .map(([tableName, count]) => `${tableName}=${count}`)
+      .join(', ');
+    throw new Error(
+      `Calendar purge is blocked while data exists. Non-destructive lifecycle policy in effect. Table counts: ${summary}`
+    );
+  }
 }

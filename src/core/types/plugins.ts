@@ -61,6 +61,22 @@ export interface PluginPermissionDescriptor {
   runtimeOwner?: 'core-filesystem' | 'plugin-extension';
 }
 
+export interface PluginPurgeSafetyPolicy {
+  requiresConfirmPluginId: boolean;
+  destructiveDataWipe: 'blocked' | 'allowed-with-confirmation';
+  blockedWhenDataPresent: boolean;
+  warning: string;
+}
+
+export interface PluginLifecycleSafetyPolicy {
+  baselineAdoptionNote?: string;
+  disablePolicy: 'non-destructive';
+  uninstallPolicy: 'non-destructive';
+  dataRetention: 'retain-all-calendar-data';
+  routeOwnershipLimitation?: string;
+  purge: PluginPurgeSafetyPolicy;
+}
+
 export interface DevholmBundledPlugin {
   manifest: DevholmPluginManifest;
   settings?: readonly PluginSettingsDefinition[];
@@ -94,6 +110,7 @@ export interface DevholmPluginManifest {
   seeds?: readonly PluginSeed[];
   settings?: readonly PluginSettingsDefinition[];
   permissions?: readonly PluginPermissionDescriptor[];
+  lifecyclePolicy?: PluginLifecycleSafetyPolicy;
   publicRouteExtensionIds?: readonly string[];
   adminPageHrefs?: readonly `/admin/${string}`[];
 

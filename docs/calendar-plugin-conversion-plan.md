@@ -117,3 +117,27 @@ Phase 7: remove old direct core registrations
   runtime booking/public rules remain in existing filesystem APIs.
 - Embed and sitemap/navigation bundled-plugin contract bridges are still not first-class and remain
   deferred to later phases.
+
+## Phase 5 behavior (implemented)
+
+- Disable semantics are non-destructive: Calendar baseline tables and data are retained.
+- Uninstall semantics are non-destructive by default: Calendar schema and data remain intact.
+- Purge semantics are explicit-confirmation gated by framework (`confirmPluginId`) and Calendar
+  adds a safety preflight block when Calendar tables contain rows.
+- Calendar purge hook does not drop or rename Calendar tables and does not run shared core
+  Calendar/Gallery/media migration teardown logic.
+- Runtime route enforcement remains with existing filesystem routes in Phase 5; direct route
+  ownership migration remains deferred.
+
+## Phase 5 framework gaps (current)
+
+- Framework confirmation semantics are based on `confirmPluginId`; there is no second typed-phrase
+  confirmation contract yet for plugin-specific destructive operations.
+- Purge preflight metadata can be declared in manifest/settings, but no first-class framework UI/API
+  currently surfaces row-count preflight previews before purge execution.
+
+## Deferred after Phase 5
+
+- Phase 6 remains deferred: lifecycle/regression/E2E expansion for Calendar conversion.
+- Phase 7 remains deferred: removing direct core Calendar registrations and moving runtime ownership
+  off filesystem routes.

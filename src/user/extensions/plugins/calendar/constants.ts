@@ -31,3 +31,13 @@ export const CALENDAR_PERMISSION_ADMIN_MANAGE = 'plugin:calendar:admin.manage' a
 export const CALENDAR_PERMISSION_PUBLIC_VIEW = 'plugin:calendar:public.view' as const;
 export const CALENDAR_PERMISSION_PUBLIC_BOOK = 'plugin:calendar:public.book' as const;
 export const CALENDAR_PERMISSION_EMBED_VIEW = 'plugin:calendar:embed.view' as const;
+
+export const CALENDAR_LIFECYCLE_DATA_RETENTION_POLICY_KEY =
+  'plugin:calendar:lifecycle:data-retention-policy' as const;
+export const CALENDAR_LIFECYCLE_UNINSTALL_POLICY_KEY =
+  'plugin:calendar:lifecycle:uninstall-policy' as const;
+export const CALENDAR_LIFECYCLE_PURGE_POLICY_KEY =
+  'plugin:calendar:lifecycle:purge-policy' as const;
+
+export const CALENDAR_LIFECYCLE_DATA_RETENTION_POLICY = 'retain-all-calendar-data' as const;
+export const CALENDAR_LIFECYCLE_UNINSTALL_POLICY = 'non-destructive' as const;
