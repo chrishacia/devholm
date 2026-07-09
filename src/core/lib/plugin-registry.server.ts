@@ -137,6 +137,41 @@ export function validateManifest(manifest: DevholmPluginManifest): string[] {
     }
   }
 
+  if (manifest.lifecyclePolicy) {
+    const policy = manifest.lifecyclePolicy;
+    const validRetention = policy.dataRetention === 'retain-all-calendar-data';
+    if (!validRetention) {
+      errors.push(
+        `plugin ${manifest.id} lifecyclePolicy.dataRetention must be retain-all-calendar-data`
+      );
+    }
+
+    if (policy.disablePolicy !== 'non-destructive') {
+      errors.push(`plugin ${manifest.id} lifecyclePolicy.disablePolicy must be non-destructive`);
+    }
+
+    if (policy.uninstallPolicy !== 'non-destructive') {
+      errors.push(`plugin ${manifest.id} lifecyclePolicy.uninstallPolicy must be non-destructive`);
+    }
+
+    if (!policy.purge.requiresConfirmPluginId) {
+      errors.push(
+        `plugin ${manifest.id} lifecyclePolicy.purge.requiresConfirmPluginId must be true`
+      );
+    }
+
+    if (
+      policy.purge.destructiveDataWipe !== 'blocked' &&
+      policy.purge.destructiveDataWipe !== 'allowed-with-confirmation'
+    ) {
+      errors.push(`plugin ${manifest.id} lifecyclePolicy.purge.destructiveDataWipe is invalid`);
+    }
+
+    if (!policy.purge.warning.trim()) {
+      errors.push(`plugin ${manifest.id} lifecyclePolicy.purge.warning is required`);
+    }
+  }
+
   for (const [dependencyId, range] of Object.entries(manifest.dependencies?.plugins ?? {})) {
     if (!validRange(range)) {
       errors.push(

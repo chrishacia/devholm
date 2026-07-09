@@ -129,3 +129,6 @@ temp/
 local-content-bootstrap/
 
 dev.db
+
+# Generated plugin runtime artifacts (derived from source plugin manifests/migrations)
+generated/plugins/

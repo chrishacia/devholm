@@ -12,10 +12,27 @@ export interface ExtensionHelpers {
   verifyAdmin: typeof import('@/lib/auth-helpers').verifyAdmin;
 }
 
+export type ExtensionAccessScope =
+  | 'admin'
+  | 'public'
+  | 'authenticated'
+  | 'policy-scoped'
+  | 'future';
+
+export interface ExtensionAccessPolicyMetadata {
+  scope: ExtensionAccessScope;
+  permissionKeys?: readonly string[];
+  capability?: string;
+  runtimeOwner?: 'core-filesystem' | 'plugin-extension';
+  notes?: string;
+}
+
 export interface AdminPageExtension {
   pluginId?: string;
   /** Route href, e.g. '/admin/telemetry' */
   href: `/admin/${string}`;
+  /** Optional metadata-only access policy declaration */
+  accessPolicy?: ExtensionAccessPolicyMetadata;
   /** Dynamic import for the page component */
   loadPage: () => Promise<{ default: React.ComponentType } | React.ComponentType>;
   /** Optional metadata for the dynamic admin page */
@@ -40,6 +57,8 @@ export interface ApiExtension {
   pluginId?: string;
   /** Route path, e.g. '/api/telemetry' */
   path: `/api/${string}`;
+  /** Optional metadata-only access policy declaration */
+  accessPolicy?: ExtensionAccessPolicyMetadata;
   handlers: Partial<Record<ApiExtensionMethod, ApiExtensionHandler>>;
 }
 
@@ -112,6 +131,8 @@ export interface PublicRouteExtension<TMatch = unknown> {
   pluginId?: string;
   /** Unique ID for this route extension (e.g., 'url-shortener-redirect') */
   id: string;
+  /** Optional metadata-only access policy declaration */
+  accessPolicy?: ExtensionAccessPolicyMetadata;
 
   /**
    * Phase 1: Side-effect-free matching

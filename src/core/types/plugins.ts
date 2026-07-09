@@ -46,6 +46,37 @@ export interface PluginSettingsDefinition {
   category?: string;
 }
 
+export type PluginPermissionScope =
+  | 'admin'
+  | 'public'
+  | 'authenticated'
+  | 'policy-scoped'
+  | 'future';
+
+export interface PluginPermissionDescriptor {
+  key: string;
+  capability: string;
+  scope: PluginPermissionScope;
+  description: string;
+  runtimeOwner?: 'core-filesystem' | 'plugin-extension';
+}
+
+export interface PluginPurgeSafetyPolicy {
+  requiresConfirmPluginId: boolean;
+  destructiveDataWipe: 'blocked' | 'allowed-with-confirmation';
+  blockedWhenDataPresent: boolean;
+  warning: string;
+}
+
+export interface PluginLifecycleSafetyPolicy {
+  baselineAdoptionNote?: string;
+  disablePolicy: 'non-destructive';
+  uninstallPolicy: 'non-destructive';
+  dataRetention: 'retain-all-calendar-data';
+  routeOwnershipLimitation?: string;
+  purge: PluginPurgeSafetyPolicy;
+}
+
 export interface DevholmBundledPlugin {
   manifest: DevholmPluginManifest;
   settings?: readonly PluginSettingsDefinition[];
@@ -78,6 +109,8 @@ export interface DevholmPluginManifest {
   migrations?: readonly (PluginMigration | PluginMigrationMetadata)[];
   seeds?: readonly PluginSeed[];
   settings?: readonly PluginSettingsDefinition[];
+  permissions?: readonly PluginPermissionDescriptor[];
+  lifecyclePolicy?: PluginLifecycleSafetyPolicy;
   publicRouteExtensionIds?: readonly string[];
   adminPageHrefs?: readonly `/admin/${string}`[];
 
