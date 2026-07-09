@@ -1,27 +1,7 @@
 import type { DevHolmPluginDefinition } from '@core/types/plugins';
 import { pluginDefinitions as userPluginDefinitions } from '@user/extensions/plugins';
 
-const CORE_PLUGIN_DEFINITIONS: DevHolmPluginDefinition[] = [
-  {
-    id: 'gallery',
-    name: 'Gallery',
-    description: 'Media gallery publishing and embeds.',
-    source: 'core',
-    enabledByDefault: true,
-    adminSurface: {
-      href: '/admin/gallery',
-      label: 'Gallery',
-    },
-    capabilities: {
-      admin: true,
-      api: true,
-      publicRoutes: true,
-      navigation: true,
-      sitemap: true,
-      embeds: true,
-    },
-  },
-];
+const CORE_PLUGIN_DEFINITIONS: DevHolmPluginDefinition[] = [];
 
 function normalizePluginDefinition(
   definition: DevHolmPluginDefinition,

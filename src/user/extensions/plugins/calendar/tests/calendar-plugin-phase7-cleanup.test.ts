@@ -117,7 +117,11 @@ describe('calendar phase 7 direct core registration cleanup', () => {
       plugins: Array<{ id: string; version: string; migrations: unknown[] }>;
     };
 
-    expect(registry.plugins.map((plugin) => plugin.id)).toEqual(['calendar', 'url-shortener']);
+    expect(registry.plugins.map((plugin) => plugin.id)).toEqual([
+      'calendar',
+      'gallery',
+      'url-shortener',
+    ]);
     expect(registry.plugins.find((plugin) => plugin.id === CALENDAR_PLUGIN_ID)?.migrations).toEqual(
       []
     );

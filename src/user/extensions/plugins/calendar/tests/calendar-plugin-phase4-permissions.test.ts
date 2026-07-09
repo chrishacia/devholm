@@ -112,7 +112,7 @@ describe('calendar phase 4 permission metadata alignment', () => {
     expect(urlShortenerPublicRouteExtension.accessPolicy).toBeUndefined();
   });
 
-  it('keeps generated plugin registry deterministic for calendar + url-shortener', () => {
+  it('keeps generated plugin registry deterministic for calendar + gallery + url-shortener', () => {
     const generatedRegistryPath = path.join(process.cwd(), 'generated/plugins/registry.json');
     const generatedRegistry = JSON.parse(fs.readFileSync(generatedRegistryPath, 'utf8')) as {
       plugins: Array<{ id: string; version: string; migrations: unknown[] }>;
@@ -120,15 +120,21 @@ describe('calendar phase 4 permission metadata alignment', () => {
 
     expect(generatedRegistry.plugins.map((plugin) => plugin.id)).toEqual([
       'calendar',
+      'gallery',
       'url-shortener',
     ]);
-    expect(generatedRegistry.plugins.map((plugin) => plugin.version)).toEqual(['0.1.0', '0.1.0']);
+    expect(generatedRegistry.plugins.map((plugin) => plugin.version)).toEqual([
+      '0.1.0',
+      '0.1.0',
+      '0.1.0',
+    ]);
     expect(
       generatedRegistry.plugins.find((plugin) => plugin.id === 'calendar')?.migrations
     ).toEqual([]);
 
     expect(bundledPlugins.map((plugin) => plugin.manifest.id)).toEqual([
       CALENDAR_PLUGIN_ID,
+      'gallery',
       'url-shortener',
     ]);
   });
