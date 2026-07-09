@@ -1,4 +1,6 @@
 import type { ApiExtension } from '@core/types/extensions.server';
-import { urlShortenerApiExtensions } from '@user/extensions/plugins/url-shortener/api';
+import { bundledPlugins } from '@user/extensions/plugins/registry';
 
-export const apiExtensions: ApiExtension[] = [...urlShortenerApiExtensions];
+export const apiExtensions: ApiExtension[] = bundledPlugins.flatMap(
+  (plugin) => plugin.apiExtensions ?? []
+);

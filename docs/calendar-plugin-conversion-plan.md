@@ -98,3 +98,11 @@ Phase 7: remove old direct core registrations
   - Limited existing tests increase regression probability.
 - Plugin source/runtime/generated confusion risk:
   - Source directories vs generated runtime assets must remain clearly separated.
+
+## Phase 3 framework gaps (current)
+
+- Bundled plugin contracts currently include admin/API/public-route adapters, but do not yet include
+  first-class bundled embed-registration and bundled sitemap/navigation registration contracts.
+- Calendar embed behavior remains core-owned in Phase 3 to preserve behavior and avoid duplicate
+  registration until a bundled embed contract bridge is defined.
+- Calendar sitemap/public-navigation behavior remains core-owned in Phase 3 for the same reason.

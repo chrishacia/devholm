@@ -14,3 +14,10 @@ export const CALENDAR_BASELINE_TABLES = [
   'calendar_bookings',
   'calendar_integrations',
 ] as const;
+
+export const CALENDAR_ADMIN_PAGE_HREF = '/admin/calendar' as const;
+
+export const CALENDAR_API_BASE_PATH = '/api/calendar' as const;
+export const CALENDAR_ADMIN_API_BASE_PATH = '/api/admin/calendar' as const;
+
+export const CALENDAR_PUBLIC_ROUTE_EXTENSION_ID = 'calendar:public-routes';

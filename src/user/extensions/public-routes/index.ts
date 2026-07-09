@@ -32,9 +32,13 @@
  */
 
 import type { PublicRouteExtension } from '@core/types/extensions.server';
+import { calendarPublicRouteExtension } from '@user/extensions/plugins/calendar/public-routes/calendar-public-route.server';
 import { urlShortenerPublicRouteExtension } from '@user/extensions/plugins/url-shortener/public-routes/url-shortener-public-route.server';
 
 // Keep middleware/public-route loading Edge-safe by importing only route declarations.
 // Avoid importing full bundled plugin modules here because they include server-only
 // admin/API modules that pull Node-only dependencies into the middleware graph.
-export const publicRouteExtensions: PublicRouteExtension[] = [urlShortenerPublicRouteExtension];
+export const publicRouteExtensions: PublicRouteExtension[] = [
+  calendarPublicRouteExtension,
+  urlShortenerPublicRouteExtension,
+];

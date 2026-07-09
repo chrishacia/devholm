@@ -1,7 +1,9 @@
 import type { DevholmPluginManifest } from '@core/types/plugins';
 import {
+  CALENDAR_ADMIN_PAGE_HREF,
   CALENDAR_ENABLEMENT_KEY,
   CALENDAR_PLUGIN_ID,
+  CALENDAR_PUBLIC_ROUTE_EXTENSION_ID,
 } from '@user/extensions/plugins/calendar/constants';
 import {
   calendarAfterInstall,
@@ -24,7 +26,8 @@ export const calendarPluginManifest: DevholmPluginManifest = {
     packages: {},
   },
   settings: calendarSettingsDefinitions,
-  adminPageHrefs: ['/admin/calendar'],
+  adminPageHrefs: [CALENDAR_ADMIN_PAGE_HREF],
+  publicRouteExtensionIds: [CALENDAR_PUBLIC_ROUTE_EXTENSION_ID],
   migrations: [],
   seeds: [],
   lifecycle: {
