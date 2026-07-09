@@ -141,3 +141,30 @@ Phase 7: remove old direct core registrations
 - Phase 6 remains deferred: lifecycle/regression/E2E expansion for Calendar conversion.
 - Phase 7 remains deferred: removing direct core Calendar registrations and moving runtime ownership
   off filesystem routes.
+
+## Phase 6 behavior (implemented)
+
+- Added focused regression coverage for Calendar plugin manifest and bundled registry contracts.
+- Added deterministic generated plugin registry assertions for Calendar and URL shortener coexistence.
+- Added regression coverage for Calendar lifecycle safety hooks to confirm disable/uninstall remain
+  non-destructive and purge remains blocked when Calendar data exists.
+- Added regression coverage for Calendar public API behavior (`/api/calendar/[slug]`) and booking API
+  behavior (`/api/calendar/[slug]/bookings`) with current filesystem route ownership preserved.
+- Added regression coverage for existing Calendar admin API auth guards across filesystem-owned
+  admin routes.
+- Added regression coverage proving plugin public-route metadata coexists with filesystem route
+  ownership without claiming runtime Calendar paths.
+
+## Phase 6 framework/testing gaps (current)
+
+- Reliable Playwright-style UI E2E expansion for Calendar admin/public flows remains constrained by
+  fixture orchestration complexity (admin auth/session bootstrapping plus mutable calendar datasets).
+- Phase 6 uses stable unit/integration route-handler coverage instead of expanding flaky broad UI
+  browser scenarios.
+
+## Deferred after Phase 6
+
+- Phase 7 remains deferred: remove direct core Calendar registrations and migrate runtime route
+  ownership away from filesystem routes.
+- Phase 7 remains deferred: remove hardcoded Calendar admin sidebar/nav wiring after runtime
+  ownership migration is complete.
