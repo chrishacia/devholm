@@ -81,3 +81,41 @@ export interface MarketplaceDirectorySnapshot {
   rootEntries: readonly string[];
   plugins: Record<string, readonly string[]>;
 }
+
+export type MarketplaceDescriptorSourceType = Extract<PluginPackageSource['type'], 'marketplace'>;
+
+export interface MarketplaceInstallSourceTrustPolicy {
+  policy?: 'allowlisted-only' | 'manual-approval' | 'unverified';
+  allowPrerelease?: boolean;
+  requiredApprovers?: string[];
+  notes?: string;
+}
+
+export interface MarketplaceInstallSourceDescriptor {
+  sourceType: MarketplaceDescriptorSourceType;
+  repoUrl: string;
+  ref: string;
+  pluginSubdirectory: string;
+  manifestPath: string;
+  expectedPluginId: string;
+  expectedVersion: string;
+  integrity?: Partial<PluginPackageIntegrity>;
+  trustPolicy?: MarketplaceInstallSourceTrustPolicy;
+}
+
+export interface MarketplaceInstallSourceDescriptorInput {
+  sourceType?: PluginPackageSource['type'];
+  repoUrl?: string;
+  ref?: string;
+  pluginSubdirectory?: string;
+  manifestPath?: string;
+  expectedPluginId?: string;
+  expectedVersion?: string;
+  integrity?: Partial<PluginPackageIntegrity>;
+  trustPolicy?: MarketplaceInstallSourceTrustPolicy;
+}
+
+export interface MarketplaceInstallSourceDescriptorParseResult {
+  descriptor: MarketplaceInstallSourceDescriptor | null;
+  errors: string[];
+}
