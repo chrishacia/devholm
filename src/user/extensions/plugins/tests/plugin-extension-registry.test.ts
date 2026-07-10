@@ -9,6 +9,13 @@ import {
   CALENDAR_PLUGIN_ID,
   CALENDAR_PUBLIC_ROUTE_EXTENSION_ID,
 } from '@user/extensions/plugins/calendar/constants';
+import {
+  GALLERY_ADMIN_API_BASE_PATH,
+  GALLERY_ADMIN_PAGE_HREF,
+  GALLERY_API_BASE_PATH,
+  GALLERY_PLUGIN_ID,
+  GALLERY_PUBLIC_ROUTE_EXTENSION_ID,
+} from '@user/extensions/plugins/gallery/constants';
 
 describe('plugin extension registries include calendar metadata adapters', () => {
   it('includes calendar admin page metadata in admin extension registry', () => {
@@ -35,5 +42,31 @@ describe('plugin extension registries include calendar metadata adapters', () =>
     );
 
     expect(calendarRoute?.pluginId).toBe(CALENDAR_PLUGIN_ID);
+  });
+
+  it('includes gallery admin page metadata in admin extension registry', () => {
+    const galleryAdminPages = adminPageExtensions.filter(
+      (item) => item.pluginId === GALLERY_PLUGIN_ID
+    );
+
+    expect(galleryAdminPages.map((item) => item.href)).toContain(GALLERY_ADMIN_PAGE_HREF);
+  });
+
+  it('includes gallery API metadata in api extension registry', () => {
+    const galleryApiPaths = apiExtensions
+      .filter((item) => item.pluginId === GALLERY_PLUGIN_ID)
+      .map((item) => item.path);
+
+    expect(galleryApiPaths).toEqual(
+      expect.arrayContaining([GALLERY_API_BASE_PATH, GALLERY_ADMIN_API_BASE_PATH])
+    );
+  });
+
+  it('includes gallery public route metadata in public route registry', () => {
+    const galleryRoute = publicRouteExtensions.find(
+      (item) => item.id === GALLERY_PUBLIC_ROUTE_EXTENSION_ID
+    );
+
+    expect(galleryRoute?.pluginId).toBe(GALLERY_PLUGIN_ID);
   });
 });

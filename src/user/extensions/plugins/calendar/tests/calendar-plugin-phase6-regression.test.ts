@@ -42,8 +42,12 @@ describe('calendar phase 6 regression coverage', () => {
       plugins: Array<{ id: string; version: string; migrations: unknown[] }>;
     };
 
-    expect(registry.plugins.map((plugin) => plugin.id)).toEqual(['calendar', 'url-shortener']);
-    expect(registry.plugins.map((plugin) => plugin.version)).toEqual(['0.1.0', '0.1.0']);
+    expect(registry.plugins.map((plugin) => plugin.id)).toEqual([
+      'calendar',
+      'gallery',
+      'url-shortener',
+    ]);
+    expect(registry.plugins.map((plugin) => plugin.version)).toEqual(['0.1.0', '0.1.0', '0.1.0']);
     expect(registry.plugins.find((plugin) => plugin.id === CALENDAR_PLUGIN_ID)?.migrations).toEqual(
       []
     );

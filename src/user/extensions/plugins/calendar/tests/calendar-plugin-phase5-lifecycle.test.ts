@@ -161,13 +161,17 @@ describe('calendar phase 5 lifecycle safety semantics', () => {
     expect(calendarPluginManifest.id).toBe(CALENDAR_PLUGIN_ID);
   });
 
-  it('keeps generated plugin registry deterministic for calendar and url-shortener', () => {
+  it('keeps generated plugin registry deterministic for calendar, gallery, and url-shortener', () => {
     const registryPath = path.join(process.cwd(), 'generated/plugins/registry.json');
     const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8')) as {
       plugins: Array<{ id: string; migrations: unknown[] }>;
     };
 
-    expect(registry.plugins.map((plugin) => plugin.id)).toEqual(['calendar', 'url-shortener']);
+    expect(registry.plugins.map((plugin) => plugin.id)).toEqual([
+      'calendar',
+      'gallery',
+      'url-shortener',
+    ]);
     expect(registry.plugins.find((plugin) => plugin.id === CALENDAR_PLUGIN_ID)?.migrations).toEqual(
       []
     );

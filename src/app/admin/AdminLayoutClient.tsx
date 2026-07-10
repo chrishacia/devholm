@@ -74,11 +74,11 @@ interface NavItem {
   pluginId?: string;
 }
 
-interface PluginAdminNavItem {
+export type PluginAdminNavItem = {
   pluginId: string;
   href: string;
   label: string;
-}
+};
 
 export const CORE_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: <Dashboard /> },
@@ -97,19 +97,18 @@ export const CORE_NAV_ITEMS: NavItem[] = [
 ];
 
 function iconForPluginAdminNav(pluginId: string): ReactNode {
-  if (pluginId === 'calendar') {
-    return <CalendarToday />;
+  switch (pluginId) {
+    case 'calendar':
+      return <CalendarToday />;
+    case 'gallery':
+      return <ImageIcon />;
+    default:
+      return <Extension />;
   }
-
-  if (pluginId === 'gallery') {
-    return <ImageIcon />;
-  }
-
-  return <Extension />;
 }
 
 /**
- * Merge user-registered admin extension nav items into the core nav list.
+ * Merge plugin metadata + user-registered admin extension nav items into the core nav list.
  * Items with no position are appended before 'Settings'.
  */
 export function buildNavItems(
@@ -117,7 +116,7 @@ export function buildNavItems(
   pluginNavItems: readonly PluginAdminNavItem[]
 ): NavItem[] {
   const extensions = config.extensions?.admin ?? [];
-  const items: NavItem[] = CORE_NAV_ITEMS.filter(
+  const items = CORE_NAV_ITEMS.filter(
     (item) => !item.pluginId || pluginEnabledMap[item.pluginId] !== false
   );
 
@@ -126,21 +125,17 @@ export function buildNavItems(
     .map((item) => ({
       label: item.label,
       href: item.href,
-      icon: iconForPluginAdminNav(item.pluginId),
       pluginId: item.pluginId,
+      icon: iconForPluginAdminNav(item.pluginId),
     }));
 
-  const analyticsIndex = items.findIndex((item) => item.href === '/admin/analytics');
-  const pluginInsertIndex = analyticsIndex === -1 ? items.length : analyticsIndex;
+  const settingsIndex = items.findIndex((item) => item.label === 'Settings');
+  const pluginInsertIndex = settingsIndex > -1 ? settingsIndex : items.length;
   items.splice(pluginInsertIndex, 0, ...resolvedPluginItems);
 
-  const dedupedItems = items.filter(
-    (item, index, list) => list.findIndex((candidate) => candidate.href === item.href) === index
-  );
+  const uniqueItems = Array.from(new Map(items.map((item) => [item.href, item])).values());
 
-  if (!extensions.length) {
-    return dedupedItems;
-  }
+  if (!extensions.length) return uniqueItems;
 
   for (const ext of extensions) {
     if (ext.pluginId && pluginEnabledMap[ext.pluginId] === false) {
@@ -152,25 +147,25 @@ export function buildNavItems(
 
     if (!position || position === 'before:dashboard') {
       // Insert before dashboard (index 0)
-      items.splice(0, 0, navItem);
+      uniqueItems.splice(0, 0, navItem);
     } else if (position.startsWith('after:')) {
       const segment = position.slice('after:'.length);
-      const idx = dedupedItems.findIndex((item) => item.href.endsWith('/' + segment));
+      const idx = uniqueItems.findIndex((item) => item.href.endsWith('/' + segment));
       if (idx !== -1) {
-        dedupedItems.splice(idx + 1, 0, navItem);
+        uniqueItems.splice(idx + 1, 0, navItem);
       } else {
         // Fallback: insert before Settings
-        const settingsIdx = dedupedItems.findIndex((item) => item.label === 'Settings');
-        dedupedItems.splice(settingsIdx > 0 ? settingsIdx : dedupedItems.length - 1, 0, navItem);
+        const settingsIdx = uniqueItems.findIndex((item) => item.label === 'Settings');
+        uniqueItems.splice(settingsIdx > 0 ? settingsIdx : uniqueItems.length - 1, 0, navItem);
       }
     } else {
       // Default: before Settings
-      const settingsIdx = dedupedItems.findIndex((item) => item.label === 'Settings');
-      dedupedItems.splice(settingsIdx > 0 ? settingsIdx : dedupedItems.length - 1, 0, navItem);
+      const settingsIdx = uniqueItems.findIndex((item) => item.label === 'Settings');
+      uniqueItems.splice(settingsIdx > 0 ? settingsIdx : uniqueItems.length - 1, 0, navItem);
     }
   }
 
-  return dedupedItems;
+  return Array.from(new Map(uniqueItems.map((item) => [item.href, item])).values());
 }
 
 interface AdminLayoutClientProps {
