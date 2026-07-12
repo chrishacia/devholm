@@ -75,9 +75,10 @@ async function writeInstallState(
   pluginInstallRoot: string,
   state: MarketplaceFirstPartyInstallState
 ): Promise<void> {
-  await writeFile(stateFilePath(pluginInstallRoot), JSON.stringify(state, null, 2), {
-    mode: 0o600,
-  });
+  const destinationPath = stateFilePath(pluginInstallRoot);
+  const temporaryPath = `${destinationPath}.${Date.now().toString(36)}.tmp`;
+  await writeFile(temporaryPath, JSON.stringify(state, null, 2), { mode: 0o600 });
+  await rename(temporaryPath, destinationPath);
 }
 
 async function withPluginInstallLock<T>(
@@ -137,9 +138,17 @@ function assertSha256(value: string | undefined, fieldName: string): string {
   return normalized;
 }
 
+function isMarketplaceExecutionEnabled(): boolean {
+  return process.env.DEVHOLM_MARKETPLACE_FIRST_PARTY_INSTALL_ENABLED === 'true';
+}
+
 export async function executeFirstPartyMarketplaceInstall(
   input: MarketplaceFirstPartyInstallExecutionInput
 ): Promise<MarketplaceFirstPartyInstallExecutionResult> {
+  if (!isMarketplaceExecutionEnabled()) {
+    throw new Error('Marketplace first-party runtime install execution is disabled');
+  }
+
   if (!input.explicitAdminApproval) {
     throw new Error('explicit admin approval is required for first-party runtime install');
   }

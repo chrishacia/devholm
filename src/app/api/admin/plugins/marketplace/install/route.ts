@@ -24,6 +24,10 @@ const requestSchema = z.object({
 function mapInstallExecutionError(error: unknown): { status: number; body: { error: string } } {
   const message = error instanceof Error ? error.message : String(error);
 
+  if (message.includes('runtime install execution is disabled')) {
+    return { status: 403, body: { error: message } };
+  }
+
   if (
     message.includes('planner blocked') ||
     message.includes('mismatch') ||
@@ -31,7 +35,8 @@ function mapInstallExecutionError(error: unknown): { status: number; body: { err
     message.includes('already installed') ||
     message.includes('explicit admin approval') ||
     message.includes('cancelled') ||
-    message.includes('in progress')
+    message.includes('in progress') ||
+    message.includes('corrupted')
   ) {
     return { status: 409, body: { error: message } };
   }
@@ -115,7 +120,15 @@ export async function POST(request: NextRequest) {
               cacheKey: result.acquisition.cacheKey,
               downloadedBytes: result.acquisition.downloadedBytes,
               approvedHost: result.acquisition.approvedHost,
-              redirectChain: result.acquisition.redirectChain,
+              redirectChainHosts: result.acquisition.redirectChain
+                .map((url) => {
+                  try {
+                    return new URL(url).hostname.toLowerCase();
+                  } catch {
+                    return null;
+                  }
+                })
+                .filter((hostname): hostname is string => hostname !== null),
               durationMs: result.acquisition.durationMs,
               warnings: result.acquisition.warnings,
               blockers: result.acquisition.blockers,

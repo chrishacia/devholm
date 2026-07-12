@@ -39,6 +39,43 @@ describe('plugin-marketplace-acquisition: policy and cache', () => {
     ).rejects.toThrow(/embedded credentials/i);
   });
 
+  it('rejects localhost-style hostnames and local resolution domains', async () => {
+    await expect(
+      acquireFirstPartyMarketplaceArtifact({
+        artifactUrl: 'https://localhost/artifact.tar.gz',
+        expectedSha256: 'a'.repeat(64),
+        expectedPluginId: 'calendar',
+        expectedVersion: '0.1.0',
+        policyOverrides: {
+          allowedHosts: ['localhost'],
+        },
+      })
+    ).rejects.toThrow(/not approved by policy/i);
+
+    await expect(
+      acquireFirstPartyMarketplaceArtifact({
+        artifactUrl: 'https://internal.local/artifact.tar.gz',
+        expectedSha256: 'a'.repeat(64),
+        expectedPluginId: 'calendar',
+        expectedVersion: '0.1.0',
+        policyOverrides: {
+          allowedHosts: ['internal.local'],
+        },
+      })
+    ).rejects.toThrow(/not approved by policy/i);
+  });
+
+  it('rejects host suffix lookalikes outside exact allow-list', async () => {
+    await expect(
+      acquireFirstPartyMarketplaceArtifact({
+        artifactUrl: 'https://github.com.attacker.example/artifact.tar.gz',
+        expectedSha256: 'a'.repeat(64),
+        expectedPluginId: 'calendar',
+        expectedVersion: '0.1.0',
+      })
+    ).rejects.toThrow(/not approved by policy/i);
+  });
+
   it('rejects localhost/private-network destinations by default', async () => {
     await expect(
       acquireFirstPartyMarketplaceArtifact({
@@ -48,6 +85,20 @@ describe('plugin-marketplace-acquisition: policy and cache', () => {
         expectedVersion: '0.1.0',
         policyOverrides: {
           allowedHosts: ['127.0.0.1'],
+        },
+      })
+    ).rejects.toThrow(/blocked IPv4 address/i);
+  });
+
+  it('rejects benchmark and documentation IPv4 ranges as blocked', async () => {
+    await expect(
+      acquireFirstPartyMarketplaceArtifact({
+        artifactUrl: 'https://198.18.0.1:443/artifact.tar.gz',
+        expectedSha256: 'a'.repeat(64),
+        expectedPluginId: 'calendar',
+        expectedVersion: '0.1.0',
+        policyOverrides: {
+          allowedHosts: ['198.18.0.1'],
         },
       })
     ).rejects.toThrow(/blocked IPv4 address/i);

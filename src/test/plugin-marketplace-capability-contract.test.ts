@@ -70,4 +70,33 @@ describe('plugin-marketplace-capability-contract', () => {
     expect(result.hasEscalation).toBe(true);
     expect(result.blockers.some((item) => item.includes('policy rollout'))).toBe(true);
   });
+
+  it('blocks prohibited capability classes even on first install', () => {
+    const result = evaluateMarketplaceCapabilityContract(null, {
+      permissionKeys: ['calendar.exec'],
+      capabilities: ['process-exec'],
+      scopes: ['admin'],
+      publicRouteExtensionIds: [],
+      adminPageHrefs: [],
+      apiPaths: [],
+      settingKeys: [],
+    });
+
+    expect(result.blockers.length).toBeGreaterThan(0);
+    expect(result.blockers.some((item) => item.includes('prohibited tokens'))).toBe(true);
+  });
+
+  it('flags privileged declarations for review', () => {
+    const result = evaluateMarketplaceCapabilityContract(null, {
+      permissionKeys: ['calendar.manage'],
+      capabilities: ['calendar-admin'],
+      scopes: ['admin'],
+      publicRouteExtensionIds: [],
+      adminPageHrefs: ['/admin/calendar'],
+      apiPaths: ['/api/admin/calendar'],
+      settingKeys: [],
+    });
+
+    expect(result.approvals.some((item) => item.includes('require review'))).toBe(true);
+  });
 });

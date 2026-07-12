@@ -25,6 +25,15 @@ const DEFAULT_LIMITS: MarketplaceArtifactStagingLimits = {
   maxCompressionRatio: 50,
 };
 
+const ALLOWED_PERMISSION_SCOPES = new Set([
+  'admin',
+  'public',
+  'authenticated',
+  'policy-scoped',
+  'future',
+]);
+const MAX_DECLARATION_COUNT = 256;
+
 type ParsedTarEntry = {
   path: string;
   typeFlag: string;
@@ -260,6 +269,16 @@ function uniqueSortedStringArray(values: unknown[]): string[] {
   ].sort();
 }
 
+function assertNoDuplicates(values: string[], label: string): void {
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value)) {
+      throw new Error(`${label} contains duplicate value: ${value}`);
+    }
+    seen.add(value);
+  }
+}
+
 async function validateExtractedPackage(
   stagingDirectory: string,
   extractedFiles: string[]
@@ -325,6 +344,17 @@ async function validateExtractedPackage(
     ? (manifest.settings as Record<string, unknown>[])
     : [];
 
+  if (permissions.length > MAX_DECLARATION_COUNT) {
+    throw new Error(
+      `manifest.permissions exceeds maximum declaration count: ${permissions.length} > ${MAX_DECLARATION_COUNT}`
+    );
+  }
+  if (settings.length > MAX_DECLARATION_COUNT) {
+    throw new Error(
+      `manifest.settings exceeds maximum declaration count: ${settings.length} > ${MAX_DECLARATION_COUNT}`
+    );
+  }
+
   const permissionKeys = uniqueSortedStringArray(
     permissions
       .map((permission) => permission.key)
@@ -356,6 +386,32 @@ async function validateExtractedPackage(
       .map((setting) => setting.key)
       .filter((value): value is string => typeof value === 'string')
   );
+
+  assertNoDuplicates(
+    permissions
+      .map((permission) => permission.key)
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter(Boolean),
+    'manifest.permissions keys'
+  );
+  assertNoDuplicates(
+    settings
+      .map((setting) => setting.key)
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim())
+      .filter(Boolean),
+    'manifest.settings keys'
+  );
+  assertNoDuplicates(publicRouteExtensionIds, 'manifest.publicRouteExtensionIds');
+  assertNoDuplicates(adminPageHrefs, 'manifest.adminPageHrefs');
+  assertNoDuplicates(apiPaths, 'manifest.apiPaths');
+
+  for (const scope of scopes) {
+    if (!ALLOWED_PERMISSION_SCOPES.has(scope)) {
+      throw new Error(`manifest.permissions contains unknown scope: ${scope}`);
+    }
+  }
 
   return {
     packageRoot: normalizedSubdirectory,

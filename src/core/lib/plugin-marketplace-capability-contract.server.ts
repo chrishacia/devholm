@@ -4,6 +4,21 @@ import type {
   MarketplaceCapabilitySnapshot,
 } from '@core/types/plugin-marketplace-capability-contract';
 
+const PROHIBITED_CAPABILITY_TOKENS = [
+  'process',
+  'exec',
+  'shell',
+  'filesystem',
+  'secret',
+  'unrestricted-network',
+  'migration',
+  'lifecycle',
+  'background-job',
+  'scheduled-job',
+  'cron',
+];
+const PRIVILEGED_REVIEW_TOKENS = ['admin', 'api', 'auth'];
+
 function normalized(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort();
 }
@@ -32,17 +47,69 @@ function pushEscalation(
   });
 }
 
+function matchingTokenValues(values: string[], tokens: string[]): string[] {
+  return values.filter((value) => {
+    const lower = value.toLowerCase();
+    return tokens.some((token) => lower.includes(token));
+  });
+}
+
+function evaluateStaticPolicy(candidateSnapshot: MarketplaceCapabilitySnapshot): {
+  blockers: string[];
+  approvals: string[];
+} {
+  const blockers: string[] = [];
+  const approvals: string[] = [];
+
+  const prohibitedCapabilities = matchingTokenValues(
+    normalized(candidateSnapshot.capabilities),
+    PROHIBITED_CAPABILITY_TOKENS
+  );
+  if (prohibitedCapabilities.length > 0) {
+    blockers.push(
+      `capabilities include prohibited tokens in this phase: ${prohibitedCapabilities.join(', ')}`
+    );
+  }
+
+  const prohibitedPermissionKeys = matchingTokenValues(
+    normalized(candidateSnapshot.permissionKeys),
+    PROHIBITED_CAPABILITY_TOKENS
+  );
+  if (prohibitedPermissionKeys.length > 0) {
+    blockers.push(
+      `permission keys include prohibited tokens in this phase: ${prohibitedPermissionKeys.join(', ')}`
+    );
+  }
+
+  const privilegedCapabilities = matchingTokenValues(
+    normalized(candidateSnapshot.capabilities),
+    PRIVILEGED_REVIEW_TOKENS
+  );
+  if (privilegedCapabilities.length > 0) {
+    approvals.push(
+      `privileged capability declarations require review: ${privilegedCapabilities.join(', ')}`
+    );
+  }
+
+  return { blockers, approvals };
+}
+
 export function evaluateMarketplaceCapabilityContract(
   previousSnapshot: MarketplaceCapabilitySnapshot | null,
   candidateSnapshot: MarketplaceCapabilitySnapshot
 ): MarketplaceCapabilityContractEvaluation {
+  const staticPolicy = evaluateStaticPolicy(candidateSnapshot);
+
   if (!previousSnapshot) {
     return {
-      hasEscalation: false,
+      hasEscalation: staticPolicy.approvals.length > 0 || staticPolicy.blockers.length > 0,
       escalations: [],
-      approvals: [],
-      blockers: [],
-      summary: 'no prior capability snapshot; treating as first install baseline',
+      approvals: staticPolicy.approvals,
+      blockers: staticPolicy.blockers,
+      summary:
+        staticPolicy.approvals.length === 0 && staticPolicy.blockers.length === 0
+          ? 'no prior capability snapshot; treating as first install baseline'
+          : `first install requires policy review: ${staticPolicy.approvals.length} approval item(s), ${staticPolicy.blockers.length} blocker(s)`,
     };
   }
 
@@ -134,10 +201,12 @@ export function evaluateMarketplaceCapabilityContract(
 
   const approvals = escalations
     .filter((item) => item.level === 'approval-required')
-    .map((item) => `${item.field}: ${item.reason} (${item.added.join(', ')})`);
+    .map((item) => `${item.field}: ${item.reason} (${item.added.join(', ')})`)
+    .concat(staticPolicy.approvals);
   const blockers = escalations
     .filter((item) => item.level === 'blocked')
-    .map((item) => `${item.field}: ${item.reason} (${item.added.join(', ')})`);
+    .map((item) => `${item.field}: ${item.reason} (${item.added.join(', ')})`)
+    .concat(staticPolicy.blockers);
 
   return {
     hasEscalation: escalations.length > 0,

@@ -26,6 +26,10 @@ const DEFAULT_CACHE_ROOT = path.resolve(process.cwd(), 'generated/plugins/market
 const METADATA_SERVICE_V4 = new Set(['169.254.169.254']);
 const METADATA_SERVICE_V6 = new Set(['fd00:ec2::254', 'fe80::a9fe:a9fe']);
 
+function normalizeHostname(value: string): string {
+  return value.trim().toLowerCase().replace(/\.+$/, '');
+}
+
 function normalizeSha256(value: string | undefined, label: string): string {
   const normalized = (value ?? '').trim().toLowerCase();
   if (!SHA256_PATTERN.test(normalized)) {
@@ -41,16 +45,19 @@ function normalizePolicy(
     ...DEFAULT_POLICY,
     ...overrides,
     allowedHosts: (overrides?.allowedHosts ?? DEFAULT_POLICY.allowedHosts).map((value) =>
-      value.trim().toLowerCase()
+      normalizeHostname(value)
     ),
     allowPrivateAddressHosts: (
       overrides?.allowPrivateAddressHosts ?? DEFAULT_POLICY.allowPrivateAddressHosts
-    ).map((value) => value.trim().toLowerCase()),
+    ).map((value) => normalizeHostname(value)),
     allowedPorts: [...(overrides?.allowedPorts ?? DEFAULT_POLICY.allowedPorts)],
   };
 }
 
-function parseAndValidateUrl(rawUrl: string, policy: MarketplaceArtifactAcquisitionPolicy): URL {
+function parseAndValidateUrl(
+  rawUrl: string,
+  policy: MarketplaceArtifactAcquisitionPolicy
+): { url: URL; normalizedHost: string } {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -70,7 +77,11 @@ function parseAndValidateUrl(rawUrl: string, policy: MarketplaceArtifactAcquisit
     throw new Error('artifact URL must not include fragments');
   }
 
-  const hostname = parsed.hostname.toLowerCase();
+  const hostname = normalizeHostname(parsed.hostname);
+  if (!hostname || hostname === 'localhost' || hostname.endsWith('.local')) {
+    throw new Error(`artifact host is not approved by policy: ${hostname || '<empty-host>'}`);
+  }
+
   if (!policy.allowedHosts.includes(hostname)) {
     throw new Error(`artifact host is not approved by policy: ${hostname}`);
   }
@@ -80,7 +91,7 @@ function parseAndValidateUrl(rawUrl: string, policy: MarketplaceArtifactAcquisit
     throw new Error(`artifact port is not approved by policy: ${port}`);
   }
 
-  return parsed;
+  return { url: parsed, normalizedHost: hostname };
 }
 
 function isPrivateIPv4(ip: string): boolean {
@@ -99,14 +110,25 @@ function isPrivateIPv4(ip: string): boolean {
   if (parts[0] === 192 && parts[1] === 168) return true;
   if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true;
   if (parts[0] === 0) return true;
+  if (parts[0] >= 224) return true;
+  if (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19)) return true;
+  if (parts[0] === 192 && parts[1] === 0 && parts[2] === 0) return true;
+  if (parts[0] === 192 && parts[1] === 0 && parts[2] === 2) return true;
+  if (parts[0] === 198 && parts[1] === 51 && parts[2] === 100) return true;
+  if (parts[0] === 203 && parts[1] === 0 && parts[2] === 113) return true;
+  if (parts[0] === 192 && parts[1] === 88 && parts[2] === 99) return true;
+  if (parts[0] === 255 && parts[1] === 255 && parts[2] === 255 && parts[3] === 255) return true;
   return false;
 }
 
 function isBlockedIPv6(ip: string): boolean {
-  const normalized = ip.toLowerCase();
+  const normalized = normalizeHostname(ip);
   if (normalized === '::1' || normalized === '::') return true;
+  if (normalized.startsWith('ff')) return true;
   if (normalized.startsWith('fe80:')) return true;
   if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+  if (normalized.startsWith('2001:db8:')) return true;
+  if (normalized.startsWith('64:ff9b:')) return true;
   if (normalized.startsWith('::ffff:')) {
     const mapped = normalized.replace('::ffff:', '');
     return isPrivateIPv4(mapped);
@@ -115,16 +137,16 @@ function isBlockedIPv6(ip: string): boolean {
 }
 
 async function assertResolvableToPublicAddress(
-  url: URL,
+  hostname: string,
   policy: MarketplaceArtifactAcquisitionPolicy
 ): Promise<void> {
-  if (policy.allowPrivateAddressHosts.includes(url.hostname.toLowerCase())) {
+  if (policy.allowPrivateAddressHosts.includes(hostname)) {
     return;
   }
 
-  const results = await dnsLookup(url.hostname, { all: true, verbatim: true }).catch(() => []);
+  const results = await dnsLookup(hostname, { all: true, verbatim: true }).catch(() => []);
   if (results.length === 0) {
-    throw new Error(`artifact host failed DNS resolution: ${url.hostname}`);
+    throw new Error(`artifact host failed DNS resolution: ${hostname}`);
   }
 
   for (const result of results) {
@@ -275,7 +297,7 @@ export async function acquireFirstPartyMarketplaceArtifact(
   const expectedSha256 = normalizeSha256(input.expectedSha256, 'expectedSha256');
 
   const firstUrl = parseAndValidateUrl(input.artifactUrl, policy);
-  await assertResolvableToPublicAddress(firstUrl, policy);
+  await assertResolvableToPublicAddress(firstUrl.normalizedHost, policy);
 
   const cacheRoot = path.resolve(input.cacheRootDir ?? DEFAULT_CACHE_ROOT);
   await ensureCachePaths(cacheRoot);
@@ -285,7 +307,7 @@ export async function acquireFirstPartyMarketplaceArtifact(
     expectedSha256,
     input.expectedVersion,
     input.artifactUrl,
-    firstUrl.hostname.toLowerCase(),
+    firstUrl.normalizedHost,
     policy,
     startedAt
   );
@@ -296,7 +318,7 @@ export async function acquireFirstPartyMarketplaceArtifact(
   if (input.offlineOnly) {
     return {
       artifactUrl: input.artifactUrl,
-      approvedHost: firstUrl.hostname.toLowerCase(),
+      approvedHost: firstUrl.normalizedHost,
       expectedSha256,
       verifiedSha256: '',
       expectedVersion: input.expectedVersion,
@@ -318,15 +340,19 @@ export async function acquireFirstPartyMarketplaceArtifact(
   if (policy.connectTimeoutMs > 0) {
     warnings.push('connectTimeoutMs is advisory; requestTimeoutMs is enforced in current runtime');
   }
+  warnings.push(
+    'DNS rebinding risk is mitigated by pre-request DNS/IP validation but cannot be eliminated with current fetch connection binding semantics'
+  );
 
-  let currentUrl = firstUrl;
+  let currentUrl = firstUrl.url;
+  let currentHost = firstUrl.normalizedHost;
   let response: Response | null = null;
   const requestController = new AbortController();
   const requestTimeout = setTimeout(() => requestController.abort(), policy.requestTimeoutMs);
 
   try {
     for (let redirectCount = 0; redirectCount <= policy.maxRedirects; redirectCount += 1) {
-      await assertResolvableToPublicAddress(currentUrl, policy);
+      await assertResolvableToPublicAddress(currentHost, policy);
 
       response = await fetch(currentUrl, {
         method: 'GET',
@@ -348,7 +374,9 @@ export async function acquireFirstPartyMarketplaceArtifact(
         }
 
         const redirected = new URL(location, currentUrl);
-        currentUrl = parseAndValidateUrl(redirected.toString(), policy);
+        const parsedRedirect = parseAndValidateUrl(redirected.toString(), policy);
+        currentUrl = parsedRedirect.url;
+        currentHost = parsedRedirect.normalizedHost;
         redirectChain.push(currentUrl.toString());
         continue;
       }
@@ -390,22 +418,34 @@ export async function acquireFirstPartyMarketplaceArtifact(
     let written = 0;
     const reader = response.body.getReader();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        const chunk = Buffer.from(value);
+        written += chunk.length;
+        if (written > policy.maxCompressedBytes) {
+          requestController.abort();
+          throw new Error('artifact streamed size exceeds configured maximum');
+        }
+
+        sha.update(chunk);
+        await new Promise<void>((resolve, reject) => {
+          writer.write(chunk, (error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
       }
 
-      const chunk = Buffer.from(value);
-      written += chunk.length;
-      if (written > policy.maxCompressedBytes) {
-        requestController.abort();
-        throw new Error('artifact streamed size exceeds configured maximum');
-      }
-
-      sha.update(chunk);
       await new Promise<void>((resolve, reject) => {
-        writer.write(chunk, (error) => {
+        writer.end((error?: Error | null) => {
           if (error) {
             reject(error);
             return;
@@ -413,17 +453,10 @@ export async function acquireFirstPartyMarketplaceArtifact(
           resolve();
         });
       });
+    } catch (error) {
+      writer.destroy();
+      throw error;
     }
-
-    await new Promise<void>((resolve, reject) => {
-      writer.end((error?: Error | null) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
 
     if (written > policy.maxCompressedBytes) {
       throw new Error('artifact streamed size exceeds configured maximum');
@@ -442,7 +475,18 @@ export async function acquireFirstPartyMarketplaceArtifact(
     if (!(await fileExists(cachePath))) {
       const promotedPath = `${cachePath}.${randomUUID()}.tmp`;
       await rename(partialPath, promotedPath);
-      await rename(promotedPath, cachePath);
+      try {
+        await rename(promotedPath, cachePath);
+      } catch (error) {
+        const hasCode = typeof error === 'object' && error !== null && 'code' in error;
+        const code = hasCode ? (error as { code?: string }).code : undefined;
+        if (code !== 'EEXIST') {
+          throw error;
+        }
+        await rm(promotedPath, { force: true });
+      }
+    } else {
+      await rm(partialPath, { force: true });
     }
 
     const usageBytes = await computeCacheUsageBytes(cacheRoot);
@@ -463,7 +507,7 @@ export async function acquireFirstPartyMarketplaceArtifact(
 
     return {
       artifactUrl: input.artifactUrl,
-      approvedHost: currentUrl.hostname.toLowerCase(),
+      approvedHost: currentHost,
       expectedSha256,
       verifiedSha256: expectedSha256,
       expectedVersion: input.expectedVersion,
