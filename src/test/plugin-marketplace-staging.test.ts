@@ -12,7 +12,7 @@ import {
 
 type TarEntry = {
   path: string;
-  type: 'file' | 'directory' | 'symlink';
+  type: 'file' | 'directory' | 'symlink' | 'hardlink';
   content?: Buffer;
   linkname?: string;
 };
@@ -54,7 +54,14 @@ function createTarBuffer(entries: TarEntry[]): Buffer {
       header[index] = 0x20;
     }
 
-    const typeFlag = entry.type === 'directory' ? '5' : entry.type === 'symlink' ? '2' : '0';
+    const typeFlag =
+      entry.type === 'directory'
+        ? '5'
+        : entry.type === 'symlink'
+          ? '2'
+          : entry.type === 'hardlink'
+            ? '1'
+            : '0';
     writeString(header, 156, 1, typeFlag);
 
     if (entry.type === 'symlink' && entry.linkname) {
@@ -114,7 +121,18 @@ describe('plugin-marketplace-staging: inspection and extraction safety', () => {
       {
         path: 'plugins/calendar/manifest.json',
         type: 'file',
-        content: Buffer.from('{"id":"calendar"}', 'utf8'),
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.1.0',
+            pluginSubdirectory: 'plugins/calendar',
+            lifecycle: {
+              afterInstall: 'scripts/after-install.js',
+            },
+            migrations: ['migrations/001-initial.sql'],
+          }),
+          'utf8'
+        ),
       },
       {
         path: 'plugins/calendar/README.md',
@@ -131,11 +149,26 @@ describe('plugin-marketplace-staging: inspection and extraction safety', () => {
     expect(extraction.totalEntries).toBe(3);
     expect(extraction.extractedFiles).toContain('plugins/calendar/manifest.json');
     expect(extraction.extractedDirectories).toContain('plugins/calendar/');
+    expect(extraction.validation.pluginId).toBe('calendar');
+    expect(extraction.validation.version).toBe('0.1.0');
+    expect(extraction.validation.hasLifecycleDeclarations).toBe(true);
+    expect(extraction.validation.hasMigrationDeclarations).toBe(true);
   });
 
   it('computes deterministic SHA-256 for artifact bytes', async () => {
     const archivePath = createTarGzFile([
-      { path: 'plugins/calendar/manifest.json', type: 'file', content: Buffer.from('abc', 'utf8') },
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.1.0',
+            pluginSubdirectory: 'plugins/calendar',
+          }),
+          'utf8'
+        ),
+      },
     ]);
 
     const digest = await computeArtifactSha256(archivePath);
@@ -168,6 +201,103 @@ describe('plugin-marketplace-staging: inspection and extraction safety', () => {
     ]);
 
     await expect(extractTarGzToStaging(archivePath)).rejects.toThrow(/unsupported tar entry type/i);
+  });
+
+  it('rejects hardlink entries', async () => {
+    const archivePath = createTarGzFile([
+      { path: 'plugins/calendar/hardlink', type: 'hardlink', linkname: 'plugins/calendar/target' },
+    ]);
+
+    await expect(extractTarGzToStaging(archivePath)).rejects.toThrow(/unsupported tar entry type/i);
+  });
+
+  it('rejects duplicate normalized archive paths', async () => {
+    const archivePath = createTarGzFile([
+      { path: 'plugins/calendar/manifest.json', type: 'file', content: Buffer.from('{}', 'utf8') },
+      {
+        path: 'plugins/calendar/./manifest.json',
+        type: 'file',
+        content: Buffer.from('{}', 'utf8'),
+      },
+    ]);
+
+    await expect(inspectTarGzArtifact(archivePath)).rejects.toThrow(
+      /duplicate normalized archive path/i
+    );
+  });
+
+  it('rejects Windows drive path entries', async () => {
+    const archivePath = createTarGzFile([
+      { path: 'C:/temp/payload.txt', type: 'file', content: Buffer.from('x', 'utf8') },
+    ]);
+
+    await expect(inspectTarGzArtifact(archivePath)).rejects.toThrow(/windows drive path/i);
+  });
+
+  it('rejects UNC path entries', async () => {
+    const archivePath = createTarGzFile([
+      { path: '\\\\server\\share\\payload.txt', type: 'file', content: Buffer.from('x', 'utf8') },
+    ]);
+
+    await expect(inspectTarGzArtifact(archivePath)).rejects.toThrow(
+      /UNC path|unsafe archive path/i
+    );
+  });
+
+  it('rejects high compression-ratio archives', async () => {
+    const repetitiveContent = Buffer.alloc(6 * 1024 * 1024, 0);
+    const archivePath = createTarGzFile([
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.1.0',
+            pluginSubdirectory: 'plugins/calendar',
+          }),
+          'utf8'
+        ),
+      },
+      { path: 'plugins/calendar/repetitive.bin', type: 'file', content: repetitiveContent },
+    ]);
+
+    await expect(
+      inspectTarGzArtifact(archivePath, {
+        limits: {
+          maxCompressionRatio: 2,
+        },
+      })
+    ).rejects.toThrow(/compression ratio/i);
+  });
+
+  it('rejects missing staged package manifest', async () => {
+    const archivePath = createTarGzFile([
+      { path: 'plugins/calendar/README.md', type: 'file', content: Buffer.from('readme', 'utf8') },
+    ]);
+
+    await expect(extractTarGzToStaging(archivePath)).rejects.toThrow(/exactly one manifest.json/i);
+  });
+
+  it('rejects manifest and pluginSubdirectory mismatch', async () => {
+    const archivePath = createTarGzFile([
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.1.0',
+            pluginSubdirectory: 'plugins/gallery',
+          }),
+          'utf8'
+        ),
+      },
+    ]);
+
+    await expect(extractTarGzToStaging(archivePath)).rejects.toThrow(
+      /manifest path does not match manifest.pluginSubdirectory/i
+    );
   });
 
   it('rejects archives exceeding safety limits', async () => {
