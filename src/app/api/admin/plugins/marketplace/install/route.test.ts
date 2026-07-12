@@ -137,11 +137,47 @@ describe('admin marketplace install route', () => {
 
     expect(response.status).toBe(200);
     expect(body.notes).toContain('lifecycle hooks were not executed in this phase');
+    expect(body.result.activePath).toBeUndefined();
+    expect(body.result.versionPath).toBeUndefined();
     expect(executeFirstPartyMarketplaceInstall).toHaveBeenCalledWith(
       expect.objectContaining({
         artifactPath: '/tmp/calendar-v0.1.0.tar.gz',
         explicitAdminApproval: true,
         initiatedBy: 'admin@example.com',
+      })
+    );
+  });
+
+  it('passes remote acquisition mode flags to execution', async () => {
+    const request = new NextRequest('http://localhost:3000/api/admin/plugins/marketplace/install', {
+      method: 'POST',
+      body: JSON.stringify({
+        descriptor: {
+          sourceType: 'marketplace',
+          repoUrl: 'https://github.com/chrishacia/devholm-plugins',
+          ref: 'refs/tags/calendar-v0.1.0',
+          pluginSubdirectory: 'plugins/calendar',
+          manifestPath: 'plugins/calendar/manifest.json',
+          expectedPluginId: 'calendar',
+          expectedVersion: '0.1.0',
+        },
+        catalogEntry: {
+          pluginId: 'calendar',
+        },
+        acquisitionMode: 'remote-first-party',
+        offlineOnly: true,
+        explicitAdminApproval: true,
+      }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+    expect(executeFirstPartyMarketplaceInstall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acquisitionMode: 'remote-first-party',
+        offlineOnly: true,
+        artifactPath: undefined,
       })
     );
   });
