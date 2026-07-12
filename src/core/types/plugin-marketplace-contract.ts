@@ -81,8 +81,13 @@ export type MarketplaceArtifactReadiness = 'planned' | 'available';
 
 export interface MarketplaceArtifactSignaturePlaceholder {
   status: 'not-provided' | 'provided';
-  algorithm?: string;
+  algorithm?: 'Ed25519';
+  keyId?: string;
+  signedPayloadVersion?: 'v1';
+  signedAt?: string;
   signature?: string;
+  transparencyLogRef?: string;
+  certificateChain?: readonly string[];
 }
 
 export interface MarketplaceArtifactReference {
@@ -95,6 +100,43 @@ export interface MarketplaceArtifactReference {
   compressedSizeBytes?: number;
   maxUncompressedSizeBytes?: number;
   signature?: MarketplaceArtifactSignaturePlaceholder;
+}
+
+export interface MarketplaceArtifactTrustVerification {
+  algorithm: 'Ed25519';
+  keyId: string;
+  signedPayloadVersion: 'v1';
+  signedPayloadSha256: string;
+  verificationTimestamp: string;
+  trustDecision: 'trusted' | 'blocked' | 'untrusted';
+  verificationStatus:
+    | 'verified'
+    | 'missing-signature'
+    | 'invalid-signature'
+    | 'unknown-key'
+    | 'revoked-key'
+    | 'retired-key'
+    | 'pending-key'
+    | 'algorithm-mismatch'
+    | 'payload-version-mismatch'
+    | 'publisher-mismatch';
+  publisherId: string;
+  revocationState: 'none' | 'pending' | 'retired' | 'revoked';
+  notes: readonly string[];
+}
+
+export interface MarketplaceTrustedMarketplaceKeyRecord {
+  keyId: string;
+  algorithm: 'Ed25519';
+  publicKey: string;
+  status: 'pending' | 'active' | 'retired' | 'revoked';
+  activationAt?: string;
+  retirementAt?: string;
+  revocationAt?: string;
+  revocationReason?: string;
+  permittedPublisherIds: readonly string[];
+  intendedUsage: 'marketplace-artifact-signing';
+  metadataVersion: 1;
 }
 
 export interface MarketplacePublisherMetadata {
@@ -114,6 +156,7 @@ export interface MarketplaceCatalogEntry {
   readmePath: string;
   landingPagePath: string;
   source: MarketplacePackageSourceDescriptor;
+  integrity?: Partial<PluginPackageIntegrity>;
   publisher: MarketplacePublisherMetadata;
   artifact: MarketplaceArtifactReference;
 }

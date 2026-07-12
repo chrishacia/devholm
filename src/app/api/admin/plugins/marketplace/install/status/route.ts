@@ -41,6 +41,20 @@ function toPublicOperation(
     cancellation: operation.cancellation,
     notes: operation.notes,
     error: operation.error,
+    trust: operation.trust
+      ? {
+          keyId: operation.trust.keyId,
+          algorithm: operation.trust.algorithm,
+          signedPayloadVersion: operation.trust.signedPayloadVersion,
+          signedPayloadSha256: operation.trust.signedPayloadSha256,
+          verificationTimestamp: operation.trust.verificationTimestamp,
+          trustDecision: operation.trust.trustDecision,
+          verificationStatus: operation.trust.verificationStatus,
+          publisherId: operation.trust.publisherId,
+          revocationState: operation.trust.revocationState,
+          notes: operation.trust.notes,
+        }
+      : undefined,
   };
 }
 

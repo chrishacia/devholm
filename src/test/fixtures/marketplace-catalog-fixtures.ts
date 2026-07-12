@@ -3,6 +3,7 @@ import type {
   MarketplaceCatalogEntry,
 } from '@core/types/plugin-marketplace-contract';
 import { stockMarketplacePackageFixtures } from './marketplace-package-fixtures';
+import { signMarketplaceCatalogEntryForTests } from './marketplace-signing-fixtures';
 
 function catalogArtifactPlanned(): MarketplaceArtifactReference {
   return {
@@ -49,7 +50,7 @@ export const stockMarketplaceCatalogFixtures: MarketplaceCatalogEntry[] = [
   baseCatalogEntry('url-shortener'),
 ];
 
-export const productionEligibleCatalogFixture: MarketplaceCatalogEntry = {
+const productionEligibleCalendarFixtureBase: MarketplaceCatalogEntry = {
   ...baseCatalogEntry('calendar'),
   installReadiness: 'production-eligible',
   runtimeInstallSupported: true,
@@ -71,5 +72,17 @@ export const productionEligibleCatalogFixture: MarketplaceCatalogEntry = {
     signature: {
       status: 'not-provided',
     },
+  },
+};
+
+const signedCalendarSignature = signMarketplaceCatalogEntryForTests(
+  productionEligibleCalendarFixtureBase
+);
+
+export const productionEligibleCatalogFixture: MarketplaceCatalogEntry = {
+  ...productionEligibleCalendarFixtureBase,
+  artifact: {
+    ...productionEligibleCalendarFixtureBase.artifact,
+    signature: signedCalendarSignature,
   },
 };

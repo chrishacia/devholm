@@ -350,6 +350,44 @@ export function validateMarketplaceCatalogEntry(entry: MarketplaceCatalogEntry):
     }
   }
 
+  if (
+    entry.artifact.readiness === 'available' ||
+    entry.installReadiness === 'production-eligible'
+  ) {
+    if (!entry.artifact.signature || entry.artifact.signature.status !== 'provided') {
+      errors.push(
+        `artifact.signature is required for runtime-ready entries for plugin ${entry.pluginId}`
+      );
+    } else {
+      if (entry.artifact.signature.algorithm !== 'Ed25519') {
+        errors.push(`artifact.signature.algorithm must be Ed25519 for plugin ${entry.pluginId}`);
+      }
+
+      if (!entry.artifact.signature.keyId?.trim()) {
+        errors.push(`artifact.signature.keyId is required for plugin ${entry.pluginId}`);
+      }
+
+      if (entry.artifact.signature.signedPayloadVersion !== 'v1') {
+        errors.push(
+          `artifact.signature.signedPayloadVersion must be v1 for plugin ${entry.pluginId}`
+        );
+      }
+
+      if (!entry.artifact.signature.signature?.trim()) {
+        errors.push(`artifact.signature.signature is required for plugin ${entry.pluginId}`);
+      }
+
+      if (
+        entry.artifact.signature.signedAt !== undefined &&
+        Number.isNaN(Date.parse(entry.artifact.signature.signedAt))
+      ) {
+        errors.push(
+          `artifact.signature.signedAt must be a valid ISO timestamp for plugin ${entry.pluginId}`
+        );
+      }
+    }
+  }
+
   if (entry.artifact.readiness === 'available') {
     if (!entry.artifact.artifactUrl || !isValidRepositoryUrl(entry.artifact.artifactUrl)) {
       errors.push(`artifact.artifactUrl must be a valid https URL for plugin ${entry.pluginId}`);

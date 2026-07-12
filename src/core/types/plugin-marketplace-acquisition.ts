@@ -37,4 +37,5 @@ export interface MarketplaceArtifactAcquisitionResult {
   warnings: string[];
   blockers: string[];
   readyForStaging: boolean;
+  trust?: import('@core/types/plugin-marketplace-contract').MarketplaceArtifactTrustVerification;
 }

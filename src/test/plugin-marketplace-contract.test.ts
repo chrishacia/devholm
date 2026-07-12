@@ -266,7 +266,7 @@ describe('plugin-marketplace-contract: catalog artifact contract validation', ()
     ).toBe(true);
   });
 
-  it('keeps signature placeholder non-enforced when not provided', () => {
+  it('requires signatures for runtime-ready entries', () => {
     const errors = validateMarketplaceCatalogEntry(
       cloneCatalogFixture({
         artifact: {
@@ -277,7 +277,7 @@ describe('plugin-marketplace-contract: catalog artifact contract validation', ()
         },
       })
     );
-    expect(errors).toEqual([]);
+    expect(errors.some((error) => error.includes('artifact.signature is required'))).toBe(true);
   });
 });
 describe('plugin-marketplace-contract: directory contract validation', () => {

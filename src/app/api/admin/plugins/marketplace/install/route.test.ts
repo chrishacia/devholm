@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { MARKETPLACE_TEST_TRUSTED_KEYS } from '@/test/fixtures/marketplace-signing-fixtures';
 
 const verifyAdmin = vi.hoisted(() => vi.fn());
 const executeFirstPartyMarketplaceInstall = vi.hoisted(() => vi.fn());
@@ -23,6 +24,9 @@ describe('admin marketplace install route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.DEVHOLM_MARKETPLACE_FIRST_PARTY_INSTALL_ENABLED = 'true';
+    process.env.DEVHOLM_MARKETPLACE_TRUSTED_KEYS_JSON = JSON.stringify(
+      MARKETPLACE_TEST_TRUSTED_KEYS
+    );
     verifyAdmin.mockResolvedValue({
       sub: 'admin-123',
       email: 'admin@example.com',
@@ -86,6 +90,18 @@ describe('admin marketplace install route', () => {
           requested: false,
           policy: 'best-effort-before-promotion',
         },
+        notes: [],
+      },
+      trust: {
+        algorithm: 'Ed25519',
+        keyId: 'devholm-first-party-test-key',
+        signedPayloadVersion: 'v1',
+        signedPayloadSha256: 'b'.repeat(64),
+        verificationTimestamp: new Date().toISOString(),
+        trustDecision: 'trusted',
+        verificationStatus: 'verified',
+        publisherId: 'devholm-first-party',
+        revocationState: 'none',
         notes: [],
       },
       installRoot: '/tmp/root',
