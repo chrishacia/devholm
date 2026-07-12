@@ -5,12 +5,18 @@ import {
   DEFAULT_MARKETPLACE_DIRECTORY_CONTRACT,
   validateMarketplaceDirectorySnapshot,
   validateMarketplacePackageMetadata,
+  validateMarketplaceCatalogEntry,
 } from '@core/lib/plugin-marketplace-contract.server';
 import { getBundledPluginManifests } from '@core/lib/plugin-registry.server';
 import type {
   MarketplaceDirectorySnapshot,
   MarketplacePluginPackageMetadata,
+  MarketplaceCatalogEntry,
 } from '@core/types/plugin-marketplace-contract';
+import {
+  productionEligibleCatalogFixture,
+  stockMarketplaceCatalogFixtures,
+} from './fixtures/marketplace-catalog-fixtures';
 import { stockMarketplacePackageFixtures } from './fixtures/marketplace-package-fixtures';
 
 function cloneFixture(
@@ -59,6 +65,34 @@ function cloneFixture(
             ...(base.integrity ?? {}),
             ...override.integrity,
           },
+  };
+}
+
+function cloneCatalogFixture(override?: Partial<MarketplaceCatalogEntry>): MarketplaceCatalogEntry {
+  const base = productionEligibleCatalogFixture;
+
+  return {
+    ...base,
+    ...override,
+    source: {
+      ...base.source,
+      ...(override?.source ?? {}),
+    },
+    publisher: {
+      ...base.publisher,
+      ...(override?.publisher ?? {}),
+    },
+    artifact: {
+      ...base.artifact,
+      ...(override?.artifact ?? {}),
+      signature:
+        override?.artifact?.signature === undefined
+          ? base.artifact.signature
+          : {
+              ...(base.artifact.signature ?? {}),
+              ...override.artifact.signature,
+            },
+    },
   };
 }
 
@@ -141,6 +175,111 @@ describe('plugin-marketplace-contract: package metadata validation', () => {
   });
 });
 
+describe('plugin-marketplace-contract: catalog artifact contract validation', () => {
+  it('accepts valid production-eligible immutable tar.gz artifact entry', () => {
+    const errors = validateMarketplaceCatalogEntry(cloneCatalogFixture());
+    expect(errors).toEqual([]);
+  });
+
+  it('accepts catalog-contract-ready entries with planned artifact state', () => {
+    for (const fixture of stockMarketplaceCatalogFixtures) {
+      const errors = validateMarketplaceCatalogEntry(fixture);
+      expect(errors).toEqual([]);
+      expect(fixture.runtimeInstallSupported).toBe(false);
+      expect(fixture.artifact.readiness).toBe('planned');
+    }
+  });
+
+  it('rejects unsupported artifact format', () => {
+    const errors = validateMarketplaceCatalogEntry(
+      cloneCatalogFixture({
+        artifact: {
+          ...productionEligibleCatalogFixture.artifact,
+          format: 'zip' as 'tar.gz',
+        },
+      })
+    );
+    expect(errors.some((error) => error.includes('artifact.format'))).toBe(true);
+  });
+
+  it('rejects malformed or missing SHA-256 digest for available artifacts', () => {
+    const malformed = validateMarketplaceCatalogEntry(
+      cloneCatalogFixture({
+        artifact: {
+          ...productionEligibleCatalogFixture.artifact,
+          sha256: 'XYZ',
+        },
+      })
+    );
+    expect(malformed.some((error) => error.includes('artifact.sha256'))).toBe(true);
+
+    const missing = validateMarketplaceCatalogEntry(
+      cloneCatalogFixture({
+        artifact: {
+          ...productionEligibleCatalogFixture.artifact,
+          sha256: undefined,
+        },
+      })
+    );
+    expect(missing.some((error) => error.includes('artifact.sha256'))).toBe(true);
+  });
+
+  it('rejects mutable branch-like references for production-eligible entries', () => {
+    const errors = validateMarketplaceCatalogEntry(
+      cloneCatalogFixture({
+        source: {
+          ...productionEligibleCatalogFixture.source,
+          ref: 'main',
+        },
+      })
+    );
+    expect(errors.some((error) => error.includes('source.ref must not be a mutable branch'))).toBe(
+      true
+    );
+  });
+
+  it('rejects mutable branch-like artifact URLs for available artifacts', () => {
+    const errors = validateMarketplaceCatalogEntry(
+      cloneCatalogFixture({
+        artifact: {
+          ...productionEligibleCatalogFixture.artifact,
+          artifactUrl: 'https://example.com/releases/refs/heads/main/calendar.tar.gz',
+        },
+      })
+    );
+    expect(
+      errors.some((error) => error.includes('artifact.artifactUrl must not reference mutable'))
+    ).toBe(true);
+  });
+
+  it('rejects non-first-party production-eligible publisher classification', () => {
+    const errors = validateMarketplaceCatalogEntry(
+      cloneCatalogFixture({
+        publisher: {
+          publisherId: 'community-author',
+          classification: 'third-party',
+        },
+      })
+    );
+    expect(
+      errors.some((error) => error.includes('production-eligible entries must be first-party'))
+    ).toBe(true);
+  });
+
+  it('keeps signature placeholder non-enforced when not provided', () => {
+    const errors = validateMarketplaceCatalogEntry(
+      cloneCatalogFixture({
+        artifact: {
+          ...productionEligibleCatalogFixture.artifact,
+          signature: {
+            status: 'not-provided',
+          },
+        },
+      })
+    );
+    expect(errors).toEqual([]);
+  });
+});
 describe('plugin-marketplace-contract: directory contract validation', () => {
   it('supports the expected marketplace directory shape', () => {
     const snapshot: MarketplaceDirectorySnapshot = {
