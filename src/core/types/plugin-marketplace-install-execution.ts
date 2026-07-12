@@ -7,6 +7,8 @@ import type {
   MarketplaceStagedPackageValidationSummary,
 } from '@core/types/plugin-marketplace-staging';
 import type { MarketplaceArtifactAcquisitionResult } from '@core/types/plugin-marketplace-acquisition';
+import type { MarketplaceCapabilityContractEvaluation } from '@core/types/plugin-marketplace-capability-contract';
+import type { MarketplaceInstallOperationState } from '@core/types/plugin-marketplace-install-operation';
 
 export interface MarketplaceFirstPartyInstallExecutionInput {
   descriptor: MarketplaceInstallSourceDescriptor;
@@ -26,7 +28,9 @@ export interface MarketplaceFirstPartyInstallExecutionResult {
   plannerSummary: string;
   inspection: MarketplaceArchiveInspection;
   validation: MarketplaceStagedPackageValidationSummary;
+  capabilityContract: MarketplaceCapabilityContractEvaluation;
   acquisition?: MarketplaceArtifactAcquisitionResult;
+  operation: MarketplaceInstallOperationState;
   installRoot: string;
   activePath: string;
   versionPath: string;

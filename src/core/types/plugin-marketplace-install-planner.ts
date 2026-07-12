@@ -34,12 +34,13 @@ export interface MarketplaceInstallPlannerBlocker {
     | 'artifact-missing-url'
     | 'artifact-missing-sha256'
     | 'artifact-not-immutable'
-    | 'third-party-production-blocked';
+    | 'third-party-production-blocked'
+    | 'capability-escalation-blocked';
   message: string;
 }
 
 export interface MarketplaceInstallPlannerApprovalRequirement {
-  code: 'manual-approval-required';
+  code: 'manual-approval-required' | 'capability-escalation-review-required';
   message: string;
   requiredApprovers: string[];
 }
@@ -49,6 +50,10 @@ export type MarketplaceInstallPlannerOutcome = 'blocked' | 'approval-required' |
 export interface MarketplaceInstallPlannerInput {
   descriptor: MarketplaceInstallSourceDescriptor;
   catalogEntry: MarketplaceCatalogEntry;
+  capabilityContract?: {
+    approvals?: string[];
+    blockers?: string[];
+  };
 }
 
 export interface MarketplaceInstallPlannerResult {

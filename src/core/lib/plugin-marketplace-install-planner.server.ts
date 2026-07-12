@@ -181,6 +181,22 @@ export function buildMarketplaceInstallDryRunPlan(
     });
   }
 
+  for (const blocker of input.capabilityContract?.blockers ?? []) {
+    blockers.push({
+      code: 'capability-escalation-blocked',
+      message: blocker,
+    });
+  }
+
+  const capabilityApprovals = input.capabilityContract?.approvals ?? [];
+  if (capabilityApprovals.length > 0) {
+    approvals.push({
+      code: 'capability-escalation-review-required',
+      message: `capability escalation review required: ${capabilityApprovals.join('; ')}`,
+      requiredApprovers: [],
+    });
+  }
+
   if (blockers.length > 0) {
     pushBlockedState(states, 'approval_gate', ['approval gate not reachable while blockers exist']);
     pushBlockedState(states, 'ready_for_staging', ['planner blocked before staging']);

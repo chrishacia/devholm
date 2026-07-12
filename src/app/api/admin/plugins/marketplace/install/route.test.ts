@@ -64,6 +64,30 @@ describe('admin marketplace install route', () => {
         lifecycleDeclarationKeys: ['afterInstall'],
         migrationCount: 1,
       },
+      capabilityContract: {
+        hasEscalation: false,
+        approvals: [],
+        blockers: [],
+        summary: 'no capability escalation detected compared with installed snapshot',
+      },
+      operation: {
+        operationId: 'op-123',
+        pluginId: 'calendar',
+        targetVersion: '0.1.0',
+        targetSha256: 'a'.repeat(64),
+        status: 'succeeded',
+        stage: 'complete',
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        acquisitionMode: 'local-path',
+        offlineOnly: false,
+        cancellation: {
+          requested: false,
+          policy: 'best-effort-before-promotion',
+        },
+        notes: [],
+      },
       installRoot: '/tmp/root',
       activePath: '/tmp/root/calendar/active',
       versionPath: '/tmp/root/calendar/versions/0.1.0',
@@ -139,6 +163,7 @@ describe('admin marketplace install route', () => {
     expect(body.notes).toContain('lifecycle hooks were not executed in this phase');
     expect(body.result.activePath).toBeUndefined();
     expect(body.result.versionPath).toBeUndefined();
+    expect(body.result.operation.operationId).toBe('op-123');
     expect(executeFirstPartyMarketplaceInstall).toHaveBeenCalledWith(
       expect.objectContaining({
         artifactPath: '/tmp/calendar-v0.1.0.tar.gz',
