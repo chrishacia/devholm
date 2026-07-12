@@ -29,6 +29,10 @@ import {
   recordPluginSandboxDecision,
   type PluginSandboxSurface,
 } from '@core/lib/plugin-capability-sandbox.server';
+import {
+  runIsolatedApiExtension,
+  shouldUseIsolatedRuntimeForExtension,
+} from '@core/lib/plugin-isolation-runtime.server';
 
 function normalizePath(pathname: string): string {
   const segments = pathname.split('/').filter(Boolean);
@@ -307,6 +311,31 @@ export async function runApiExtension(
   const handler = extension.handlers[method];
   if (!handler) {
     return Response.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+
+  if (
+    shouldUseIsolatedRuntimeForExtension({
+      pluginId: extension.pluginId,
+      accessPolicy: extension.accessPolicy,
+    })
+  ) {
+    const isolatedResult = await runIsolatedApiExtension({
+      pluginId: extension.pluginId!,
+      extensionPath: extension.path,
+      method,
+      request,
+      pathSegments: path,
+    });
+
+    console.info('plugin runtime isolated API execution', {
+      pluginId: extension.pluginId,
+      path: extension.path,
+      method,
+      executionId: isolatedResult.meta.executionId,
+      childPid: isolatedResult.meta.childPid,
+    });
+
+    return isolatedResult.response;
   }
 
   return handler(request, {

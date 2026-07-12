@@ -314,6 +314,47 @@ Residual risk and ordering implications
 - Capability declarations are now authorization-gated at dispatch seams, but this is not equivalent to full process isolation.
 - Next coherent step is issue #68 (lifecycle-hook execution gating/containment) before broadening publisher trust scope.
 
+Phase 5H: Brokered isolated plugin runtime boundary (issue #77)
+
+- Objective: move currently executable plugin server-side seams behind a child-process runtime boundary with strict IPC protocol validation, bounded payloads, timeout/termination controls, and deny-by-default execution correlation.
+- Repository: devholm.com.
+- Why #67 was insufficient: #67 added runtime authorization decisions at dispatch seams, but plugin code still executed inside the main Node.js process; authorization without process separation is not full containment.
+- Behavior changed:
+  - plugin-extension owned API extension execution can run in a dedicated child process,
+  - plugin-extension owned public-route match/handle execution can run in a dedicated child process,
+  - parent process enforces execution timeout and forced termination on isolation failure,
+  - IPC request/response envelopes are runtime schema validated and execution-id bound.
+- Security boundary:
+  - process-boundary crash containment between host runtime and isolated plugin execution,
+  - sanitized child environment allowlist (no full parent environment inheritance),
+  - bounded request/response payload sizes,
+  - explicit error sanitization and audit correlation metadata.
+- Non-goals:
+  - no claim of OS-level sandboxing,
+  - no strict CPU or memory quotas,
+  - no frontend React bundle isolation,
+  - no lifecycle-hook execution implementation (issue #68),
+  - no migration execution implementation (issue #71).
+- Validation focus:
+  - child PID separation proof,
+  - sanitized environment inheritance proof,
+  - isolated API/public-route execution regression coverage,
+  - protocol malformed-message rejection tests,
+  - timeout/termination path tests.
+
+Runtime boundary limits for Phase 5H
+
+- Child-process isolation reduces blast radius for plugin execution failures, but is not equivalent to container or kernel-level isolation.
+- CPU and memory are not hard-quota enforced in this phase; timeout and termination are the enforced control.
+- Broker protocol validates message shape and execution correlation; it does not grant arbitrary host object traversal.
+- Frontend plugin UI code remains bundled in the application build and is not isolated by this server runtime boundary.
+
+Ordering implications after Phase 5H
+
+- Issue #68 should implement lifecycle-hook execution through this isolated runtime boundary.
+- Issue #71 should implement migration execution controls through this isolated runtime boundary.
+- Issue #69 publisher-trust expansion remains blocked as a containment substitute; trust is provenance/authenticity, not runtime isolation.
+
 Phase 6: Optional registry service evaluation
 
 - Objective: assess dedicated registry API only after Phase 5A-5G evidence.
