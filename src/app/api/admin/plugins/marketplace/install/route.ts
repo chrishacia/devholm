@@ -15,7 +15,9 @@ function isMarketplaceExecutionEnabled(): boolean {
 const requestSchema = z.object({
   descriptor: z.record(z.any()),
   catalogEntry: z.record(z.any()),
-  artifactPath: z.string().min(1),
+  artifactPath: z.string().min(1).optional(),
+  acquisitionMode: z.enum(['local-path', 'remote-first-party']).optional(),
+  offlineOnly: z.boolean().optional(),
   explicitAdminApproval: z.literal(true),
 });
 
@@ -83,12 +85,36 @@ export async function POST(request: NextRequest) {
       descriptor: descriptorParse.descriptor,
       catalogEntry: parsed.data.catalogEntry as MarketplaceCatalogEntry,
       artifactPath: parsed.data.artifactPath,
+      acquisitionMode: parsed.data.acquisitionMode,
+      offlineOnly: parsed.data.offlineOnly,
       explicitAdminApproval: parsed.data.explicitAdminApproval,
       initiatedBy,
     });
 
     return NextResponse.json({
-      result,
+      result: {
+        pluginId: result.pluginId,
+        version: result.version,
+        sha256: result.sha256,
+        plannerSummary: result.plannerSummary,
+        previousVersion: result.previousVersion,
+        lifecycleExecution: result.lifecycleExecution,
+        migrationExecution: result.migrationExecution,
+        installedAt: result.installedAt,
+        acquisition: result.acquisition
+          ? {
+              source: result.acquisition.source,
+              cacheKey: result.acquisition.cacheKey,
+              downloadedBytes: result.acquisition.downloadedBytes,
+              approvedHost: result.acquisition.approvedHost,
+              redirectChain: result.acquisition.redirectChain,
+              durationMs: result.acquisition.durationMs,
+              warnings: result.acquisition.warnings,
+              blockers: result.acquisition.blockers,
+              readyForStaging: result.acquisition.readyForStaging,
+            }
+          : undefined,
+      },
       notes: [
         'lifecycle hooks were not executed in this phase',
         'migrations were not executed in this phase',

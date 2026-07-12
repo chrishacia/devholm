@@ -1,6 +1,7 @@
 import { access, chmod, cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { lt as isVersionLessThan } from 'semver';
+import { acquireFirstPartyMarketplaceArtifact } from '@core/lib/plugin-marketplace-acquisition.server';
 import { buildMarketplaceInstallDryRunPlan } from '@core/lib/plugin-marketplace-install-planner.server';
 import {
   computeArtifactSha256,
@@ -161,15 +162,33 @@ export async function executeFirstPartyMarketplaceInstall(
     }
   }
 
-  const computedChecksum = (await computeArtifactSha256(input.artifactPath)).toLowerCase();
+  const acquisitionMode =
+    input.acquisitionMode ?? (input.artifactPath ? 'local-path' : 'remote-first-party');
+  const acquisition =
+    acquisitionMode === 'remote-first-party'
+      ? await acquireFirstPartyMarketplaceArtifact({
+          artifactUrl: input.catalogEntry.artifact.artifactUrl ?? '',
+          expectedSha256: expectedCatalogChecksum,
+          expectedPluginId: input.catalogEntry.pluginId,
+          expectedVersion: input.catalogEntry.version,
+          offlineOnly: input.offlineOnly,
+        })
+      : undefined;
+
+  const resolvedArtifactPath = input.artifactPath ?? acquisition?.cachePath;
+  if (!resolvedArtifactPath) {
+    throw new Error('artifactPath is required when acquisitionMode is local-path');
+  }
+
+  const computedChecksum = (await computeArtifactSha256(resolvedArtifactPath)).toLowerCase();
   if (computedChecksum !== expectedCatalogChecksum) {
     throw new Error(
       `artifact checksum mismatch: expected ${expectedCatalogChecksum}, got ${computedChecksum}`
     );
   }
 
-  const inspection = await inspectTarGzArtifact(input.artifactPath);
-  const extraction = await extractTarGzToStaging(input.artifactPath);
+  const inspection = await inspectTarGzArtifact(resolvedArtifactPath);
+  const extraction = await extractTarGzToStaging(resolvedArtifactPath);
 
   try {
     if (extraction.validation.pluginId !== input.descriptor.expectedPluginId) {
@@ -237,6 +256,7 @@ export async function executeFirstPartyMarketplaceInstall(
             plannerSummary: plan.summary,
             inspection,
             validation: extraction.validation,
+            acquisition,
             installRoot,
             activePath,
             versionPath,
@@ -332,6 +352,7 @@ export async function executeFirstPartyMarketplaceInstall(
         plannerSummary: plan.summary,
         inspection,
         validation: extraction.validation,
+        acquisition,
         installRoot,
         activePath,
         versionPath,
