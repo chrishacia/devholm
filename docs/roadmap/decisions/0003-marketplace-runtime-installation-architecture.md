@@ -261,6 +261,24 @@ Phase 5E: Trust model expansion and policy controls
 - Non-goals: no payments, no ratings, no marketplace commerce.
 - Approval required: yes.
 
+Phase 5F: Multi-process install locking hardening (issue #72)
+
+- Objective: prevent concurrent install/update corruption by introducing per-plugin lease ownership, stale-lease recovery, and owner-only release semantics.
+- Repository: devholm.com.
+- Behavior changed: runtime install promotion is serialized per plugin across concurrent processes that share the same install root.
+- Tests: lock collision tests, owner-only release tests, stale lease recovery tests, child-process contention tests.
+- Security boundary: fail-safe on lock ambiguity; one process cannot legitimately release another process's lock.
+- Non-goals: cross-host distributed consensus, external lock services, trust model changes.
+- Approval required: yes.
+
+Deployment assumptions and limits for Phase 5F
+
+- Locking scope is per plugin and per shared install root (the `.install-locks` directory under `generated/plugins/marketplace-first-party`).
+- Safe coordination requires all installer processes to resolve the same shared filesystem path for the install root.
+- The lease protocol is designed for one host with multiple Node.js processes or containers mounting the same filesystem.
+- Cross-host coordination is not guaranteed when hosts do not share a filesystem view.
+- On lease ownership mismatch or malformed lock paths, installers fail closed rather than forcing lock deletion.
+
 Phase 6: Optional registry service evaluation
 
 - Objective: assess dedicated registry API only after Phase 5A-5E evidence.

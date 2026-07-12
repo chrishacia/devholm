@@ -10,6 +10,10 @@ import {
   startMarketplaceInstallOperation,
   updateMarketplaceInstallOperation,
 } from '@core/lib/plugin-marketplace-install-operation.server';
+import {
+  marketplaceInstallLockRoot,
+  withMarketplaceInstallLease,
+} from '@core/lib/plugin-marketplace-install-lock.server';
 import { buildMarketplaceInstallDryRunPlan } from '@core/lib/plugin-marketplace-install-planner.server';
 import { evaluateMarketplaceCapabilityContract } from '@core/lib/plugin-marketplace-capability-contract.server';
 import { verifyMarketplaceArtifactSignature } from '@core/lib/plugin-marketplace-signing.server';
@@ -40,7 +44,6 @@ interface MarketplaceFirstPartyInstallState {
 }
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
-const DEFAULT_INSTALL_LOCK_STALE_MS = 10 * 60 * 1000;
 const DEFAULT_FIRST_PARTY_INSTALL_ROOT = path.resolve(
   process.cwd(),
   'generated/plugins/marketplace-first-party'
@@ -48,10 +51,6 @@ const DEFAULT_FIRST_PARTY_INSTALL_ROOT = path.resolve(
 
 function stateFilePath(pluginInstallRoot: string): string {
   return path.join(pluginInstallRoot, 'install-state.json');
-}
-
-function lockFilePath(pluginInstallRoot: string): string {
-  return path.join(pluginInstallRoot, '.install.lock');
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {
@@ -83,55 +82,6 @@ async function writeInstallState(
   const temporaryPath = `${destinationPath}.${Date.now().toString(36)}.tmp`;
   await writeFile(temporaryPath, JSON.stringify(state, null, 2), { mode: 0o600 });
   await rename(temporaryPath, destinationPath);
-}
-
-async function withPluginInstallLock<T>(
-  pluginInstallRoot: string,
-  work: () => Promise<T>
-): Promise<T> {
-  const lockPath = lockFilePath(pluginInstallRoot);
-  const lockBody = JSON.stringify({ pid: process.pid, createdAt: Date.now() });
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      await writeFile(lockPath, lockBody, { flag: 'wx', mode: 0o600 });
-      try {
-        return await work();
-      } finally {
-        await rm(lockPath, { force: true });
-      }
-    } catch (error) {
-      const hasCode = typeof error === 'object' && error !== null && 'code' in error;
-      const code = hasCode ? (error as { code?: string }).code : undefined;
-      if (code !== 'EEXIST') {
-        throw error;
-      }
-
-      const lockRaw = await readFile(lockPath, 'utf8').catch(() => null);
-      if (!lockRaw) {
-        continue;
-      }
-
-      let lockCreatedAt: number | null = null;
-      try {
-        const parsed = JSON.parse(lockRaw) as { createdAt?: number };
-        if (typeof parsed.createdAt === 'number') {
-          lockCreatedAt = parsed.createdAt;
-        }
-      } catch {
-        lockCreatedAt = null;
-      }
-
-      if (lockCreatedAt === null || Date.now() - lockCreatedAt > DEFAULT_INSTALL_LOCK_STALE_MS) {
-        await rm(lockPath, { force: true });
-        continue;
-      }
-
-      throw new Error('install operation already in progress for this plugin');
-    }
-  }
-
-  throw new Error('failed to acquire install operation lock');
 }
 
 function assertSha256(value: string | undefined, fieldName: string): string {
@@ -353,201 +303,211 @@ export async function executeFirstPartyMarketplaceInstall(
       await mkdir(rollbacksRoot, { recursive: true, mode: 0o700 });
       await chmod(pluginInstallRoot, 0o700);
 
-      return await withPluginInstallLock(pluginInstallRoot, async () => {
-        await assertNotCancelled();
-        await advanceOperation('promote_active', 'promoting staged version to active runtime path');
-
-        const previousState = await readInstallState(pluginInstallRoot);
-
-        if (
-          previousState?.currentVersion &&
-          isVersionLessThan(extraction.validation.version, previousState.currentVersion)
-        ) {
-          throw new Error(
-            `downgrade blocked: requested ${extraction.validation.version} is older than installed ${previousState.currentVersion}`
+      return await withMarketplaceInstallLease(
+        {
+          lockRoot: marketplaceInstallLockRoot(installRoot),
+          pluginId: extraction.validation.pluginId,
+          operationId: operation.operationId,
+        },
+        async () => {
+          await assertNotCancelled();
+          await advanceOperation(
+            'promote_active',
+            'promoting staged version to active runtime path'
           );
-        }
 
-        const capabilityContract = evaluateMarketplaceCapabilityContract(
-          previousState?.capabilitySnapshot ?? null,
-          extraction.validation.capabilitySnapshot
-        );
-        const capabilityPlan = buildMarketplaceInstallDryRunPlan({
-          descriptor: input.descriptor,
-          catalogEntry: input.catalogEntry,
-          trustedKeys,
-          capabilityContract: {
-            approvals: capabilityContract.approvals,
-            blockers: capabilityContract.blockers,
-          },
-        });
-        if (capabilityPlan.outcome === 'blocked') {
-          throw new Error(`planner blocked runtime install: ${capabilityPlan.summary}`);
-        }
-        if (capabilityPlan.outcome === 'approval-required' && !input.explicitAdminApproval) {
-          throw new Error(`planner blocked runtime install: ${capabilityPlan.summary}`);
-        }
+          const previousState = await readInstallState(pluginInstallRoot);
 
-        if (previousState?.currentVersion === extraction.validation.version) {
-          if (previousState.currentSha256 === computedChecksum) {
-            const completed = await completeMarketplaceInstallOperation({
-              installRoot,
-              pluginId: extraction.validation.pluginId,
-              note: 'idempotent completion: same version and digest already installed',
-            });
-            if (completed) {
-              operation = completed;
+          if (
+            previousState?.currentVersion &&
+            isVersionLessThan(extraction.validation.version, previousState.currentVersion)
+          ) {
+            throw new Error(
+              `downgrade blocked: requested ${extraction.validation.version} is older than installed ${previousState.currentVersion}`
+            );
+          }
+
+          const capabilityContract = evaluateMarketplaceCapabilityContract(
+            previousState?.capabilitySnapshot ?? null,
+            extraction.validation.capabilitySnapshot
+          );
+          const capabilityPlan = buildMarketplaceInstallDryRunPlan({
+            descriptor: input.descriptor,
+            catalogEntry: input.catalogEntry,
+            trustedKeys,
+            capabilityContract: {
+              approvals: capabilityContract.approvals,
+              blockers: capabilityContract.blockers,
+            },
+          });
+          if (capabilityPlan.outcome === 'blocked') {
+            throw new Error(`planner blocked runtime install: ${capabilityPlan.summary}`);
+          }
+          if (capabilityPlan.outcome === 'approval-required' && !input.explicitAdminApproval) {
+            throw new Error(`planner blocked runtime install: ${capabilityPlan.summary}`);
+          }
+
+          if (previousState?.currentVersion === extraction.validation.version) {
+            if (previousState.currentSha256 === computedChecksum) {
+              const completed = await completeMarketplaceInstallOperation({
+                installRoot,
+                pluginId: extraction.validation.pluginId,
+                note: 'idempotent completion: same version and digest already installed',
+              });
+              if (completed) {
+                operation = completed;
+              }
+
+              return {
+                pluginId: extraction.validation.pluginId,
+                version: extraction.validation.version,
+                sha256: computedChecksum,
+                plannerSummary: capabilityPlan.summary,
+                inspection,
+                validation: extraction.validation,
+                capabilityContract,
+                acquisition: acquisition
+                  ? {
+                      ...acquisition,
+                      trust: trustVerification,
+                    }
+                  : undefined,
+                operation,
+                installRoot,
+                activePath,
+                versionPath,
+                previousVersion: previousState.previousVersion,
+                rollbackPath: previousState.previousPath,
+                lifecycleExecution: 'skipped' as const,
+                migrationExecution: 'skipped' as const,
+                installedAt: previousState.updatedAt,
+                trust: trustVerification,
+              };
             }
 
-            return {
-              pluginId: extraction.validation.pluginId,
-              version: extraction.validation.version,
-              sha256: computedChecksum,
-              plannerSummary: capabilityPlan.summary,
-              inspection,
-              validation: extraction.validation,
-              capabilityContract,
-              acquisition: acquisition
-                ? {
-                    ...acquisition,
-                    trust: trustVerification,
-                  }
-                : undefined,
-              operation,
-              installRoot,
-              activePath,
-              versionPath,
-              previousVersion: previousState.previousVersion,
-              rollbackPath: previousState.previousPath,
-              lifecycleExecution: 'skipped' as const,
-              migrationExecution: 'skipped' as const,
-              installedAt: previousState.updatedAt,
+            throw new Error(
+              `same-version conflict: ${extraction.validation.pluginId}@${extraction.validation.version} is already installed with a different digest`
+            );
+          }
+
+          if (await pathExists(versionPath)) {
+            throw new Error(
+              `version ${extraction.validation.version} is already installed for plugin ${extraction.validation.pluginId}`
+            );
+          }
+
+          const packageSourceRoot = path.join(
+            extraction.stagingDirectory,
+            extraction.validation.packageRoot
+          );
+          await cp(packageSourceRoot, versionPath, {
+            recursive: true,
+            errorOnExist: true,
+            force: false,
+          });
+
+          const stagedActivePath = path.join(
+            pluginInstallRoot,
+            `.active-next-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`
+          );
+
+          await cp(versionPath, stagedActivePath, {
+            recursive: true,
+            errorOnExist: true,
+            force: false,
+          });
+
+          let rollbackPath: string | null = null;
+          const hadActivePath = await pathExists(activePath);
+
+          if (hadActivePath) {
+            rollbackPath = path.join(
+              rollbacksRoot,
+              `${previousState?.currentVersion ?? 'unknown'}-${Date.now().toString(36)}`
+            );
+            await rename(activePath, rollbackPath);
+          }
+
+          try {
+            await rename(stagedActivePath, activePath);
+          } catch (error) {
+            await rm(stagedActivePath, { recursive: true, force: true });
+            await rm(versionPath, { recursive: true, force: true });
+            if (rollbackPath && (await pathExists(rollbackPath))) {
+              await rename(rollbackPath, activePath);
+            }
+            throw error;
+          }
+
+          await advanceOperation(
+            'write_metadata',
+            'writing install metadata for active plugin state'
+          );
+
+          const installedAt = new Date().toISOString();
+          const nextState: MarketplaceFirstPartyInstallState = {
+            pluginId: extraction.validation.pluginId,
+            currentVersion: extraction.validation.version,
+            currentSha256: computedChecksum,
+            currentPath: activePath,
+            previousVersion: previousState?.currentVersion ?? null,
+            previousPath: rollbackPath,
+            capabilitySnapshot: extraction.validation.capabilitySnapshot,
+            trust: trustVerification,
+            updatedAt: installedAt,
+            updatedBy: input.initiatedBy,
+          };
+
+          try {
+            await writeInstallState(pluginInstallRoot, nextState);
+          } catch (error) {
+            await rm(activePath, { recursive: true, force: true });
+            await rm(versionPath, { recursive: true, force: true });
+            if (rollbackPath && (await pathExists(rollbackPath))) {
+              await rename(rollbackPath, activePath);
+            }
+            throw error;
+          }
+
+          const completed = await completeMarketplaceInstallOperation({
+            installRoot,
+            pluginId: extraction.validation.pluginId,
+            note: 'operation completed successfully',
+          });
+          if (completed) {
+            operation = {
+              ...completed,
               trust: trustVerification,
             };
           }
 
-          throw new Error(
-            `same-version conflict: ${extraction.validation.pluginId}@${extraction.validation.version} is already installed with a different digest`
-          );
-        }
-
-        if (await pathExists(versionPath)) {
-          throw new Error(
-            `version ${extraction.validation.version} is already installed for plugin ${extraction.validation.pluginId}`
-          );
-        }
-
-        const packageSourceRoot = path.join(
-          extraction.stagingDirectory,
-          extraction.validation.packageRoot
-        );
-        await cp(packageSourceRoot, versionPath, {
-          recursive: true,
-          errorOnExist: true,
-          force: false,
-        });
-
-        const stagedActivePath = path.join(
-          pluginInstallRoot,
-          `.active-next-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`
-        );
-
-        await cp(versionPath, stagedActivePath, {
-          recursive: true,
-          errorOnExist: true,
-          force: false,
-        });
-
-        let rollbackPath: string | null = null;
-        const hadActivePath = await pathExists(activePath);
-
-        if (hadActivePath) {
-          rollbackPath = path.join(
-            rollbacksRoot,
-            `${previousState?.currentVersion ?? 'unknown'}-${Date.now().toString(36)}`
-          );
-          await rename(activePath, rollbackPath);
-        }
-
-        try {
-          await rename(stagedActivePath, activePath);
-        } catch (error) {
-          await rm(stagedActivePath, { recursive: true, force: true });
-          await rm(versionPath, { recursive: true, force: true });
-          if (rollbackPath && (await pathExists(rollbackPath))) {
-            await rename(rollbackPath, activePath);
-          }
-          throw error;
-        }
-
-        await advanceOperation(
-          'write_metadata',
-          'writing install metadata for active plugin state'
-        );
-
-        const installedAt = new Date().toISOString();
-        const nextState: MarketplaceFirstPartyInstallState = {
-          pluginId: extraction.validation.pluginId,
-          currentVersion: extraction.validation.version,
-          currentSha256: computedChecksum,
-          currentPath: activePath,
-          previousVersion: previousState?.currentVersion ?? null,
-          previousPath: rollbackPath,
-          capabilitySnapshot: extraction.validation.capabilitySnapshot,
-          trust: trustVerification,
-          updatedAt: installedAt,
-          updatedBy: input.initiatedBy,
-        };
-
-        try {
-          await writeInstallState(pluginInstallRoot, nextState);
-        } catch (error) {
-          await rm(activePath, { recursive: true, force: true });
-          await rm(versionPath, { recursive: true, force: true });
-          if (rollbackPath && (await pathExists(rollbackPath))) {
-            await rename(rollbackPath, activePath);
-          }
-          throw error;
-        }
-
-        const completed = await completeMarketplaceInstallOperation({
-          installRoot,
-          pluginId: extraction.validation.pluginId,
-          note: 'operation completed successfully',
-        });
-        if (completed) {
-          operation = {
-            ...completed,
+          return {
+            pluginId: extraction.validation.pluginId,
+            version: extraction.validation.version,
+            sha256: computedChecksum,
+            plannerSummary: capabilityPlan.summary,
+            inspection,
+            validation: extraction.validation,
+            capabilityContract,
+            acquisition: acquisition
+              ? {
+                  ...acquisition,
+                  trust: trustVerification,
+                }
+              : undefined,
+            operation,
+            installRoot,
+            activePath,
+            versionPath,
+            previousVersion: nextState.previousVersion,
+            rollbackPath: nextState.previousPath,
+            lifecycleExecution: 'skipped',
+            migrationExecution: 'skipped',
+            installedAt,
             trust: trustVerification,
           };
         }
-
-        return {
-          pluginId: extraction.validation.pluginId,
-          version: extraction.validation.version,
-          sha256: computedChecksum,
-          plannerSummary: capabilityPlan.summary,
-          inspection,
-          validation: extraction.validation,
-          capabilityContract,
-          acquisition: acquisition
-            ? {
-                ...acquisition,
-                trust: trustVerification,
-              }
-            : undefined,
-          operation,
-          installRoot,
-          activePath,
-          versionPath,
-          previousVersion: nextState.previousVersion,
-          rollbackPath: nextState.previousPath,
-          lifecycleExecution: 'skipped',
-          migrationExecution: 'skipped',
-          installedAt,
-          trust: trustVerification,
-        };
-      });
+      );
     } finally {
       await rm(extraction.stagingDirectory, { recursive: true, force: true });
     }
