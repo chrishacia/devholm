@@ -18,6 +18,57 @@ import {
   evaluatePluginSandboxAccess,
   recordPluginSandboxDecision,
 } from '@core/lib/plugin-capability-sandbox.server';
+import {
+  runIsolatedPublicRouteHandle,
+  runIsolatedPublicRouteMatch,
+  shouldUseIsolatedRuntimeForExtension,
+} from '@core/lib/plugin-isolation-runtime.server';
+
+function withIsolationBoundary(extension: (typeof publicRouteExtensions)[number]) {
+  if (
+    !shouldUseIsolatedRuntimeForExtension({
+      pluginId: extension.pluginId,
+      accessPolicy: extension.accessPolicy,
+    })
+  ) {
+    return extension;
+  }
+
+  return {
+    ...extension,
+    match: async (pathname: string, request: NextRequest) => {
+      const result = await runIsolatedPublicRouteMatch({
+        pluginId: extension.pluginId!,
+        extensionId: extension.id,
+        pathname,
+        request,
+      });
+
+      if (!result.matched) {
+        return null;
+      }
+
+      return result.match;
+    },
+    handle: async (match: unknown, request: NextRequest) => {
+      const result = await runIsolatedPublicRouteHandle({
+        pluginId: extension.pluginId!,
+        extensionId: extension.id,
+        match,
+        request,
+      });
+
+      console.info('plugin runtime isolated public-route execution', {
+        pluginId: extension.pluginId,
+        extensionId: extension.id,
+        executionId: result.meta.executionId,
+        childPid: result.meta.childPid,
+      });
+
+      return result.response;
+    },
+  };
+}
 
 /**
  * Export factory for testing
@@ -29,7 +80,7 @@ export function createPublicRouteDispatcherDependencies(): PublicRouteDispatcher
   const edgeSafeHelpers = {} as ExtensionHelpers;
 
   return {
-    extensions: publicRouteExtensions,
+    extensions: publicRouteExtensions.map(withIsolationBoundary),
     isPluginEnabled: async () => true,
     authorizeExtension: async (extension) => {
       const decision = await evaluatePluginSandboxAccess({
