@@ -335,4 +335,181 @@ describe('plugin-marketplace-install-execution: first-party runtime install', ()
     await rm(path.dirname(artifactV2.artifactPath), { recursive: true, force: true });
     await rm(installRoot, { recursive: true, force: true });
   });
+
+  it('returns idempotent success for same version and same digest', async () => {
+    const installRoot = await mkdtemp(path.join(os.tmpdir(), 'devholm-marketplace-idempotent-'));
+
+    const artifact = await createTarGzArtifact([
+      { path: 'plugins/', type: 'directory' },
+      { path: 'plugins/calendar/', type: 'directory' },
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.1.0',
+            pluginSubdirectory: 'plugins/calendar',
+          }),
+          'utf8'
+        ),
+      },
+    ]);
+
+    const first = await executeFirstPartyMarketplaceInstall({
+      descriptor: descriptorFor('0.1.0', artifact.sha256),
+      catalogEntry: baseCatalogEntry('0.1.0', artifact.sha256),
+      artifactPath: artifact.artifactPath,
+      explicitAdminApproval: true,
+      generatedPluginsRoot: installRoot,
+    });
+
+    const second = await executeFirstPartyMarketplaceInstall({
+      descriptor: descriptorFor('0.1.0', artifact.sha256),
+      catalogEntry: baseCatalogEntry('0.1.0', artifact.sha256),
+      artifactPath: artifact.artifactPath,
+      explicitAdminApproval: true,
+      generatedPluginsRoot: installRoot,
+    });
+
+    expect(second.version).toBe(first.version);
+    expect(second.sha256).toBe(first.sha256);
+    expect(second.activePath).toBe(first.activePath);
+
+    await rm(path.dirname(artifact.artifactPath), { recursive: true, force: true });
+    await rm(installRoot, { recursive: true, force: true });
+  });
+
+  it('rejects same-version install when digest differs', async () => {
+    const installRoot = await mkdtemp(path.join(os.tmpdir(), 'devholm-marketplace-conflict-'));
+
+    const artifactV1 = await createTarGzArtifact([
+      { path: 'plugins/', type: 'directory' },
+      { path: 'plugins/calendar/', type: 'directory' },
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.1.0',
+            pluginSubdirectory: 'plugins/calendar',
+          }),
+          'utf8'
+        ),
+      },
+      {
+        path: 'plugins/calendar/README.md',
+        type: 'file',
+        content: Buffer.from('digest-a', 'utf8'),
+      },
+    ]);
+
+    const artifactV1DifferentDigest = await createTarGzArtifact([
+      { path: 'plugins/', type: 'directory' },
+      { path: 'plugins/calendar/', type: 'directory' },
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.1.0',
+            pluginSubdirectory: 'plugins/calendar',
+          }),
+          'utf8'
+        ),
+      },
+      {
+        path: 'plugins/calendar/README.md',
+        type: 'file',
+        content: Buffer.from('digest-b', 'utf8'),
+      },
+    ]);
+
+    await executeFirstPartyMarketplaceInstall({
+      descriptor: descriptorFor('0.1.0', artifactV1.sha256),
+      catalogEntry: baseCatalogEntry('0.1.0', artifactV1.sha256),
+      artifactPath: artifactV1.artifactPath,
+      explicitAdminApproval: true,
+      generatedPluginsRoot: installRoot,
+    });
+
+    await expect(
+      executeFirstPartyMarketplaceInstall({
+        descriptor: descriptorFor('0.1.0', artifactV1DifferentDigest.sha256),
+        catalogEntry: baseCatalogEntry('0.1.0', artifactV1DifferentDigest.sha256),
+        artifactPath: artifactV1DifferentDigest.artifactPath,
+        explicitAdminApproval: true,
+        generatedPluginsRoot: installRoot,
+      })
+    ).rejects.toThrow(/same-version conflict/i);
+
+    await rm(path.dirname(artifactV1.artifactPath), { recursive: true, force: true });
+    await rm(path.dirname(artifactV1DifferentDigest.artifactPath), {
+      recursive: true,
+      force: true,
+    });
+    await rm(installRoot, { recursive: true, force: true });
+  });
+
+  it('blocks downgrade after a newer version is installed', async () => {
+    const installRoot = await mkdtemp(path.join(os.tmpdir(), 'devholm-marketplace-downgrade-'));
+
+    const artifactV2 = await createTarGzArtifact([
+      { path: 'plugins/', type: 'directory' },
+      { path: 'plugins/calendar/', type: 'directory' },
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.2.0',
+            pluginSubdirectory: 'plugins/calendar',
+          }),
+          'utf8'
+        ),
+      },
+    ]);
+
+    const artifactV1 = await createTarGzArtifact([
+      { path: 'plugins/', type: 'directory' },
+      { path: 'plugins/calendar/', type: 'directory' },
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.1.0',
+            pluginSubdirectory: 'plugins/calendar',
+          }),
+          'utf8'
+        ),
+      },
+    ]);
+
+    await executeFirstPartyMarketplaceInstall({
+      descriptor: descriptorFor('0.2.0', artifactV2.sha256),
+      catalogEntry: baseCatalogEntry('0.2.0', artifactV2.sha256),
+      artifactPath: artifactV2.artifactPath,
+      explicitAdminApproval: true,
+      generatedPluginsRoot: installRoot,
+    });
+
+    await expect(
+      executeFirstPartyMarketplaceInstall({
+        descriptor: descriptorFor('0.1.0', artifactV1.sha256),
+        catalogEntry: baseCatalogEntry('0.1.0', artifactV1.sha256),
+        artifactPath: artifactV1.artifactPath,
+        explicitAdminApproval: true,
+        generatedPluginsRoot: installRoot,
+      })
+    ).rejects.toThrow(/downgrade blocked/i);
+
+    await rm(path.dirname(artifactV2.artifactPath), { recursive: true, force: true });
+    await rm(path.dirname(artifactV1.artifactPath), { recursive: true, force: true });
+    await rm(installRoot, { recursive: true, force: true });
+  });
 });
