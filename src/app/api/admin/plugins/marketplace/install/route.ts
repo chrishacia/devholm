@@ -8,6 +8,10 @@ import type {
   MarketplaceInstallSourceDescriptorInput,
 } from '@core/types/plugin-marketplace-contract';
 
+function isMarketplaceExecutionEnabled(): boolean {
+  return process.env.DEVHOLM_MARKETPLACE_FIRST_PARTY_INSTALL_ENABLED === 'true';
+}
+
 const requestSchema = z.object({
   descriptor: z.record(z.any()),
   catalogEntry: z.record(z.any()),
@@ -35,6 +39,13 @@ export async function POST(request: NextRequest) {
   const token = await verifyAdmin(request);
   if (!token) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  if (!isMarketplaceExecutionEnabled()) {
+    return NextResponse.json(
+      { error: 'Marketplace first-party runtime install execution is disabled' },
+      { status: 403 }
+    );
   }
 
   try {

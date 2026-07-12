@@ -22,6 +22,7 @@ import { POST } from './route';
 describe('admin marketplace install route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.DEVHOLM_MARKETPLACE_FIRST_PARTY_INSTALL_ENABLED = 'true';
     verifyAdmin.mockResolvedValue({
       sub: 'admin-123',
       email: 'admin@example.com',
@@ -85,6 +86,28 @@ describe('admin marketplace install route', () => {
 
     const response = await POST(request);
     expect(response.status).toBe(401);
+  });
+
+  it('rejects execution when marketplace runtime install feature gate is disabled', async () => {
+    process.env.DEVHOLM_MARKETPLACE_FIRST_PARTY_INSTALL_ENABLED = 'false';
+
+    const request = new NextRequest('http://localhost:3000/api/admin/plugins/marketplace/install', {
+      method: 'POST',
+      body: JSON.stringify({
+        descriptor: {},
+        catalogEntry: {},
+        artifactPath: '/tmp/calendar-v0.1.0.tar.gz',
+        explicitAdminApproval: true,
+      }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.error).toContain('disabled');
+    expect(executeFirstPartyMarketplaceInstall).not.toHaveBeenCalled();
   });
 
   it('executes install with explicit approval and initiatedBy identity', async () => {
