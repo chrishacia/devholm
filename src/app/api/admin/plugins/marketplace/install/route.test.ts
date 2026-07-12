@@ -261,4 +261,32 @@ describe('admin marketplace install route', () => {
     expect(response.status).toBe(409);
     expect(body.error).toContain('planner blocked runtime install');
   });
+
+  it('returns forbidden when execution service reports disabled gate', async () => {
+    executeFirstPartyMarketplaceInstall.mockRejectedValue(
+      new Error('Marketplace first-party runtime install execution is disabled')
+    );
+
+    const request = new NextRequest('http://localhost:3000/api/admin/plugins/marketplace/install', {
+      method: 'POST',
+      body: JSON.stringify({
+        descriptor: {
+          sourceType: 'marketplace',
+          repoUrl: 'https://github.com/chrishacia/devholm-plugins',
+          ref: 'refs/tags/calendar-v0.1.0',
+          pluginSubdirectory: 'plugins/calendar',
+          manifestPath: 'plugins/calendar/manifest.json',
+          expectedPluginId: 'calendar',
+          expectedVersion: '0.1.0',
+        },
+        catalogEntry: { pluginId: 'calendar' },
+        artifactPath: '/tmp/calendar-v0.1.0.tar.gz',
+        explicitAdminApproval: true,
+      }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(403);
+  });
 });

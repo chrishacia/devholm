@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { parseMarketplaceInstallSourceDescriptor } from '@core/lib/plugin-install-source-descriptor.server';
 import { executeFirstPartyMarketplaceInstall } from '@core/lib/plugin-marketplace-install-execution.server';
 import type { MarketplaceCatalogEntry } from '@core/types/plugin-marketplace-contract';
@@ -144,6 +144,41 @@ function descriptorFor(version: string, sha256: string) {
 }
 
 describe('plugin-marketplace-install-execution: first-party runtime install', () => {
+  beforeEach(() => {
+    process.env.DEVHOLM_MARKETPLACE_FIRST_PARTY_INSTALL_ENABLED = 'true';
+  });
+
+  it('blocks execution when runtime install gate is disabled', async () => {
+    process.env.DEVHOLM_MARKETPLACE_FIRST_PARTY_INSTALL_ENABLED = 'false';
+    const { artifactPath, sha256 } = await createTarGzArtifact([
+      { path: 'plugins/', type: 'directory' },
+      { path: 'plugins/calendar/', type: 'directory' },
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.1.0',
+            pluginSubdirectory: 'plugins/calendar',
+          }),
+          'utf8'
+        ),
+      },
+    ]);
+
+    await expect(
+      executeFirstPartyMarketplaceInstall({
+        descriptor: descriptorFor('0.1.0', sha256),
+        catalogEntry: baseCatalogEntry('0.1.0', sha256),
+        artifactPath,
+        explicitAdminApproval: true,
+      })
+    ).rejects.toThrow(/disabled/i);
+
+    await rm(path.dirname(artifactPath), { recursive: true, force: true });
+  });
+
   it('requires explicit admin approval', async () => {
     const { artifactPath, sha256 } = await createTarGzArtifact([
       { path: 'plugins/', type: 'directory' },

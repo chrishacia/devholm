@@ -1,6 +1,6 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import {
   cancelMarketplaceInstallOperation,
@@ -43,6 +43,34 @@ describe('plugin-marketplace-install-operation', () => {
   it('marks stale in-progress operations as interrupted during reconciliation', async () => {
     const installRoot = await mkdtemp(path.join(os.tmpdir(), 'devholm-marketplace-op-reconcile-'));
 
+    const operation = await startMarketplaceInstallOperation({
+      installRoot,
+      pluginId: 'calendar',
+      targetVersion: '0.1.0',
+      targetSha256: 'a'.repeat(64),
+      acquisitionMode: 'remote-first-party',
+      offlineOnly: false,
+    });
+
+    const operationPath = path.join(installRoot, 'calendar', '.install-operation.json');
+    const staleOperation = {
+      ...operation,
+      updatedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    };
+    await writeFile(operationPath, JSON.stringify(staleOperation, null, 2), 'utf8');
+
+    await ensureMarketplaceInstallStartupReconciliation(installRoot);
+
+    const reconciled = await readMarketplaceInstallOperationState(installRoot, 'calendar');
+    expect(reconciled?.status).toBe('interrupted');
+    expect(reconciled?.error).toContain('startup reconciliation');
+
+    await rm(installRoot, { recursive: true, force: true });
+  });
+
+  it('does not interrupt fresh in-progress operations during reconciliation', async () => {
+    const installRoot = await mkdtemp(path.join(os.tmpdir(), 'devholm-marketplace-op-fresh-'));
+
     await startMarketplaceInstallOperation({
       installRoot,
       pluginId: 'calendar',
@@ -54,9 +82,12 @@ describe('plugin-marketplace-install-operation', () => {
 
     await ensureMarketplaceInstallStartupReconciliation(installRoot);
 
-    const reconciled = await readMarketplaceInstallOperationState(installRoot, 'calendar');
-    expect(reconciled?.status).toBe('interrupted');
-    expect(reconciled?.error).toContain('startup reconciliation');
+    const persistedRaw = await readFile(
+      path.join(installRoot, 'calendar', '.install-operation.json'),
+      'utf8'
+    );
+    const persisted = JSON.parse(persistedRaw) as { status: string };
+    expect(persisted.status).toBe('in_progress');
 
     await rm(installRoot, { recursive: true, force: true });
   });

@@ -159,4 +159,17 @@ describe('admin marketplace install status route', () => {
     const response = await POST(request);
     expect(response.status).toBe(409);
   });
+
+  it('returns recovery-required conflict when operation state is corrupted', async () => {
+    readMarketplaceInstallOperationState.mockRejectedValue(
+      new Error('operation state file is corrupted for plugin calendar')
+    );
+
+    const request = new NextRequest(
+      'http://localhost:3000/api/admin/plugins/marketplace/install/status?pluginId=calendar'
+    );
+
+    const response = await GET(request);
+    expect(response.status).toBe(409);
+  });
 });

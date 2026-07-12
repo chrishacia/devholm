@@ -62,11 +62,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'pluginId query parameter is required' }, { status: 400 });
   }
 
-  await ensureMarketplaceInstallStartupReconciliation(DEFAULT_FIRST_PARTY_INSTALL_ROOT);
-  const operation = await readMarketplaceInstallOperationState(
-    DEFAULT_FIRST_PARTY_INSTALL_ROOT,
-    pluginId
-  );
+  let operation = null;
+  try {
+    await ensureMarketplaceInstallStartupReconciliation(DEFAULT_FIRST_PARTY_INSTALL_ROOT);
+    operation = await readMarketplaceInstallOperationState(
+      DEFAULT_FIRST_PARTY_INSTALL_ROOT,
+      pluginId
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('corrupted')) {
+      return NextResponse.json(
+        { error: 'Operation state is corrupted and requires manual recovery' },
+        { status: 409 }
+      );
+    }
+    throw error;
+  }
+
   if (!operation) {
     return NextResponse.json({ error: 'No operation state found for plugin' }, { status: 404 });
   }
@@ -99,7 +112,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  await ensureMarketplaceInstallStartupReconciliation(DEFAULT_FIRST_PARTY_INSTALL_ROOT);
+  try {
+    await ensureMarketplaceInstallStartupReconciliation(DEFAULT_FIRST_PARTY_INSTALL_ROOT);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('corrupted')) {
+      return NextResponse.json(
+        { error: 'Operation state is corrupted and requires manual recovery' },
+        { status: 409 }
+      );
+    }
+    throw error;
+  }
   const requestedBy =
     (typeof token.email === 'string' && token.email) ||
     (typeof token.sub === 'string' && token.sub) ||

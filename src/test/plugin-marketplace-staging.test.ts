@@ -314,4 +314,64 @@ describe('plugin-marketplace-staging: inspection and extraction safety', () => {
       })
     ).rejects.toThrow(/maxUncompressedBytes/i);
   });
+
+  it('rejects duplicate permission keys declared in manifest', async () => {
+    const archivePath = createTarGzFile([
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.1.0',
+            pluginSubdirectory: 'plugins/calendar',
+            permissions: [
+              {
+                key: 'calendar.read',
+                capability: 'calendar',
+                scope: 'public',
+                description: 'read',
+              },
+              {
+                key: 'calendar.read',
+                capability: 'calendar',
+                scope: 'public',
+                description: 'read duplicate',
+              },
+            ],
+          }),
+          'utf8'
+        ),
+      },
+    ]);
+
+    await expect(extractTarGzToStaging(archivePath)).rejects.toThrow(/duplicate value/i);
+  });
+
+  it('rejects unknown permission scopes', async () => {
+    const archivePath = createTarGzFile([
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.1.0',
+            pluginSubdirectory: 'plugins/calendar',
+            permissions: [
+              {
+                key: 'calendar.custom',
+                capability: 'calendar',
+                scope: 'root',
+                description: 'unsupported scope',
+              },
+            ],
+          }),
+          'utf8'
+        ),
+      },
+    ]);
+
+    await expect(extractTarGzToStaging(archivePath)).rejects.toThrow(/unknown scope/i);
+  });
 });

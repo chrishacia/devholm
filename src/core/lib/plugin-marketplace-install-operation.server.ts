@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import type {
   MarketplaceInstallOperationStage,
@@ -8,6 +8,7 @@ import type {
 } from '@core/types/plugin-marketplace-install-operation';
 
 const reconciledRoots = new Set<string>();
+const DEFAULT_STARTUP_STALE_IN_PROGRESS_MS = 5 * 60 * 1000;
 
 function operationStatePath(installRoot: string, pluginId: string): string {
   return path.join(installRoot, pluginId, '.install-operation.json');
@@ -28,13 +29,19 @@ async function writeOperationState(
 ): Promise<void> {
   const pluginRoot = path.join(installRoot, operation.pluginId);
   await mkdir(pluginRoot, { recursive: true, mode: 0o700 });
-  await writeFile(
-    operationStatePath(installRoot, operation.pluginId),
-    JSON.stringify(operation, null, 2),
-    {
-      mode: 0o600,
-    }
-  );
+  const destinationPath = operationStatePath(installRoot, operation.pluginId);
+  const temporaryPath = `${destinationPath}.${randomUUID()}.tmp`;
+  await writeFile(temporaryPath, JSON.stringify(operation, null, 2), { mode: 0o600 });
+  await rename(temporaryPath, destinationPath);
+}
+
+function isStaleInProgressOperation(operation: MarketplaceInstallOperationState): boolean {
+  const lastUpdatedAt = Date.parse(operation.updatedAt);
+  if (!Number.isFinite(lastUpdatedAt)) {
+    return true;
+  }
+
+  return Date.now() - lastUpdatedAt > DEFAULT_STARTUP_STALE_IN_PROGRESS_MS;
 }
 
 export async function readMarketplaceInstallOperationState(
@@ -47,7 +54,11 @@ export async function readMarketplaceInstallOperationState(
   }
 
   const raw = await readFile(filePath, 'utf8');
-  return JSON.parse(raw) as MarketplaceInstallOperationState;
+  try {
+    return JSON.parse(raw) as MarketplaceInstallOperationState;
+  } catch {
+    throw new Error(`operation state file is corrupted for plugin ${pluginId}`);
+  }
 }
 
 export async function ensureMarketplaceInstallStartupReconciliation(
@@ -70,7 +81,11 @@ export async function ensureMarketplaceInstallStartupReconciliation(
     }
 
     const operation = await readMarketplaceInstallOperationState(installRoot, entry.name);
-    if (!operation || operation.status !== 'in_progress') {
+    if (
+      !operation ||
+      operation.status !== 'in_progress' ||
+      !isStaleInProgressOperation(operation)
+    ) {
       continue;
     }
 
