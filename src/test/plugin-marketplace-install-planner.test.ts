@@ -7,6 +7,7 @@ import { parseMarketplaceInstallSourceDescriptor } from '@core/lib/plugin-instal
 import type { MarketplaceInstallSourceDescriptor } from '@core/types/plugin-marketplace-contract';
 import { productionEligibleCatalogFixture } from './fixtures/marketplace-catalog-fixtures';
 import { validMarketplaceInstallSourceDescriptor } from './fixtures/plugin-install-source-descriptor-fixtures';
+import { MARKETPLACE_TEST_TRUSTED_KEYS } from './fixtures/marketplace-signing-fixtures';
 
 function descriptorForFixture(overrides?: Partial<MarketplaceInstallSourceDescriptor>) {
   const parsed = parseMarketplaceInstallSourceDescriptor({
@@ -40,6 +41,7 @@ describe('plugin-marketplace-install-planner: dry-run outcomes', () => {
     const plan = buildMarketplaceInstallDryRunPlan({
       descriptor: descriptorForFixture(),
       catalogEntry: productionEligibleCatalogFixture,
+      trustedKeys: MARKETPLACE_TEST_TRUSTED_KEYS,
     });
 
     expect(plan.outcome).toBe('ready');
@@ -59,6 +61,7 @@ describe('plugin-marketplace-install-planner: dry-run outcomes', () => {
         },
       }),
       catalogEntry: productionEligibleCatalogFixture,
+      trustedKeys: MARKETPLACE_TEST_TRUSTED_KEYS,
     });
 
     expect(plan.outcome).toBe('approval-required');
@@ -75,6 +78,7 @@ describe('plugin-marketplace-install-planner: dry-run outcomes', () => {
         manifestPath: 'plugins/calendar/manifest-v2.json',
       }),
       catalogEntry: productionEligibleCatalogFixture,
+      trustedKeys: MARKETPLACE_TEST_TRUSTED_KEYS,
     });
 
     expect(plan.outcome).toBe('blocked');
@@ -98,6 +102,7 @@ describe('plugin-marketplace-install-planner: dry-run outcomes', () => {
           sha256: undefined,
         },
       },
+      trustedKeys: MARKETPLACE_TEST_TRUSTED_KEYS,
     });
 
     expect(plan.outcome).toBe('blocked');
@@ -121,6 +126,7 @@ describe('plugin-marketplace-install-planner: dry-run outcomes', () => {
           classification: 'third-party',
         },
       },
+      trustedKeys: MARKETPLACE_TEST_TRUSTED_KEYS,
     });
 
     expect(plan.outcome).toBe('blocked');
@@ -139,11 +145,25 @@ describe('plugin-marketplace-install-planner: safety guardrails', () => {
     const plan = buildMarketplaceInstallDryRunPlan({
       descriptor: descriptorForFixture(),
       catalogEntry: productionEligibleCatalogFixture,
+      trustedKeys: MARKETPLACE_TEST_TRUSTED_KEYS,
     });
 
     expect(plan.outcome).toBe('ready');
     expect(fetchSpy).not.toHaveBeenCalled();
 
     fetchSpy.mockRestore();
+  });
+
+  it('blocks runtime-ready entries when trusted keys do not verify the signature', () => {
+    const plan = buildMarketplaceInstallDryRunPlan({
+      descriptor: descriptorForFixture(),
+      catalogEntry: productionEligibleCatalogFixture,
+      trustedKeys: [],
+    });
+
+    expect(plan.outcome).toBe('blocked');
+    expect(plan.blockers.some((blocker) => blocker.code === 'artifact-signature-untrusted')).toBe(
+      true
+    );
   });
 });

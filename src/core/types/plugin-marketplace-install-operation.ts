@@ -37,4 +37,5 @@ export interface MarketplaceInstallOperationState {
   cancellation: MarketplaceInstallCancellationState;
   notes: string[];
   error?: string;
+  trust?: import('@core/types/plugin-marketplace-contract').MarketplaceArtifactTrustVerification;
 }

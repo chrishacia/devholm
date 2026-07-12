@@ -6,6 +6,7 @@ import type {
   MarketplaceInstallOperationState,
   MarketplaceInstallOperationStatus,
 } from '@core/types/plugin-marketplace-install-operation';
+import type { MarketplaceArtifactTrustVerification } from '@core/types/plugin-marketplace-contract';
 
 const reconciledRoots = new Set<string>();
 const DEFAULT_STARTUP_STALE_IN_PROGRESS_MS = 5 * 60 * 1000;
@@ -150,6 +151,7 @@ export async function updateMarketplaceInstallOperation(params: {
   note?: string;
   status?: MarketplaceInstallOperationStatus;
   error?: string;
+  trust?: MarketplaceArtifactTrustVerification;
 }): Promise<MarketplaceInstallOperationState | null> {
   const operation = await readMarketplaceInstallOperationState(params.installRoot, params.pluginId);
   if (!operation) {
@@ -165,6 +167,7 @@ export async function updateMarketplaceInstallOperation(params: {
     updatedAt: now,
     error: params.error ?? operation.error,
     notes: params.note ? [...operation.notes, params.note] : operation.notes,
+    trust: params.trust ?? operation.trust,
     finishedAt: nextStatus === 'in_progress' ? operation.finishedAt : operation.finishedAt ?? now,
   };
 

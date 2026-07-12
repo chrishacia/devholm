@@ -7,6 +7,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { parseMarketplaceInstallSourceDescriptor } from '@core/lib/plugin-install-source-descriptor.server';
 import { executeFirstPartyMarketplaceInstall } from '@core/lib/plugin-marketplace-install-execution.server';
 import type { MarketplaceCatalogEntry } from '@core/types/plugin-marketplace-contract';
+import {
+  MARKETPLACE_TEST_TRUSTED_KEYS,
+  signMarketplaceCatalogEntryForTests,
+} from './fixtures/marketplace-signing-fixtures';
 
 type TarEntry = {
   path: string;
@@ -82,7 +86,7 @@ async function createTarGzArtifact(
 }
 
 function baseCatalogEntry(version: string, sha256: string): MarketplaceCatalogEntry {
-  return {
+  const catalogEntry: MarketplaceCatalogEntry = {
     pluginId: 'calendar',
     displayName: 'Calendar',
     version,
@@ -116,6 +120,14 @@ function baseCatalogEntry(version: string, sha256: string): MarketplaceCatalogEn
       },
     },
   };
+
+  return {
+    ...catalogEntry,
+    artifact: {
+      ...catalogEntry.artifact,
+      signature: signMarketplaceCatalogEntryForTests(catalogEntry),
+    },
+  };
 }
 
 function descriptorFor(version: string, sha256: string) {
@@ -146,6 +158,9 @@ function descriptorFor(version: string, sha256: string) {
 describe('plugin-marketplace-install-execution: first-party runtime install', () => {
   beforeEach(() => {
     process.env.DEVHOLM_MARKETPLACE_FIRST_PARTY_INSTALL_ENABLED = 'true';
+    process.env.DEVHOLM_MARKETPLACE_TRUSTED_KEYS_JSON = JSON.stringify(
+      MARKETPLACE_TEST_TRUSTED_KEYS
+    );
   });
 
   it('blocks execution when runtime install gate is disabled', async () => {

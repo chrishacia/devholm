@@ -3,6 +3,7 @@ import {
   validateMarketplaceInstallSourceDescriptor,
 } from '@core/lib/plugin-install-source-descriptor.server';
 import { validateMarketplaceCatalogEntry } from '@core/lib/plugin-marketplace-contract.server';
+import { verifyMarketplaceArtifactSignature } from '@core/lib/plugin-marketplace-signing.server';
 import type {
   MarketplaceInstallPlannerApprovalRequirement,
   MarketplaceInstallPlannerBlocker,
@@ -52,6 +53,34 @@ export function buildMarketplaceInstallDryRunPlan(
     pushBlockedState(states, 'validate_catalog_entry', catalogErrors);
   } else {
     pushPassedState(states, 'validate_catalog_entry', ['catalog entry is structurally valid']);
+  }
+
+  const runtimeReady =
+    input.catalogEntry.artifact.readiness === 'available' ||
+    input.catalogEntry.installReadiness === 'production-eligible';
+  if (runtimeReady) {
+    const trust = verifyMarketplaceArtifactSignature({
+      catalogEntry: input.catalogEntry,
+      signature: input.catalogEntry.artifact.signature,
+      trustedKeys: input.trustedKeys ?? [],
+      verificationTimestamp: input.verificationTimestamp,
+    });
+
+    if (trust.trustDecision !== 'trusted') {
+      blockers.push({
+        code: 'artifact-signature-untrusted',
+        message: `artifact signature trust check failed: ${trust.verificationStatus}`,
+      });
+      pushBlockedState(states, 'verify_signature_trust', [
+        `signature trust failed (${trust.verificationStatus})`,
+      ]);
+    } else {
+      pushPassedState(states, 'verify_signature_trust', ['signature trust verified']);
+    }
+  } else {
+    pushPassedState(states, 'verify_signature_trust', [
+      'signature trust check skipped for non-runtime-ready entry',
+    ]);
   }
 
   const consistencyNotes: string[] = [];

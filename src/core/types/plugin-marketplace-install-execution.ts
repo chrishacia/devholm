@@ -2,6 +2,7 @@ import type {
   MarketplaceCatalogEntry,
   MarketplaceInstallSourceDescriptor,
 } from '@core/types/plugin-marketplace-contract';
+import type { MarketplaceArtifactTrustVerification } from '@core/types/plugin-marketplace-contract';
 import type {
   MarketplaceArchiveInspection,
   MarketplaceStagedPackageValidationSummary,
@@ -39,4 +40,5 @@ export interface MarketplaceFirstPartyInstallExecutionResult {
   lifecycleExecution: 'skipped';
   migrationExecution: 'skipped';
   installedAt: string;
+  trust?: MarketplaceArtifactTrustVerification;
 }

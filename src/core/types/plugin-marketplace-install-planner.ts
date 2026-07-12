@@ -1,11 +1,13 @@
 import type {
   MarketplaceCatalogEntry,
   MarketplaceInstallSourceDescriptor,
+  MarketplaceTrustedMarketplaceKeyRecord,
 } from '@core/types/plugin-marketplace-contract';
 
 export type MarketplaceInstallPlannerStateId =
   | 'validate_descriptor'
   | 'validate_catalog_entry'
+  | 'verify_signature_trust'
   | 'consistency_checks'
   | 'approval_gate'
   | 'ready_for_staging';
@@ -35,6 +37,7 @@ export interface MarketplaceInstallPlannerBlocker {
     | 'artifact-missing-sha256'
     | 'artifact-not-immutable'
     | 'third-party-production-blocked'
+    | 'artifact-signature-untrusted'
     | 'capability-escalation-blocked';
   message: string;
 }
@@ -50,6 +53,8 @@ export type MarketplaceInstallPlannerOutcome = 'blocked' | 'approval-required' |
 export interface MarketplaceInstallPlannerInput {
   descriptor: MarketplaceInstallSourceDescriptor;
   catalogEntry: MarketplaceCatalogEntry;
+  trustedKeys?: MarketplaceTrustedMarketplaceKeyRecord[];
+  verificationTimestamp?: string;
   capabilityContract?: {
     approvals?: string[];
     blockers?: string[];

@@ -133,6 +133,20 @@ export async function POST(request: NextRequest) {
               warnings: result.acquisition.warnings,
               blockers: result.acquisition.blockers,
               readyForStaging: result.acquisition.readyForStaging,
+              trust: result.acquisition.trust
+                ? {
+                    keyId: result.acquisition.trust.keyId,
+                    algorithm: result.acquisition.trust.algorithm,
+                    signedPayloadVersion: result.acquisition.trust.signedPayloadVersion,
+                    signedPayloadSha256: result.acquisition.trust.signedPayloadSha256,
+                    verificationTimestamp: result.acquisition.trust.verificationTimestamp,
+                    trustDecision: result.acquisition.trust.trustDecision,
+                    verificationStatus: result.acquisition.trust.verificationStatus,
+                    publisherId: result.acquisition.trust.publisherId,
+                    revocationState: result.acquisition.trust.revocationState,
+                    notes: result.acquisition.trust.notes,
+                  }
+                : undefined,
             }
           : undefined,
         operation: {
@@ -145,6 +159,20 @@ export async function POST(request: NextRequest) {
           cancellation: result.operation.cancellation,
           notes: result.operation.notes,
           error: result.operation.error,
+          trust: result.operation.trust
+            ? {
+                keyId: result.operation.trust.keyId,
+                algorithm: result.operation.trust.algorithm,
+                signedPayloadVersion: result.operation.trust.signedPayloadVersion,
+                signedPayloadSha256: result.operation.trust.signedPayloadSha256,
+                verificationTimestamp: result.operation.trust.verificationTimestamp,
+                trustDecision: result.operation.trust.trustDecision,
+                verificationStatus: result.operation.trust.verificationStatus,
+                publisherId: result.operation.trust.publisherId,
+                revocationState: result.operation.trust.revocationState,
+                notes: result.operation.trust.notes,
+              }
+            : undefined,
         },
       },
       notes: [

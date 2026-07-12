@@ -12,6 +12,8 @@ import {
 } from '@core/lib/plugin-marketplace-install-operation.server';
 import { buildMarketplaceInstallDryRunPlan } from '@core/lib/plugin-marketplace-install-planner.server';
 import { evaluateMarketplaceCapabilityContract } from '@core/lib/plugin-marketplace-capability-contract.server';
+import { verifyMarketplaceArtifactSignature } from '@core/lib/plugin-marketplace-signing.server';
+import { loadTrustedMarketplaceKeysFromEnv } from '@core/lib/plugin-marketplace-trusted-keys.server';
 import {
   computeArtifactSha256,
   extractTarGzToStaging,
@@ -22,6 +24,7 @@ import type {
   MarketplaceFirstPartyInstallExecutionResult,
 } from '@core/types/plugin-marketplace-install-execution';
 import type { MarketplaceCapabilitySnapshot } from '@core/types/plugin-marketplace-capability-contract';
+import type { MarketplaceArtifactTrustVerification } from '@core/types/plugin-marketplace-contract';
 
 interface MarketplaceFirstPartyInstallState {
   pluginId: string;
@@ -31,6 +34,7 @@ interface MarketplaceFirstPartyInstallState {
   previousVersion: string | null;
   previousPath: string | null;
   capabilitySnapshot?: MarketplaceCapabilitySnapshot;
+  trust?: MarketplaceArtifactTrustVerification;
   updatedAt: string;
   updatedBy?: string;
 }
@@ -153,9 +157,12 @@ export async function executeFirstPartyMarketplaceInstall(
     throw new Error('explicit admin approval is required for first-party runtime install');
   }
 
+  const trustedKeys = loadTrustedMarketplaceKeysFromEnv();
+
   const plan = buildMarketplaceInstallDryRunPlan({
     descriptor: input.descriptor,
     catalogEntry: input.catalogEntry,
+    trustedKeys,
   });
 
   if (plan.outcome === 'blocked') {
@@ -272,6 +279,34 @@ export async function executeFirstPartyMarketplaceInstall(
       );
     }
 
+    const trustVerification = verifyMarketplaceArtifactSignature({
+      catalogEntry: input.catalogEntry,
+      signature: input.catalogEntry.artifact.signature,
+      trustedKeys,
+    });
+
+    if (
+      input.catalogEntry.artifact.readiness === 'available' ||
+      input.catalogEntry.installReadiness === 'production-eligible'
+    ) {
+      if (trustVerification.trustDecision !== 'trusted') {
+        throw new Error(
+          `artifact signature verification failed: ${trustVerification.verificationStatus}`
+        );
+      }
+    }
+
+    const trustedOperation = await updateMarketplaceInstallOperation({
+      installRoot,
+      pluginId: input.catalogEntry.pluginId,
+      stage: 'verify_artifact',
+      note: 'artifact signature verification completed',
+      trust: trustVerification,
+    });
+    if (trustedOperation) {
+      operation = trustedOperation;
+    }
+
     await advanceOperation('stage_and_validate', 'staging and validating plugin package');
     const inspection = await inspectTarGzArtifact(resolvedArtifactPath);
     const extraction = await extractTarGzToStaging(resolvedArtifactPath);
@@ -340,6 +375,7 @@ export async function executeFirstPartyMarketplaceInstall(
         const capabilityPlan = buildMarketplaceInstallDryRunPlan({
           descriptor: input.descriptor,
           catalogEntry: input.catalogEntry,
+          trustedKeys,
           capabilityContract: {
             approvals: capabilityContract.approvals,
             blockers: capabilityContract.blockers,
@@ -371,7 +407,12 @@ export async function executeFirstPartyMarketplaceInstall(
               inspection,
               validation: extraction.validation,
               capabilityContract,
-              acquisition,
+              acquisition: acquisition
+                ? {
+                    ...acquisition,
+                    trust: trustVerification,
+                  }
+                : undefined,
               operation,
               installRoot,
               activePath,
@@ -381,6 +422,7 @@ export async function executeFirstPartyMarketplaceInstall(
               lifecycleExecution: 'skipped' as const,
               migrationExecution: 'skipped' as const,
               installedAt: previousState.updatedAt,
+              trust: trustVerification,
             };
           }
 
@@ -452,6 +494,7 @@ export async function executeFirstPartyMarketplaceInstall(
           previousVersion: previousState?.currentVersion ?? null,
           previousPath: rollbackPath,
           capabilitySnapshot: extraction.validation.capabilitySnapshot,
+          trust: trustVerification,
           updatedAt: installedAt,
           updatedBy: input.initiatedBy,
         };
@@ -473,7 +516,10 @@ export async function executeFirstPartyMarketplaceInstall(
           note: 'operation completed successfully',
         });
         if (completed) {
-          operation = completed;
+          operation = {
+            ...completed,
+            trust: trustVerification,
+          };
         }
 
         return {
@@ -484,7 +530,12 @@ export async function executeFirstPartyMarketplaceInstall(
           inspection,
           validation: extraction.validation,
           capabilityContract,
-          acquisition,
+          acquisition: acquisition
+            ? {
+                ...acquisition,
+                trust: trustVerification,
+              }
+            : undefined,
           operation,
           installRoot,
           activePath,
@@ -494,6 +545,7 @@ export async function executeFirstPartyMarketplaceInstall(
           lifecycleExecution: 'skipped',
           migrationExecution: 'skipped',
           installedAt,
+          trust: trustVerification,
         };
       });
     } finally {
