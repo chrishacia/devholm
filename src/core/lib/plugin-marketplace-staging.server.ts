@@ -249,6 +249,17 @@ function normalizeManifestPluginSubdirectory(pluginSubdirectory: string): string
   return normalized;
 }
 
+function uniqueSortedStringArray(values: unknown[]): string[] {
+  return [
+    ...new Set(
+      values
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean)
+    ),
+  ].sort();
+}
+
 async function validateExtractedPackage(
   stagingDirectory: string,
   extractedFiles: string[]
@@ -307,12 +318,59 @@ async function validateExtractedPackage(
     : [];
 
   const migrations = Array.isArray(manifest.migrations) ? (manifest.migrations as unknown[]) : [];
+  const permissions = Array.isArray(manifest.permissions)
+    ? (manifest.permissions as Record<string, unknown>[])
+    : [];
+  const settings = Array.isArray(manifest.settings)
+    ? (manifest.settings as Record<string, unknown>[])
+    : [];
+
+  const permissionKeys = uniqueSortedStringArray(
+    permissions
+      .map((permission) => permission.key)
+      .filter((value): value is string => typeof value === 'string')
+  );
+  const capabilities = uniqueSortedStringArray(
+    permissions
+      .map((permission) => permission.capability)
+      .filter((value): value is string => typeof value === 'string')
+  );
+  const scopes = uniqueSortedStringArray(
+    permissions
+      .map((permission) => permission.scope)
+      .filter((value): value is string => typeof value === 'string')
+  );
+  const publicRouteExtensionIds = uniqueSortedStringArray(
+    Array.isArray(manifest.publicRouteExtensionIds)
+      ? (manifest.publicRouteExtensionIds as unknown[])
+      : []
+  );
+  const adminPageHrefs = uniqueSortedStringArray(
+    Array.isArray(manifest.adminPageHrefs) ? (manifest.adminPageHrefs as unknown[]) : []
+  );
+  const apiPaths = uniqueSortedStringArray(
+    Array.isArray(manifest.apiPaths) ? (manifest.apiPaths as unknown[]) : []
+  );
+  const settingKeys = uniqueSortedStringArray(
+    settings
+      .map((setting) => setting.key)
+      .filter((value): value is string => typeof value === 'string')
+  );
 
   return {
     packageRoot: normalizedSubdirectory,
     manifestRelativePath,
     pluginId,
     version,
+    capabilitySnapshot: {
+      permissionKeys,
+      capabilities,
+      scopes,
+      publicRouteExtensionIds,
+      adminPageHrefs,
+      apiPaths,
+      settingKeys,
+    },
     hasLifecycleDeclarations: lifecycleDeclarationKeys.length > 0,
     hasMigrationDeclarations: migrations.length > 0,
     lifecycleDeclarationKeys,

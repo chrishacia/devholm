@@ -2,7 +2,16 @@ import { access, chmod, cp, mkdir, readFile, rename, rm, writeFile } from 'node:
 import * as path from 'node:path';
 import { lt as isVersionLessThan } from 'semver';
 import { acquireFirstPartyMarketplaceArtifact } from '@core/lib/plugin-marketplace-acquisition.server';
+import {
+  completeMarketplaceInstallOperation,
+  ensureMarketplaceInstallStartupReconciliation,
+  failMarketplaceInstallOperation,
+  shouldCancelMarketplaceInstallOperation,
+  startMarketplaceInstallOperation,
+  updateMarketplaceInstallOperation,
+} from '@core/lib/plugin-marketplace-install-operation.server';
 import { buildMarketplaceInstallDryRunPlan } from '@core/lib/plugin-marketplace-install-planner.server';
+import { evaluateMarketplaceCapabilityContract } from '@core/lib/plugin-marketplace-capability-contract.server';
 import {
   computeArtifactSha256,
   extractTarGzToStaging,
@@ -12,6 +21,7 @@ import type {
   MarketplaceFirstPartyInstallExecutionInput,
   MarketplaceFirstPartyInstallExecutionResult,
 } from '@core/types/plugin-marketplace-install-execution';
+import type { MarketplaceCapabilitySnapshot } from '@core/types/plugin-marketplace-capability-contract';
 
 interface MarketplaceFirstPartyInstallState {
   pluginId: string;
@@ -20,6 +30,7 @@ interface MarketplaceFirstPartyInstallState {
   currentPath: string;
   previousVersion: string | null;
   previousPath: string | null;
+  capabilitySnapshot?: MarketplaceCapabilitySnapshot;
   updatedAt: string;
   updatedBy?: string;
 }
@@ -164,206 +175,336 @@ export async function executeFirstPartyMarketplaceInstall(
 
   const acquisitionMode =
     input.acquisitionMode ?? (input.artifactPath ? 'local-path' : 'remote-first-party');
-  const acquisition =
-    acquisitionMode === 'remote-first-party'
-      ? await acquireFirstPartyMarketplaceArtifact({
-          artifactUrl: input.catalogEntry.artifact.artifactUrl ?? '',
-          expectedSha256: expectedCatalogChecksum,
-          expectedPluginId: input.catalogEntry.pluginId,
-          expectedVersion: input.catalogEntry.version,
-          offlineOnly: input.offlineOnly,
-        })
-      : undefined;
+  const installRoot = path.resolve(input.generatedPluginsRoot ?? DEFAULT_FIRST_PARTY_INSTALL_ROOT);
+  await ensureMarketplaceInstallStartupReconciliation(installRoot);
 
-  const resolvedArtifactPath = input.artifactPath ?? acquisition?.cachePath;
-  if (!resolvedArtifactPath) {
-    throw new Error('artifactPath is required when acquisitionMode is local-path');
+  let operation = await startMarketplaceInstallOperation({
+    installRoot,
+    pluginId: input.catalogEntry.pluginId,
+    targetVersion: input.catalogEntry.version,
+    targetSha256: expectedCatalogChecksum,
+    initiatedBy: input.initiatedBy,
+    acquisitionMode,
+    offlineOnly: Boolean(input.offlineOnly),
+  });
+
+  async function advanceOperation(
+    stage:
+      | 'initialize'
+      | 'acquire_artifact'
+      | 'verify_artifact'
+      | 'stage_and_validate'
+      | 'promote_active'
+      | 'write_metadata'
+      | 'complete',
+    note?: string
+  ): Promise<void> {
+    const next = await updateMarketplaceInstallOperation({
+      installRoot,
+      pluginId: input.catalogEntry.pluginId,
+      stage,
+      note,
+    });
+    if (next) {
+      operation = next;
+    }
   }
 
-  const computedChecksum = (await computeArtifactSha256(resolvedArtifactPath)).toLowerCase();
-  if (computedChecksum !== expectedCatalogChecksum) {
-    throw new Error(
-      `artifact checksum mismatch: expected ${expectedCatalogChecksum}, got ${computedChecksum}`
-    );
-  }
+  async function assertNotCancelled(): Promise<void> {
+    const shouldCancel = await shouldCancelMarketplaceInstallOperation({
+      installRoot,
+      pluginId: input.catalogEntry.pluginId,
+    });
+    if (!shouldCancel) {
+      return;
+    }
 
-  const inspection = await inspectTarGzArtifact(resolvedArtifactPath);
-  const extraction = await extractTarGzToStaging(resolvedArtifactPath);
+    const cancelled = await updateMarketplaceInstallOperation({
+      installRoot,
+      pluginId: input.catalogEntry.pluginId,
+      stage: 'complete',
+      status: 'cancelled',
+      error: 'install operation cancelled by administrator',
+      note: 'cancellation request was honored before active promotion',
+    });
+    if (cancelled) {
+      operation = cancelled;
+    }
+
+    throw new Error('install operation cancelled by administrator');
+  }
 
   try {
-    if (extraction.validation.pluginId !== input.descriptor.expectedPluginId) {
+    await advanceOperation('acquire_artifact', 'acquiring artifact input');
+
+    const acquisition =
+      acquisitionMode === 'remote-first-party'
+        ? await acquireFirstPartyMarketplaceArtifact({
+            artifactUrl: input.catalogEntry.artifact.artifactUrl ?? '',
+            expectedSha256: expectedCatalogChecksum,
+            expectedPluginId: input.catalogEntry.pluginId,
+            expectedVersion: input.catalogEntry.version,
+            offlineOnly: input.offlineOnly,
+          })
+        : undefined;
+
+    await assertNotCancelled();
+    await advanceOperation('verify_artifact', 'verifying artifact checksum and archive structure');
+
+    const resolvedArtifactPath = input.artifactPath ?? acquisition?.cachePath;
+    if (!resolvedArtifactPath) {
+      throw new Error('artifactPath is required when acquisitionMode is local-path');
+    }
+
+    const computedChecksum = (await computeArtifactSha256(resolvedArtifactPath)).toLowerCase();
+    if (computedChecksum !== expectedCatalogChecksum) {
       throw new Error(
-        `staged manifest pluginId ${extraction.validation.pluginId} does not match descriptor expectedPluginId ${input.descriptor.expectedPluginId}`
+        `artifact checksum mismatch: expected ${expectedCatalogChecksum}, got ${computedChecksum}`
       );
     }
 
-    if (extraction.validation.version !== input.descriptor.expectedVersion) {
-      throw new Error(
-        `staged manifest version ${extraction.validation.version} does not match descriptor expectedVersion ${input.descriptor.expectedVersion}`
-      );
-    }
+    await advanceOperation('stage_and_validate', 'staging and validating plugin package');
+    const inspection = await inspectTarGzArtifact(resolvedArtifactPath);
+    const extraction = await extractTarGzToStaging(resolvedArtifactPath);
 
-    if (extraction.validation.pluginId !== input.catalogEntry.pluginId) {
-      throw new Error(
-        `staged manifest pluginId ${extraction.validation.pluginId} does not match catalog pluginId ${input.catalogEntry.pluginId}`
-      );
-    }
-
-    if (extraction.validation.version !== input.catalogEntry.version) {
-      throw new Error(
-        `staged manifest version ${extraction.validation.version} does not match catalog version ${input.catalogEntry.version}`
-      );
-    }
-
-    if (extraction.validation.packageRoot !== input.catalogEntry.pluginSubdirectory) {
-      throw new Error(
-        `staged package root ${extraction.validation.packageRoot} does not match catalog pluginSubdirectory ${input.catalogEntry.pluginSubdirectory}`
-      );
-    }
-
-    const installRoot = path.resolve(
-      input.generatedPluginsRoot ?? DEFAULT_FIRST_PARTY_INSTALL_ROOT
-    );
-    const pluginInstallRoot = path.join(installRoot, extraction.validation.pluginId);
-    const versionsRoot = path.join(pluginInstallRoot, 'versions');
-    const rollbacksRoot = path.join(pluginInstallRoot, 'rollbacks');
-    const activePath = path.join(pluginInstallRoot, 'active');
-    const versionPath = path.join(versionsRoot, extraction.validation.version);
-
-    await mkdir(pluginInstallRoot, { recursive: true, mode: 0o700 });
-    await mkdir(versionsRoot, { recursive: true, mode: 0o700 });
-    await mkdir(rollbacksRoot, { recursive: true, mode: 0o700 });
-    await chmod(pluginInstallRoot, 0o700);
-
-    return await withPluginInstallLock(pluginInstallRoot, async () => {
-      const previousState = await readInstallState(pluginInstallRoot);
-
-      if (
-        previousState?.currentVersion &&
-        isVersionLessThan(extraction.validation.version, previousState.currentVersion)
-      ) {
+    try {
+      if (extraction.validation.pluginId !== input.descriptor.expectedPluginId) {
         throw new Error(
-          `downgrade blocked: requested ${extraction.validation.version} is older than installed ${previousState.currentVersion}`
+          `staged manifest pluginId ${extraction.validation.pluginId} does not match descriptor expectedPluginId ${input.descriptor.expectedPluginId}`
         );
       }
 
-      if (previousState?.currentVersion === extraction.validation.version) {
-        if (previousState.currentSha256 === computedChecksum) {
-          return {
-            pluginId: extraction.validation.pluginId,
-            version: extraction.validation.version,
-            sha256: computedChecksum,
-            plannerSummary: plan.summary,
-            inspection,
-            validation: extraction.validation,
-            acquisition,
-            installRoot,
-            activePath,
-            versionPath,
-            previousVersion: previousState.previousVersion,
-            rollbackPath: previousState.previousPath,
-            lifecycleExecution: 'skipped' as const,
-            migrationExecution: 'skipped' as const,
-            installedAt: previousState.updatedAt,
-          };
+      if (extraction.validation.version !== input.descriptor.expectedVersion) {
+        throw new Error(
+          `staged manifest version ${extraction.validation.version} does not match descriptor expectedVersion ${input.descriptor.expectedVersion}`
+        );
+      }
+
+      if (extraction.validation.pluginId !== input.catalogEntry.pluginId) {
+        throw new Error(
+          `staged manifest pluginId ${extraction.validation.pluginId} does not match catalog pluginId ${input.catalogEntry.pluginId}`
+        );
+      }
+
+      if (extraction.validation.version !== input.catalogEntry.version) {
+        throw new Error(
+          `staged manifest version ${extraction.validation.version} does not match catalog version ${input.catalogEntry.version}`
+        );
+      }
+
+      if (extraction.validation.packageRoot !== input.catalogEntry.pluginSubdirectory) {
+        throw new Error(
+          `staged package root ${extraction.validation.packageRoot} does not match catalog pluginSubdirectory ${input.catalogEntry.pluginSubdirectory}`
+        );
+      }
+
+      const pluginInstallRoot = path.join(installRoot, extraction.validation.pluginId);
+      const versionsRoot = path.join(pluginInstallRoot, 'versions');
+      const rollbacksRoot = path.join(pluginInstallRoot, 'rollbacks');
+      const activePath = path.join(pluginInstallRoot, 'active');
+      const versionPath = path.join(versionsRoot, extraction.validation.version);
+
+      await mkdir(pluginInstallRoot, { recursive: true, mode: 0o700 });
+      await mkdir(versionsRoot, { recursive: true, mode: 0o700 });
+      await mkdir(rollbacksRoot, { recursive: true, mode: 0o700 });
+      await chmod(pluginInstallRoot, 0o700);
+
+      return await withPluginInstallLock(pluginInstallRoot, async () => {
+        await assertNotCancelled();
+        await advanceOperation('promote_active', 'promoting staged version to active runtime path');
+
+        const previousState = await readInstallState(pluginInstallRoot);
+
+        if (
+          previousState?.currentVersion &&
+          isVersionLessThan(extraction.validation.version, previousState.currentVersion)
+        ) {
+          throw new Error(
+            `downgrade blocked: requested ${extraction.validation.version} is older than installed ${previousState.currentVersion}`
+          );
         }
 
-        throw new Error(
-          `same-version conflict: ${extraction.validation.pluginId}@${extraction.validation.version} is already installed with a different digest`
+        const capabilityContract = evaluateMarketplaceCapabilityContract(
+          previousState?.capabilitySnapshot ?? null,
+          extraction.validation.capabilitySnapshot
         );
-      }
+        const capabilityPlan = buildMarketplaceInstallDryRunPlan({
+          descriptor: input.descriptor,
+          catalogEntry: input.catalogEntry,
+          capabilityContract: {
+            approvals: capabilityContract.approvals,
+            blockers: capabilityContract.blockers,
+          },
+        });
+        if (capabilityPlan.outcome === 'blocked') {
+          throw new Error(`planner blocked runtime install: ${capabilityPlan.summary}`);
+        }
+        if (capabilityPlan.outcome === 'approval-required' && !input.explicitAdminApproval) {
+          throw new Error(`planner blocked runtime install: ${capabilityPlan.summary}`);
+        }
 
-      if (await pathExists(versionPath)) {
-        throw new Error(
-          `version ${extraction.validation.version} is already installed for plugin ${extraction.validation.pluginId}`
+        if (previousState?.currentVersion === extraction.validation.version) {
+          if (previousState.currentSha256 === computedChecksum) {
+            const completed = await completeMarketplaceInstallOperation({
+              installRoot,
+              pluginId: extraction.validation.pluginId,
+              note: 'idempotent completion: same version and digest already installed',
+            });
+            if (completed) {
+              operation = completed;
+            }
+
+            return {
+              pluginId: extraction.validation.pluginId,
+              version: extraction.validation.version,
+              sha256: computedChecksum,
+              plannerSummary: capabilityPlan.summary,
+              inspection,
+              validation: extraction.validation,
+              capabilityContract,
+              acquisition,
+              operation,
+              installRoot,
+              activePath,
+              versionPath,
+              previousVersion: previousState.previousVersion,
+              rollbackPath: previousState.previousPath,
+              lifecycleExecution: 'skipped' as const,
+              migrationExecution: 'skipped' as const,
+              installedAt: previousState.updatedAt,
+            };
+          }
+
+          throw new Error(
+            `same-version conflict: ${extraction.validation.pluginId}@${extraction.validation.version} is already installed with a different digest`
+          );
+        }
+
+        if (await pathExists(versionPath)) {
+          throw new Error(
+            `version ${extraction.validation.version} is already installed for plugin ${extraction.validation.pluginId}`
+          );
+        }
+
+        const packageSourceRoot = path.join(
+          extraction.stagingDirectory,
+          extraction.validation.packageRoot
         );
-      }
+        await cp(packageSourceRoot, versionPath, {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+        });
 
-      const packageSourceRoot = path.join(
-        extraction.stagingDirectory,
-        extraction.validation.packageRoot
-      );
-      await cp(packageSourceRoot, versionPath, {
-        recursive: true,
-        errorOnExist: true,
-        force: false,
+        const stagedActivePath = path.join(
+          pluginInstallRoot,
+          `.active-next-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`
+        );
+
+        await cp(versionPath, stagedActivePath, {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+        });
+
+        let rollbackPath: string | null = null;
+        const hadActivePath = await pathExists(activePath);
+
+        if (hadActivePath) {
+          rollbackPath = path.join(
+            rollbacksRoot,
+            `${previousState?.currentVersion ?? 'unknown'}-${Date.now().toString(36)}`
+          );
+          await rename(activePath, rollbackPath);
+        }
+
+        try {
+          await rename(stagedActivePath, activePath);
+        } catch (error) {
+          await rm(stagedActivePath, { recursive: true, force: true });
+          await rm(versionPath, { recursive: true, force: true });
+          if (rollbackPath && (await pathExists(rollbackPath))) {
+            await rename(rollbackPath, activePath);
+          }
+          throw error;
+        }
+
+        await advanceOperation(
+          'write_metadata',
+          'writing install metadata for active plugin state'
+        );
+
+        const installedAt = new Date().toISOString();
+        const nextState: MarketplaceFirstPartyInstallState = {
+          pluginId: extraction.validation.pluginId,
+          currentVersion: extraction.validation.version,
+          currentSha256: computedChecksum,
+          currentPath: activePath,
+          previousVersion: previousState?.currentVersion ?? null,
+          previousPath: rollbackPath,
+          capabilitySnapshot: extraction.validation.capabilitySnapshot,
+          updatedAt: installedAt,
+          updatedBy: input.initiatedBy,
+        };
+
+        try {
+          await writeInstallState(pluginInstallRoot, nextState);
+        } catch (error) {
+          await rm(activePath, { recursive: true, force: true });
+          await rm(versionPath, { recursive: true, force: true });
+          if (rollbackPath && (await pathExists(rollbackPath))) {
+            await rename(rollbackPath, activePath);
+          }
+          throw error;
+        }
+
+        const completed = await completeMarketplaceInstallOperation({
+          installRoot,
+          pluginId: extraction.validation.pluginId,
+          note: 'operation completed successfully',
+        });
+        if (completed) {
+          operation = completed;
+        }
+
+        return {
+          pluginId: extraction.validation.pluginId,
+          version: extraction.validation.version,
+          sha256: computedChecksum,
+          plannerSummary: capabilityPlan.summary,
+          inspection,
+          validation: extraction.validation,
+          capabilityContract,
+          acquisition,
+          operation,
+          installRoot,
+          activePath,
+          versionPath,
+          previousVersion: nextState.previousVersion,
+          rollbackPath: nextState.previousPath,
+          lifecycleExecution: 'skipped',
+          migrationExecution: 'skipped',
+          installedAt,
+        };
       });
-
-      const stagedActivePath = path.join(
-        pluginInstallRoot,
-        `.active-next-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`
-      );
-
-      await cp(versionPath, stagedActivePath, {
-        recursive: true,
-        errorOnExist: true,
-        force: false,
-      });
-
-      let rollbackPath: string | null = null;
-      const hadActivePath = await pathExists(activePath);
-
-      if (hadActivePath) {
-        rollbackPath = path.join(
-          rollbacksRoot,
-          `${previousState?.currentVersion ?? 'unknown'}-${Date.now().toString(36)}`
-        );
-        await rename(activePath, rollbackPath);
-      }
-
-      try {
-        await rename(stagedActivePath, activePath);
-      } catch (error) {
-        await rm(stagedActivePath, { recursive: true, force: true });
-        await rm(versionPath, { recursive: true, force: true });
-        if (rollbackPath && (await pathExists(rollbackPath))) {
-          await rename(rollbackPath, activePath);
-        }
-        throw error;
-      }
-
-      const installedAt = new Date().toISOString();
-      const nextState: MarketplaceFirstPartyInstallState = {
-        pluginId: extraction.validation.pluginId,
-        currentVersion: extraction.validation.version,
-        currentSha256: computedChecksum,
-        currentPath: activePath,
-        previousVersion: previousState?.currentVersion ?? null,
-        previousPath: rollbackPath,
-        updatedAt: installedAt,
-        updatedBy: input.initiatedBy,
-      };
-
-      try {
-        await writeInstallState(pluginInstallRoot, nextState);
-      } catch (error) {
-        await rm(activePath, { recursive: true, force: true });
-        await rm(versionPath, { recursive: true, force: true });
-        if (rollbackPath && (await pathExists(rollbackPath))) {
-          await rename(rollbackPath, activePath);
-        }
-        throw error;
-      }
-
-      return {
-        pluginId: extraction.validation.pluginId,
-        version: extraction.validation.version,
-        sha256: computedChecksum,
-        plannerSummary: plan.summary,
-        inspection,
-        validation: extraction.validation,
-        acquisition,
+    } finally {
+      await rm(extraction.stagingDirectory, { recursive: true, force: true });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes('cancelled by administrator')) {
+      const failed = await failMarketplaceInstallOperation({
         installRoot,
-        activePath,
-        versionPath,
-        previousVersion: nextState.previousVersion,
-        rollbackPath: nextState.previousPath,
-        lifecycleExecution: 'skipped',
-        migrationExecution: 'skipped',
-        installedAt,
-      };
-    });
+        pluginId: input.catalogEntry.pluginId,
+        error: message,
+      });
+      if (failed) {
+        operation = failed;
+      }
+    }
+
+    throw error;
   } finally {
-    await rm(extraction.stagingDirectory, { recursive: true, force: true });
+    await advanceOperation('complete');
   }
 }

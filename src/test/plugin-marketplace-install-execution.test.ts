@@ -512,4 +512,88 @@ describe('plugin-marketplace-install-execution: first-party runtime install', ()
     await rm(path.dirname(artifactV1.artifactPath), { recursive: true, force: true });
     await rm(installRoot, { recursive: true, force: true });
   });
+
+  it('blocks update when capability scope escalates to policy-scoped', async () => {
+    const installRoot = await mkdtemp(
+      path.join(os.tmpdir(), 'devholm-marketplace-scope-escalation-')
+    );
+
+    const artifactV1 = await createTarGzArtifact([
+      { path: 'plugins/', type: 'directory' },
+      { path: 'plugins/calendar/', type: 'directory' },
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.1.0',
+            pluginSubdirectory: 'plugins/calendar',
+            permissions: [
+              {
+                key: 'calendar.read',
+                capability: 'calendar',
+                scope: 'public',
+                description: 'Read calendar events',
+              },
+            ],
+          }),
+          'utf8'
+        ),
+      },
+    ]);
+
+    const artifactV2 = await createTarGzArtifact([
+      { path: 'plugins/', type: 'directory' },
+      { path: 'plugins/calendar/', type: 'directory' },
+      {
+        path: 'plugins/calendar/manifest.json',
+        type: 'file',
+        content: Buffer.from(
+          JSON.stringify({
+            id: 'calendar',
+            version: '0.2.0',
+            pluginSubdirectory: 'plugins/calendar',
+            permissions: [
+              {
+                key: 'calendar.read',
+                capability: 'calendar',
+                scope: 'public',
+                description: 'Read calendar events',
+              },
+              {
+                key: 'calendar.policy',
+                capability: 'calendar-policy',
+                scope: 'policy-scoped',
+                description: 'Policy-scoped capability expansion',
+              },
+            ],
+          }),
+          'utf8'
+        ),
+      },
+    ]);
+
+    await executeFirstPartyMarketplaceInstall({
+      descriptor: descriptorFor('0.1.0', artifactV1.sha256),
+      catalogEntry: baseCatalogEntry('0.1.0', artifactV1.sha256),
+      artifactPath: artifactV1.artifactPath,
+      explicitAdminApproval: true,
+      generatedPluginsRoot: installRoot,
+    });
+
+    await expect(
+      executeFirstPartyMarketplaceInstall({
+        descriptor: descriptorFor('0.2.0', artifactV2.sha256),
+        catalogEntry: baseCatalogEntry('0.2.0', artifactV2.sha256),
+        artifactPath: artifactV2.artifactPath,
+        explicitAdminApproval: true,
+        generatedPluginsRoot: installRoot,
+      })
+    ).rejects.toThrow(/planner blocked runtime install/i);
+
+    await rm(path.dirname(artifactV1.artifactPath), { recursive: true, force: true });
+    await rm(path.dirname(artifactV2.artifactPath), { recursive: true, force: true });
+    await rm(installRoot, { recursive: true, force: true });
+  });
 });

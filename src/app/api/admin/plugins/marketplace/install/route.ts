@@ -29,7 +29,9 @@ function mapInstallExecutionError(error: unknown): { status: number; body: { err
     message.includes('mismatch') ||
     message.includes('must be') ||
     message.includes('already installed') ||
-    message.includes('explicit admin approval')
+    message.includes('explicit admin approval') ||
+    message.includes('cancelled') ||
+    message.includes('in progress')
   ) {
     return { status: 409, body: { error: message } };
   }
@@ -101,6 +103,12 @@ export async function POST(request: NextRequest) {
         lifecycleExecution: result.lifecycleExecution,
         migrationExecution: result.migrationExecution,
         installedAt: result.installedAt,
+        capabilityContract: {
+          hasEscalation: result.capabilityContract.hasEscalation,
+          approvals: result.capabilityContract.approvals,
+          blockers: result.capabilityContract.blockers,
+          summary: result.capabilityContract.summary,
+        },
         acquisition: result.acquisition
           ? {
               source: result.acquisition.source,
@@ -114,6 +122,17 @@ export async function POST(request: NextRequest) {
               readyForStaging: result.acquisition.readyForStaging,
             }
           : undefined,
+        operation: {
+          operationId: result.operation.operationId,
+          status: result.operation.status,
+          stage: result.operation.stage,
+          startedAt: result.operation.startedAt,
+          updatedAt: result.operation.updatedAt,
+          finishedAt: result.operation.finishedAt,
+          cancellation: result.operation.cancellation,
+          notes: result.operation.notes,
+          error: result.operation.error,
+        },
       },
       notes: [
         'lifecycle hooks were not executed in this phase',

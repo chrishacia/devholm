@@ -22,6 +22,15 @@ export interface MarketplaceStagedPackageValidationSummary {
   manifestRelativePath: string;
   pluginId: string;
   version: string;
+  capabilitySnapshot: {
+    permissionKeys: string[];
+    capabilities: string[];
+    scopes: string[];
+    publicRouteExtensionIds: string[];
+    adminPageHrefs: string[];
+    apiPaths: string[];
+    settingKeys: string[];
+  };
   hasLifecycleDeclarations: boolean;
   hasMigrationDeclarations: boolean;
   lifecycleDeclarationKeys: string[];
