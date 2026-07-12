@@ -17,6 +17,7 @@ export interface PublicRouteDispatcherDependencies {
   isPluginEnabled: (pluginId: string | undefined) => Promise<boolean>;
   getReservedRoutes: () => Set<string>;
   getHelpers: () => Promise<ExtensionHelpers>;
+  authorizeExtension?: (extension: PublicRouteExtension) => Promise<boolean>;
   /** Optional: pre-created match context for testing */
   createMatchContext?: (reservedRoutes: ReadonlySet<string>) => PublicRouteMatchContext;
 }
@@ -100,6 +101,13 @@ export async function dispatchPublicRoute(
     // Skip disabled plugins
     if (extension.pluginId && !(await dependencies.isPluginEnabled(extension.pluginId))) {
       continue;
+    }
+
+    if (dependencies.authorizeExtension) {
+      const authorized = await dependencies.authorizeExtension(extension);
+      if (!authorized) {
+        continue;
+      }
     }
 
     try {

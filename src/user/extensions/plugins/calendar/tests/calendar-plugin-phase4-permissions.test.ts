@@ -23,6 +23,12 @@ import { calendarPluginManifest } from '@user/extensions/plugins/calendar/manife
 import { calendarPublicRouteExtension } from '@user/extensions/plugins/calendar/public-routes/calendar-public-route.server';
 import { urlShortenerAdminPageExtensions } from '@user/extensions/plugins/url-shortener/admin/pages';
 import { urlShortenerApiExtensions } from '@user/extensions/plugins/url-shortener/api';
+import {
+  URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT,
+  URL_SHORTENER_CAPABILITY_PUBLIC_ROUTING,
+  URL_SHORTENER_PERMISSION_ADMIN_MANAGE,
+  URL_SHORTENER_PERMISSION_PUBLIC_REDIRECT,
+} from '@user/extensions/plugins/url-shortener/constants';
 import { urlShortenerPublicRouteExtension } from '@user/extensions/plugins/url-shortener/public-routes/url-shortener-public-route.server';
 
 describe('calendar phase 4 permission metadata alignment', () => {
@@ -104,12 +110,38 @@ describe('calendar phase 4 permission metadata alignment', () => {
     });
   });
 
-  it('keeps URL shortener permission metadata unaffected by calendar phase 4 changes', () => {
-    expect(urlShortenerApiExtensions.every((item) => item.accessPolicy === undefined)).toBe(true);
-    expect(urlShortenerAdminPageExtensions.every((item) => item.accessPolicy === undefined)).toBe(
+  it('keeps URL shortener permission metadata aligned for sandbox enforcement', () => {
+    expect(urlShortenerApiExtensions.every((item) => item.accessPolicy?.scope === 'admin')).toBe(
       true
     );
-    expect(urlShortenerPublicRouteExtension.accessPolicy).toBeUndefined();
+    expect(
+      urlShortenerApiExtensions.every(
+        (item) => item.accessPolicy?.capability === URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT
+      )
+    ).toBe(true);
+    expect(
+      urlShortenerApiExtensions.every((item) =>
+        item.accessPolicy?.permissionKeys?.includes(URL_SHORTENER_PERMISSION_ADMIN_MANAGE)
+      )
+    ).toBe(true);
+
+    expect(
+      urlShortenerAdminPageExtensions.every(
+        (item) => item.accessPolicy?.capability === URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT
+      )
+    ).toBe(true);
+    expect(
+      urlShortenerAdminPageExtensions.every((item) =>
+        item.accessPolicy?.permissionKeys?.includes(URL_SHORTENER_PERMISSION_ADMIN_MANAGE)
+      )
+    ).toBe(true);
+
+    expect(urlShortenerPublicRouteExtension.accessPolicy).toMatchObject({
+      scope: 'public',
+      capability: URL_SHORTENER_CAPABILITY_PUBLIC_ROUTING,
+      permissionKeys: [URL_SHORTENER_PERMISSION_PUBLIC_REDIRECT],
+      runtimeOwner: 'plugin-extension',
+    });
   });
 
   it('keeps generated plugin registry deterministic for calendar + gallery + url-shortener', () => {

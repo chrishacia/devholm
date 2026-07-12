@@ -2,6 +2,12 @@ import type { ApiExtension } from '@core/types/extensions.server';
 import type { NextRequest } from 'next/server';
 import { verifyPermission } from '@/lib/auth-helpers';
 import {
+  URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT,
+  URL_SHORTENER_PERMISSION_ADMIN_MANAGE,
+  URL_SHORTENER_PLUGIN_ID,
+} from '@user/extensions/plugins/url-shortener/constants';
+
+import {
   createUrlShortenerLink,
   deleteUrlShortenerLink,
   getUrlShortenerLinkByCode,
@@ -207,8 +213,15 @@ async function handleAnalyticsGET(): Promise<Response> {
 
 export const urlShortenerApiExtensions: readonly ApiExtension[] = [
   {
-    pluginId: 'url-shortener',
+    pluginId: URL_SHORTENER_PLUGIN_ID,
     path: '/api/url-shortener',
+    accessPolicy: {
+      scope: 'admin',
+      capability: URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT,
+      permissionKeys: [URL_SHORTENER_PERMISSION_ADMIN_MANAGE],
+      runtimeOwner: 'plugin-extension',
+      notes: 'URL shortener API runtime executes in plugin extension module context.',
+    },
     handlers: {
       GET: async (request, context) => {
         const token = await requireManageAccess(request);
