@@ -34,6 +34,12 @@ vi.mock('@user/extensions/api', () => ({
     {
       path: '/api/url-shortener',
       pluginId: 'url-shortener',
+      accessPolicy: {
+        scope: 'admin',
+        capability: 'url-shortener.admin-management',
+        permissionKeys: ['plugin:url-shortener:admin.manage'],
+        runtimeOwner: 'plugin-extension',
+      },
       handlers: {
         GET: handler,
       },

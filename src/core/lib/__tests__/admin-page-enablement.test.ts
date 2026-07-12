@@ -194,6 +194,18 @@ describe('Admin Page Enablement Helpers', () => {
           verifyAdmin: vi.fn(),
         })),
       }));
+      vi.doMock('@core/lib/plugin-capability-sandbox.server', () => ({
+        evaluatePluginSandboxAccess: vi.fn(async () => ({
+          allowed: true,
+          executionId: 'test-execution-id',
+          surface: 'admin-page',
+          reason: 'test allow',
+          permissionKeys: [],
+          deniedPermissionKeys: [],
+          requiresExplicitApproval: false,
+        })),
+        recordPluginSandboxDecision: vi.fn(),
+      }));
 
       const { getAdminPageComponent, getAdminPageMetadata } = await import(
         '@core/lib/extensions.server'

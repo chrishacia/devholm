@@ -1,6 +1,10 @@
 import type { DevholmPluginManifest } from '@core/types/plugins';
 import {
+  URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT,
+  URL_SHORTENER_CAPABILITY_PUBLIC_ROUTING,
   URL_SHORTENER_ENABLEMENT_KEY,
+  URL_SHORTENER_PERMISSION_ADMIN_MANAGE,
+  URL_SHORTENER_PERMISSION_PUBLIC_REDIRECT,
   URL_SHORTENER_PLUGIN_ID,
 } from '@user/extensions/plugins/url-shortener/constants';
 import { urlShortenerPurge } from '@user/extensions/plugins/url-shortener/lifecycle/hooks';
@@ -17,6 +21,22 @@ export const urlShortenerPluginManifest: DevholmPluginManifest = {
     plugins: {},
     packages: {},
   },
+  permissions: [
+    {
+      key: URL_SHORTENER_PERMISSION_ADMIN_MANAGE,
+      capability: URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT,
+      scope: 'admin',
+      description: 'Manage URL shortener links, settings, and operational analytics.',
+      runtimeOwner: 'plugin-extension',
+    },
+    {
+      key: URL_SHORTENER_PERMISSION_PUBLIC_REDIRECT,
+      capability: URL_SHORTENER_CAPABILITY_PUBLIC_ROUTING,
+      scope: 'public',
+      description: 'Resolve short-code public route claims and redirect rewrites.',
+      runtimeOwner: 'plugin-extension',
+    },
+  ],
   settings: urlShortenerSettingsDefinitions,
   publicRouteExtensionIds: ['url-shortener:redirect'],
   adminPageHrefs: [

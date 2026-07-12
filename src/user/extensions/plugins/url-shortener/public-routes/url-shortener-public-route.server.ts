@@ -1,6 +1,10 @@
 import type { PublicRouteExtension } from '@core/types/extensions.server';
 import { URL_SHORTENER_DEFAULT_PREFIX } from '@user/extensions/plugins/url-shortener/constants';
-import { URL_SHORTENER_PLUGIN_ID } from '@user/extensions/plugins/url-shortener/constants';
+import {
+  URL_SHORTENER_CAPABILITY_PUBLIC_ROUTING,
+  URL_SHORTENER_PERMISSION_PUBLIC_REDIRECT,
+  URL_SHORTENER_PLUGIN_ID,
+} from '@user/extensions/plugins/url-shortener/constants';
 import { NextResponse } from 'next/server';
 import type { UrlShortenerMatchState } from '@user/extensions/plugins/url-shortener/types';
 import { shortCodeSchema } from '@user/extensions/plugins/url-shortener/validation/schemas';
@@ -12,6 +16,14 @@ function splitPath(pathname: string): string[] {
 export const urlShortenerPublicRouteExtension: PublicRouteExtension<UrlShortenerMatchState> = {
   pluginId: URL_SHORTENER_PLUGIN_ID,
   id: 'url-shortener:redirect',
+  accessPolicy: {
+    scope: 'public',
+    capability: URL_SHORTENER_CAPABILITY_PUBLIC_ROUTING,
+    permissionKeys: [URL_SHORTENER_PERMISSION_PUBLIC_REDIRECT],
+    runtimeOwner: 'plugin-extension',
+    notes:
+      'URL shortener route claim executes in plugin extension runtime and rewrites to node API.',
+  },
   async match(pathname) {
     const safePrefix = URL_SHORTENER_DEFAULT_PREFIX;
 

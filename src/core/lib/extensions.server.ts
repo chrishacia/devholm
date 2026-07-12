@@ -24,6 +24,11 @@ import {
   loadEnabledAdminPageComponent,
   loadEnabledAdminPageMetadata,
 } from '@core/lib/admin-page-enablement.server';
+import {
+  evaluatePluginSandboxAccess,
+  recordPluginSandboxDecision,
+  type PluginSandboxSurface,
+} from '@core/lib/plugin-capability-sandbox.server';
 
 function normalizePath(pathname: string): string {
   const segments = pathname.split('/').filter(Boolean);
@@ -49,6 +54,28 @@ async function isExtensionEnabled(pluginId?: string): Promise<boolean> {
   return isPluginEnabled(pluginId);
 }
 
+async function isExtensionSandboxAuthorized(params: {
+  pluginId?: string;
+  surface: PluginSandboxSurface;
+  resourceId: string;
+  accessPolicy?: {
+    scope: 'admin' | 'public' | 'authenticated' | 'policy-scoped' | 'future';
+    permissionKeys?: readonly string[];
+    capability?: string;
+    runtimeOwner?: 'core-filesystem' | 'plugin-extension';
+    notes?: string;
+  };
+}): Promise<boolean> {
+  const decision = await evaluatePluginSandboxAccess({
+    pluginId: params.pluginId,
+    surface: params.surface,
+    resourceId: params.resourceId,
+    accessPolicy: params.accessPolicy,
+  });
+  recordPluginSandboxDecision(decision);
+  return decision.allowed;
+}
+
 export function resolveAdminPageExtension(slug: string[]): AdminPageExtension | undefined {
   return resolveByPath(adminPageExtensions, `/admin/${slug.join('/')}`);
 }
@@ -60,6 +87,16 @@ export async function getAdminPageComponent(slug: string[]): Promise<React.Compo
     return null;
   }
 
+  const sandboxAllowed = await isExtensionSandboxAuthorized({
+    pluginId: extension.pluginId,
+    surface: 'admin-page',
+    resourceId: extension.href,
+    accessPolicy: extension.accessPolicy,
+  });
+  if (!sandboxAllowed) {
+    return null;
+  }
+
   return loadEnabledAdminPageComponent(extension, isPluginEnabled);
 }
 
@@ -67,6 +104,16 @@ export async function getAdminPageMetadata(slug: string[]): Promise<Metadata | u
   const extension = resolveAdminPageExtension(slug);
 
   if (!extension) {
+    return undefined;
+  }
+
+  const sandboxAllowed = await isExtensionSandboxAuthorized({
+    pluginId: extension.pluginId,
+    surface: 'admin-page',
+    resourceId: extension.href,
+    accessPolicy: extension.accessPolicy,
+  });
+  if (!sandboxAllowed) {
     return undefined;
   }
 
@@ -85,6 +132,16 @@ export async function getMetadataExtensionData(path: string): Promise<Metadata[]
   const extensions = await Promise.all(
     resolveMetadataExtensions(path).map(async (extension) => {
       if (!(await isExtensionEnabled(extension.pluginId))) {
+        return null;
+      }
+
+      const sandboxAllowed = await isExtensionSandboxAuthorized({
+        pluginId: extension.pluginId,
+        surface: 'metadata',
+        resourceId: extension.path,
+        accessPolicy: undefined,
+      });
+      if (!sandboxAllowed) {
         return null;
       }
 
@@ -116,6 +173,16 @@ export async function getStructuredDataExtensionData(
         return null;
       }
 
+      const sandboxAllowed = await isExtensionSandboxAuthorized({
+        pluginId: extension.pluginId,
+        surface: 'structured-data',
+        resourceId: extension.path,
+        accessPolicy: undefined,
+      });
+      if (!sandboxAllowed) {
+        return null;
+      }
+
       return extension;
     })
   );
@@ -135,6 +202,16 @@ export async function getSitemapExtensionEntries() {
         return null;
       }
 
+      const sandboxAllowed = await isExtensionSandboxAuthorized({
+        pluginId: extension.pluginId,
+        surface: 'sitemap',
+        resourceId: extension.id,
+        accessPolicy: undefined,
+      });
+      if (!sandboxAllowed) {
+        return null;
+      }
+
       return extension;
     })
   );
@@ -151,6 +228,16 @@ export async function getRobotsExtensionRules() {
   const enabledExtensions = await Promise.all(
     robotsExtensions.map(async (extension: RobotsExtension) => {
       if (!(await isExtensionEnabled(extension.pluginId))) {
+        return null;
+      }
+
+      const sandboxAllowed = await isExtensionSandboxAuthorized({
+        pluginId: extension.pluginId,
+        surface: 'robots',
+        resourceId: extension.id,
+        accessPolicy: undefined,
+      });
+      if (!sandboxAllowed) {
         return null;
       }
 
@@ -196,6 +283,25 @@ export async function runApiExtension(
 
   if (!(await isExtensionEnabled(extension.pluginId))) {
     return null;
+  }
+
+  const sandboxDecision = await evaluatePluginSandboxAccess({
+    pluginId: extension.pluginId,
+    surface: 'api-route',
+    resourceId: extension.path,
+    accessPolicy: extension.accessPolicy,
+  });
+  recordPluginSandboxDecision(sandboxDecision);
+  if (!sandboxDecision.allowed) {
+    return Response.json(
+      {
+        error: 'Plugin sandbox policy denied API extension execution',
+        pluginId: extension.pluginId,
+        path: extension.path,
+        executionId: sandboxDecision.executionId,
+      },
+      { status: 403 }
+    );
   }
 
   const handler = extension.handlers[method];

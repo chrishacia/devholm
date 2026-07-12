@@ -14,6 +14,10 @@ import {
   type PublicRouteDispatcherDependencies,
   type PublicRouteResolution,
 } from '@core/lib/public-route-dispatcher-core.server';
+import {
+  evaluatePluginSandboxAccess,
+  recordPluginSandboxDecision,
+} from '@core/lib/plugin-capability-sandbox.server';
 
 /**
  * Export factory for testing
@@ -27,6 +31,16 @@ export function createPublicRouteDispatcherDependencies(): PublicRouteDispatcher
   return {
     extensions: publicRouteExtensions,
     isPluginEnabled: async () => true,
+    authorizeExtension: async (extension) => {
+      const decision = await evaluatePluginSandboxAccess({
+        pluginId: extension.pluginId,
+        surface: 'public-route',
+        resourceId: extension.id,
+        accessPolicy: extension.accessPolicy,
+      });
+      recordPluginSandboxDecision(decision);
+      return decision.allowed;
+    },
     getReservedRoutes,
     getHelpers: async () => edgeSafeHelpers,
     createMatchContext: (reservedRoutes: ReadonlySet<string>) => ({

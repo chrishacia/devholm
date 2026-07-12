@@ -279,9 +279,44 @@ Deployment assumptions and limits for Phase 5F
 - Cross-host coordination is not guaranteed when hosts do not share a filesystem view.
 - On lease ownership mismatch or malformed lock paths, installers fail closed rather than forcing lock deletion.
 
+Phase 5G: Capability sandbox boundary enforcement (issue #67)
+
+- Objective: enforce deny-by-default capability checks at actual plugin execution seams and prevent undeclared capability execution.
+- Repository: devholm.com.
+- Behavior changed:
+  - Plugin API execution now requires explicit access-policy metadata + manifest permission alignment.
+  - Plugin public-route execution now requires explicit access-policy metadata + manifest permission alignment.
+  - Plugin admin-page dynamic loading now requires explicit access-policy metadata + manifest permission alignment.
+  - Unknown capabilities and permission mismatches are denied and audited.
+- Tests: capability policy unit tests, API resolution tests, public-route resolution tests, plugin metadata alignment tests.
+- Security boundary: capability execution authorization gate at runtime dispatch seams with explicit deny and audit metadata.
+- Non-goals:
+  - no claim of operating-system isolation,
+  - no claim of multi-host sandboxing,
+  - no lifecycle-hook or migration execution sandboxing (those remain non-goals in this phase).
+- Approval required: yes.
+
+Runtime enforcement scope for Phase 5G
+
+- Enforced now:
+  - execution authorization for plugin-owned API extensions,
+  - execution authorization for plugin-owned public-route extensions,
+  - dynamic admin-page loading authorization for plugin-owned admin extensions,
+  - deny-by-default behavior when access-policy metadata is missing.
+- Not enforced yet:
+  - hard process-level containment of arbitrary plugin JavaScript,
+  - host-level filesystem/process/network isolation beyond dispatch authorization,
+  - lifecycle-hook and migration execution containment for future runtime execution phases.
+
+Residual risk and ordering implications
+
+- Publisher trust (issue #69 scope) is authenticity/provenance, not runtime containment.
+- Capability declarations are now authorization-gated at dispatch seams, but this is not equivalent to full process isolation.
+- Next coherent step is issue #68 (lifecycle-hook execution gating/containment) before broadening publisher trust scope.
+
 Phase 6: Optional registry service evaluation
 
-- Objective: assess dedicated registry API only after Phase 5A-5E evidence.
+- Objective: assess dedicated registry API only after Phase 5A-5G evidence.
 - Repository: separate proposal.
 - Behavior changed: none until approved.
 - Tests: N/A in this phase.

@@ -1,5 +1,12 @@
 export const URL_SHORTENER_PLUGIN_ID = 'url-shortener';
 
+export const URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT = 'url-shortener.admin-management' as const;
+export const URL_SHORTENER_CAPABILITY_PUBLIC_ROUTING = 'url-shortener.public-routing' as const;
+
+export const URL_SHORTENER_PERMISSION_ADMIN_MANAGE = 'plugin:url-shortener:admin.manage' as const;
+export const URL_SHORTENER_PERMISSION_PUBLIC_REDIRECT =
+  'plugin:url-shortener:public.redirect' as const;
+
 export const URL_SHORTENER_ENABLEMENT_KEY = 'plugin:url-shortener:enabled';
 export const URL_SHORTENER_ROUTE_PREFIX_KEY = 'plugin:url-shortener:route-prefix';
 export const URL_SHORTENER_PUBLIC_CREATION_MODE_KEY = 'plugin:url-shortener:public-creation-mode';

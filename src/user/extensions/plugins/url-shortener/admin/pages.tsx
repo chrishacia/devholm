@@ -8,6 +8,10 @@ import {
   UrlShortenerPublicSubmissionsPage,
   UrlShortenerSettingsPage,
 } from '@user/extensions/plugins/url-shortener/admin/ui';
+import {
+  URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT,
+  URL_SHORTENER_PERMISSION_ADMIN_MANAGE,
+} from '@user/extensions/plugins/url-shortener/constants';
 import { URL_SHORTENER_PLUGIN_ID } from '@user/extensions/plugins/url-shortener/constants';
 
 function makePage(
@@ -19,6 +23,13 @@ function makePage(
   return {
     pluginId: URL_SHORTENER_PLUGIN_ID,
     href,
+    accessPolicy: {
+      scope: 'admin',
+      capability: URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT,
+      permissionKeys: [URL_SHORTENER_PERMISSION_ADMIN_MANAGE],
+      runtimeOwner: 'plugin-extension',
+      notes: 'URL shortener admin surfaces execute through plugin extension runtime.',
+    },
     loadPage: async () => ({
       default: component,
     }),
