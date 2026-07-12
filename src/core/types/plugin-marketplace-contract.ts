@@ -70,6 +70,54 @@ export interface MarketplacePluginPackageMetadata {
   documentation: MarketplacePackageDocumentationMetadata;
 }
 
+export type MarketplaceCatalogInstallReadiness =
+  | 'scaffold-only'
+  | 'catalog-contract-ready'
+  | 'production-eligible';
+
+export type MarketplaceArtifactFormat = 'tar.gz';
+
+export type MarketplaceArtifactReadiness = 'planned' | 'available';
+
+export interface MarketplaceArtifactSignaturePlaceholder {
+  status: 'not-provided' | 'provided';
+  algorithm?: string;
+  signature?: string;
+}
+
+export interface MarketplaceArtifactReference {
+  format: MarketplaceArtifactFormat;
+  readiness: MarketplaceArtifactReadiness;
+  immutable: boolean;
+  immutableRefType?: 'release-url' | 'content-addressed-url';
+  artifactUrl?: string;
+  sha256?: string;
+  compressedSizeBytes?: number;
+  maxUncompressedSizeBytes?: number;
+  signature?: MarketplaceArtifactSignaturePlaceholder;
+}
+
+export interface MarketplacePublisherMetadata {
+  publisherId: string;
+  classification: 'first-party' | 'third-party';
+}
+
+export interface MarketplaceCatalogEntry {
+  pluginId: string;
+  displayName: string;
+  version: string;
+  installReadiness: MarketplaceCatalogInstallReadiness;
+  runtimeInstallSupported: boolean;
+  bundledFallbackRequired: boolean;
+  pluginSubdirectory: string;
+  manifestPath: string;
+  readmePath: string;
+  landingPagePath: string;
+  source: MarketplacePackageSourceDescriptor;
+  publisher: MarketplacePublisherMetadata;
+  artifact: MarketplaceArtifactReference;
+}
+
 export interface MarketplaceDirectoryContract {
   rootFiles: readonly string[];
   pluginsRootDir: string;
