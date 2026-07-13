@@ -97,6 +97,14 @@ function toNumber(value: unknown): number {
   return typeof value === 'number' ? value : Number(value ?? 0);
 }
 
+function isUniqueViolationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  return (error as { code?: string }).code === '23505';
+}
+
 function serializeLink(row: LinkRow): UrlShortenerLink {
   return {
     id: row.id,
@@ -485,32 +493,52 @@ export async function recordUrlShortenerClick(
       .increment({ cached_click_count: 1 })
       .update({ updated_at: now });
 
-    await trx(DAILY)
-      .insert({
+    const incrementBy = signals.privacyHash ? 1 : 0;
+    const applyDailyAggregateUpdate = async (): Promise<number> => {
+      return trx(DAILY)
+        .where({
+          link_id: linkId,
+          stat_date: today,
+        })
+        .whereRaw('referrer_category is not distinct from ?', [signals.referrerCategory])
+        .whereRaw('device_category is not distinct from ?', [signals.deviceCategory])
+        .whereRaw('browser_category is not distinct from ?', [signals.browserCategory])
+        .increment({
+          total_clicks: 1,
+          unique_clicks_approx: incrementBy,
+        })
+        .update({ updated_at: now });
+    };
+
+    const updatedRows = await applyDailyAggregateUpdate();
+    if (updatedRows > 0) {
+      return;
+    }
+
+    try {
+      await trx(DAILY).insert({
         id: randomUUID(),
         link_id: linkId,
         stat_date: today,
         total_clicks: 1,
-        unique_clicks_approx: signals.privacyHash ? 1 : 0,
+        unique_clicks_approx: incrementBy,
         referrer_category: signals.referrerCategory,
         device_category: signals.deviceCategory,
         browser_category: signals.browserCategory,
         created_at: now,
         updated_at: now,
-      })
-      .onConflict([
-        'link_id',
-        'stat_date',
-        'referrer_category',
-        'device_category',
-        'browser_category',
-      ])
-      .merge({
-        total_clicks: database.raw(`coalesce(${DAILY}.total_clicks, 0) + 1`),
-        unique_clicks_approx: database.raw(`coalesce(${DAILY}.unique_clicks_approx, 0) + ?`, [
-          signals.privacyHash ? 1 : 0,
-        ]),
-        updated_at: now,
       });
+    } catch (error) {
+      if (!isUniqueViolationError(error)) {
+        throw error;
+      }
+
+      const retriedRows = await applyDailyAggregateUpdate();
+      if (retriedRows === 0) {
+        throw new Error(
+          `Daily aggregate update retry did not match any row for link ${linkId} on ${today}`
+        );
+      }
+    }
   });
 }
