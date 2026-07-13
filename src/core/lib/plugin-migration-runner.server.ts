@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'url';
 import { getDb } from '@/db';
 import {
@@ -12,6 +13,8 @@ import {
   insertPluginMigrationLedger,
 } from '@core/db/plugin-lifecycle';
 import { getBundledPluginManifests } from '@core/lib/plugin-registry.server';
+import { executePluginMigrationWithGate } from '@core/lib/plugin-migration-contract.server';
+import type { DevholmPluginManifest } from '@core/types/plugins';
 
 const LIFECYCLE_LOCK_NAMESPACE = 'devholm.plugin.lifecycle';
 
@@ -57,6 +60,7 @@ async function applyPluginMigrationsForEntry(
     migrationDir: string;
     migrations: Array<{ id: string; file: string; checksum: string }>;
   },
+  manifest: DevholmPluginManifest,
   options?: { lockAlreadyHeld?: boolean }
 ): Promise<void> {
   const db = getDb();
@@ -82,9 +86,23 @@ async function applyPluginMigrationsForEntry(
     }
 
     let batchOrder = 0;
+    const operationId = randomUUID();
     for (const migration of pending) {
       const startedAt = Date.now();
-      await executeMigration(migration.absolutePath, trx);
+      const execution = await executePluginMigrationWithGate({
+        manifest,
+        migrationId: migration.migrationId,
+        pluginVersion: migration.pluginVersion,
+        checksum: migration.checksum,
+        direction: 'up',
+        operationId,
+        execute: () => executeMigration(migration.absolutePath, trx),
+      });
+      if (execution.state !== 'succeeded') {
+        throw new Error(
+          `Plugin migration execution failed for ${migration.migrationId}: ${execution.detail ?? execution.state}`
+        );
+      }
       batchOrder += 1;
 
       await insertPluginMigrationLedger({
@@ -146,7 +164,12 @@ export async function applyPendingPluginMigrations(
   ensureUniqueMigrationIds(discovered);
 
   for (const entry of registryEntries) {
-    await applyPluginMigrationsForEntry(entry, options);
+    const manifest = bundledManifestById.get(entry.id);
+    if (!manifest) {
+      throw new Error(`Plugin registry entry ${entry.id} has no bundled manifest`);
+    }
+
+    await applyPluginMigrationsForEntry(entry, manifest, options);
   }
 }
 
@@ -160,6 +183,11 @@ export async function applyPluginMigrationDowns(
     throw new Error(`Plugin migration registry entry not found for plugin ${pluginId}`);
   }
 
+  const manifest = getBundledPluginManifests().find((item) => item.id === pluginId);
+  if (!manifest) {
+    throw new Error(`Plugin registry entry ${pluginId} has no bundled manifest`);
+  }
+
   const discovered = discoverPluginMigrations([entry], process.cwd());
   const db = getDb();
   await db.transaction(async (trx) => {
@@ -170,8 +198,22 @@ export async function applyPluginMigrationDowns(
       ]);
     }
 
+    const operationId = randomUUID();
     for (const migration of [...discovered].reverse()) {
-      await executeMigrationDown(migration.absolutePath, trx);
+      const execution = await executePluginMigrationWithGate({
+        manifest,
+        migrationId: migration.migrationId,
+        pluginVersion: migration.pluginVersion,
+        checksum: migration.checksum,
+        direction: 'down',
+        operationId,
+        execute: () => executeMigrationDown(migration.absolutePath, trx),
+      });
+      if (execution.state !== 'succeeded') {
+        throw new Error(
+          `Plugin migration rollback failed for ${migration.migrationId}: ${execution.detail ?? execution.state}`
+        );
+      }
     }
   });
 }

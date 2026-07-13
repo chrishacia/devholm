@@ -673,6 +673,7 @@ export async function purgePlugin(pluginId: string, options?: PurgeOptions): Pro
         ...(manifest.settings?.map((setting) => setting.key) ?? []),
       ]);
       await db('site_settings').whereIn('key', Array.from(pluginSettingKeys)).del();
+      await db('site_settings').where('key', 'like', `plugin:${pluginId}:migration:%`).del();
 
       await upsertPluginLedgerRecord({
         manifest,

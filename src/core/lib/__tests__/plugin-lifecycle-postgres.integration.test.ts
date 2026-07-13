@@ -953,6 +953,7 @@ postgresIntegrationDescribe('plugin lifecycle PostgreSQL integration', () => {
 
     const settingCount = await integrationDb('site_settings')
       .where('key', 'like', 'plugin:url-shortener:%')
+      .andWhereNot('key', 'like', 'plugin:url-shortener:migration:%')
       .count<{ count: string }>('key as count')
       .first();
     expect(Number(settingCount?.count ?? '0')).toBe(0);

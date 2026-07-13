@@ -50,6 +50,10 @@ export const galleryPluginManifest: DevholmPluginManifest = {
     capability: GALLERY_CAPABILITY_ADMIN_MANAGEMENT,
     permissionKeys: [GALLERY_PERMISSION_ADMIN_MANAGE],
   },
+  migrationAuthorization: {
+    capability: GALLERY_CAPABILITY_ADMIN_MANAGEMENT,
+    permissionKeys: [GALLERY_PERMISSION_ADMIN_MANAGE],
+  },
   settings: gallerySettingsDefinitions,
   lifecyclePolicy: {
     baselineAdoptionNote:

@@ -70,6 +70,10 @@ export const calendarPluginManifest: DevholmPluginManifest = {
     capability: CALENDAR_CAPABILITY_ADMIN_MANAGEMENT,
     permissionKeys: [CALENDAR_PERMISSION_ADMIN_MANAGE],
   },
+  migrationAuthorization: {
+    capability: CALENDAR_CAPABILITY_ADMIN_MANAGEMENT,
+    permissionKeys: [CALENDAR_PERMISSION_ADMIN_MANAGE],
+  },
   settings: calendarSettingsDefinitions,
   lifecyclePolicy: {
     baselineAdoptionNote:
