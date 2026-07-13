@@ -9,6 +9,7 @@ export type PluginSandboxSurface =
   | 'api-route'
   | 'public-route'
   | 'lifecycle-hook'
+  | 'migration'
   | 'metadata'
   | 'structured-data'
   | 'sitemap'
@@ -36,7 +37,7 @@ const CAPABILITY_REGISTRY = new Map<string, PluginSandboxCapabilityDefinition>([
       description: 'Calendar admin APIs and admin page bridge operations.',
       riskLevel: 'high',
       requiresExplicitApproval: false,
-      allowedSurfaces: ['admin-page', 'api-route', 'lifecycle-hook'],
+      allowedSurfaces: ['admin-page', 'api-route', 'lifecycle-hook', 'migration'],
       allowedRuntimeOwners: ['core-filesystem', 'plugin-extension'],
       allowedOperations: ['admin-session-check', 'db-read', 'db-write'],
       deniedOperations: [
@@ -94,7 +95,7 @@ const CAPABILITY_REGISTRY = new Map<string, PluginSandboxCapabilityDefinition>([
       description: 'Gallery admin APIs and admin page bridge operations.',
       riskLevel: 'high',
       requiresExplicitApproval: false,
-      allowedSurfaces: ['admin-page', 'api-route', 'lifecycle-hook'],
+      allowedSurfaces: ['admin-page', 'api-route', 'lifecycle-hook', 'migration'],
       allowedRuntimeOwners: ['core-filesystem', 'plugin-extension'],
       allowedOperations: ['admin-session-check', 'db-read', 'db-write'],
       deniedOperations: [
@@ -133,7 +134,7 @@ const CAPABILITY_REGISTRY = new Map<string, PluginSandboxCapabilityDefinition>([
       description: 'URL Shortener admin APIs and admin pages.',
       riskLevel: 'high',
       requiresExplicitApproval: false,
-      allowedSurfaces: ['admin-page', 'api-route', 'lifecycle-hook'],
+      allowedSurfaces: ['admin-page', 'api-route', 'lifecycle-hook', 'migration'],
       allowedRuntimeOwners: ['plugin-extension'],
       allowedOperations: ['admin-session-check', 'db-read', 'db-write'],
       deniedOperations: [

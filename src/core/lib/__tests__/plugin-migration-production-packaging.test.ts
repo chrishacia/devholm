@@ -91,6 +91,16 @@ describe('plugin migration production packaging', () => {
       })),
     }));
 
+    vi.doMock('@core/lib/plugin-migration-contract.server', () => ({
+      executePluginMigrationWithGate: vi.fn(async (input: { execute: () => Promise<void> }) => {
+        await input.execute();
+        return {
+          executionId: '00000000-0000-4000-8000-000000000000',
+          state: 'succeeded',
+        };
+      }),
+    }));
+
     const { applyPendingPluginMigrations } = await import(
       '@core/lib/plugin-migration-runner.server'
     );

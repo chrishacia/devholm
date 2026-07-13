@@ -82,6 +82,11 @@ export interface PluginLifecycleAuthorization {
   permissionKeys: readonly string[];
 }
 
+export interface PluginMigrationAuthorization {
+  capability: string;
+  permissionKeys: readonly string[];
+}
+
 export interface DevholmBundledPlugin {
   manifest: DevholmPluginManifest;
   settings?: readonly PluginSettingsDefinition[];
@@ -117,6 +122,7 @@ export interface DevholmPluginManifest {
   permissions?: readonly PluginPermissionDescriptor[];
   lifecyclePolicy?: PluginLifecycleSafetyPolicy;
   lifecycleAuthorization?: PluginLifecycleAuthorization;
+  migrationAuthorization?: PluginMigrationAuthorization;
   publicRouteExtensionIds?: readonly string[];
   adminPageHrefs?: readonly `/admin/${string}`[];
 
