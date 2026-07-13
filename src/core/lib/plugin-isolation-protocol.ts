@@ -41,6 +41,33 @@ const executePublicRouteHandleMessageSchema = z.object({
   match: z.unknown(),
 });
 
+const lifecycleHookNameSchema = z.enum([
+  'afterInstall',
+  'afterUpgrade',
+  'beforeDisable',
+  'beforeUninstall',
+  'purge',
+]);
+
+const executeLifecycleHookMessageSchema = z.object({
+  type: z.literal('execute-lifecycle-hook'),
+  executionId: z.string().uuid(),
+  pluginId: z.string().min(1),
+  hookName: lifecycleHookNameSchema,
+  operationId: z.string().uuid(),
+  hookExecutionId: z.string().uuid(),
+  artifactIdentity: z.string().min(1),
+  context: z.object({
+    pluginId: z.string().min(1),
+    fromVersion: z.string().optional(),
+    toVersion: z.string().optional(),
+    initiatedBy: z.string().optional(),
+    dryRun: z.boolean().optional(),
+  }),
+  effectiveCapabilities: z.array(z.string().min(1)).max(64),
+  approvedBrokerOperations: z.array(z.string().min(1)).max(64),
+});
+
 const testProbeEnvMessageSchema = z.object({
   type: z.literal('test-probe-env'),
   executionId: z.string().uuid(),
@@ -51,6 +78,7 @@ export const parentToChildMessageSchema = z.discriminatedUnion('type', [
   executeApiMessageSchema,
   executePublicRouteMatchMessageSchema,
   executePublicRouteHandleMessageSchema,
+  executeLifecycleHookMessageSchema,
   testProbeEnvMessageSchema,
 ]);
 
@@ -97,6 +125,19 @@ const publicRouteHandleResultSchema = z.object({
   truncated: z.boolean(),
 });
 
+const lifecycleHookResultSchema = z.object({
+  type: z.literal('lifecycle-hook-result'),
+  executionId: z.string().uuid(),
+  pid: z.number().int().positive(),
+  pluginId: z.string().min(1),
+  hookName: lifecycleHookNameSchema,
+  operationId: z.string().uuid(),
+  hookExecutionId: z.string().uuid(),
+  artifactIdentity: z.string().min(1),
+  status: z.enum(['succeeded', 'failed', 'timed_out', 'blocked', 'cancelled']),
+  message: z.string().optional(),
+});
+
 const testProbeEnvResultSchema = z.object({
   type: z.literal('test-probe-env-result'),
   executionId: z.string().uuid(),
@@ -110,6 +151,7 @@ export const childToParentMessageSchema = z.discriminatedUnion('type', [
   apiResultMessageSchema,
   publicRouteMatchResultSchema,
   publicRouteHandleResultSchema,
+  lifecycleHookResultSchema,
   testProbeEnvResultSchema,
 ]);
 

@@ -2,10 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { NextRequest } from 'next/server';
 import {
   runIsolatedApiExtension,
+  runIsolatedLifecycleHook,
   runIsolatedPublicRouteHandle,
   runIsolatedPublicRouteMatch,
   testProbeIsolatedEnv,
 } from '@core/lib/plugin-isolation-runtime.server';
+import { checksumManifest } from '@core/db/plugin-lifecycle';
+import { getBundledPluginManifests } from '@core/lib/plugin-registry.server';
 
 function makeRequest(pathname: string, method: string = 'GET'): NextRequest {
   return new Request(`http://localhost:3000${pathname}`, {
@@ -76,5 +79,28 @@ describe('plugin isolation runtime', () => {
     expect(typeof values.NODE_ENV).toBe('string');
 
     delete process.env.UNSAFE_PARENT_SECRET;
+  });
+
+  it('executes lifecycle hooks through child isolation boundary', async () => {
+    const manifest = getBundledPluginManifests().find((entry) => entry.id === 'url-shortener');
+    if (!manifest) {
+      throw new Error('expected url-shortener manifest to exist in bundled plugin registry');
+    }
+
+    const result = await runIsolatedLifecycleHook({
+      pluginId: manifest.id,
+      hookName: 'purge',
+      operationId: '11111111-1111-4111-8111-111111111111',
+      hookExecutionId: '22222222-2222-4222-8222-222222222222',
+      artifactIdentity: `bundled:${manifest.id}@${manifest.version}:${checksumManifest(manifest)}`,
+      context: {
+        pluginId: manifest.id,
+      },
+      effectiveCapabilities: ['url-shortener.admin-management'],
+      approvedBrokerOperations: ['lifecycle-hook-execute'],
+    });
+
+    expect(result.meta.childPid).not.toBe(process.pid);
+    expect(['succeeded', 'failed', 'timed_out', 'blocked']).toContain(result.status);
   });
 });

@@ -1,11 +1,14 @@
 import process from 'node:process';
+import * as childProcess from 'node:child_process';
 import type { NextRequest } from 'next/server';
 import type { ExtensionHelpers } from '@core/types/extensions.server';
+import { checksumManifest } from '@core/db/plugin-lifecycle';
 import {
   childToParentMessageSchema,
   MAX_ISOLATED_RESPONSE_BODY_BYTES,
   parentToChildMessageSchema,
 } from '@core/lib/plugin-isolation-protocol';
+import { getBundledPluginManifests } from '@core/lib/plugin-registry.server';
 import { apiExtensions } from '@user/extensions/api';
 import { publicRouteExtensions } from '@user/extensions/public-routes';
 
@@ -246,6 +249,131 @@ async function executeProbeEnv(
   });
 }
 
+function withBlockedChildProcessApis<T>(work: () => Promise<T>): Promise<T> {
+  const blocked = () => {
+    throw new Error('lifecycle hooks cannot invoke child_process APIs in isolated runtime');
+  };
+
+  const originalExec = childProcess.exec;
+  const originalExecFile = childProcess.execFile;
+  const originalFork = childProcess.fork;
+  const originalSpawn = childProcess.spawn;
+  const originalSpawnSync = childProcess.spawnSync;
+  const originalExecFileSync = childProcess.execFileSync;
+  const originalExecSync = childProcess.execSync;
+
+  Object.assign(childProcess, {
+    exec: blocked,
+    execFile: blocked,
+    fork: blocked,
+    spawn: blocked,
+    spawnSync: blocked,
+    execFileSync: blocked,
+    execSync: blocked,
+  });
+
+  return work().finally(() => {
+    Object.assign(childProcess, {
+      exec: originalExec,
+      execFile: originalExecFile,
+      fork: originalFork,
+      spawn: originalSpawn,
+      spawnSync: originalSpawnSync,
+      execFileSync: originalExecFileSync,
+      execSync: originalExecSync,
+    });
+  });
+}
+
+async function executeLifecycleHook(
+  message: Extract<
+    ReturnType<typeof parentToChildMessageSchema.parse>,
+    { type: 'execute-lifecycle-hook' }
+  >
+) {
+  const manifest = getBundledPluginManifests().find((entry) => entry.id === message.pluginId);
+  if (!manifest) {
+    sendMessage({
+      type: 'lifecycle-hook-result',
+      executionId: message.executionId,
+      pid: WORKER_PID,
+      pluginId: message.pluginId,
+      hookName: message.hookName,
+      operationId: message.operationId,
+      hookExecutionId: message.hookExecutionId,
+      artifactIdentity: message.artifactIdentity,
+      status: 'blocked',
+      message: `Plugin manifest not found for ${message.pluginId}`,
+    });
+    return;
+  }
+
+  const expectedArtifactIdentity = `bundled:${manifest.id}@${manifest.version}:${checksumManifest(manifest)}`;
+  if (message.artifactIdentity !== expectedArtifactIdentity) {
+    sendMessage({
+      type: 'lifecycle-hook-result',
+      executionId: message.executionId,
+      pid: WORKER_PID,
+      pluginId: message.pluginId,
+      hookName: message.hookName,
+      operationId: message.operationId,
+      hookExecutionId: message.hookExecutionId,
+      artifactIdentity: message.artifactIdentity,
+      status: 'blocked',
+      message: 'Lifecycle artifact identity mismatch',
+    });
+    return;
+  }
+
+  const hook = manifest.lifecycle?.[message.hookName];
+  if (!hook) {
+    sendMessage({
+      type: 'lifecycle-hook-result',
+      executionId: message.executionId,
+      pid: WORKER_PID,
+      pluginId: message.pluginId,
+      hookName: message.hookName,
+      operationId: message.operationId,
+      hookExecutionId: message.hookExecutionId,
+      artifactIdentity: message.artifactIdentity,
+      status: 'blocked',
+      message: `Lifecycle hook ${message.hookName} is not declared`,
+    });
+    return;
+  }
+
+  try {
+    await withBlockedChildProcessApis(async () => {
+      await Promise.resolve(hook(message.context));
+    });
+
+    sendMessage({
+      type: 'lifecycle-hook-result',
+      executionId: message.executionId,
+      pid: WORKER_PID,
+      pluginId: message.pluginId,
+      hookName: message.hookName,
+      operationId: message.operationId,
+      hookExecutionId: message.hookExecutionId,
+      artifactIdentity: message.artifactIdentity,
+      status: 'succeeded',
+    });
+  } catch (error) {
+    sendMessage({
+      type: 'lifecycle-hook-result',
+      executionId: message.executionId,
+      pid: WORKER_PID,
+      pluginId: message.pluginId,
+      hookName: message.hookName,
+      operationId: message.operationId,
+      hookExecutionId: message.hookExecutionId,
+      artifactIdentity: message.artifactIdentity,
+      status: 'failed',
+      message: error instanceof Error ? error.message : 'unknown isolated lifecycle hook error',
+    });
+  }
+}
+
 process.on('message', async (rawMessage: unknown) => {
   const parsed = parentToChildMessageSchema.safeParse(rawMessage);
   if (!parsed.success) {
@@ -269,6 +397,9 @@ process.on('message', async (rawMessage: unknown) => {
       return;
     case 'execute-public-route-handle':
       await executePublicRouteHandle(message);
+      return;
+    case 'execute-lifecycle-hook':
+      await executeLifecycleHook(message);
       return;
     case 'test-probe-env':
       await executeProbeEnv(message);

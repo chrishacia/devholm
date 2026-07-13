@@ -10,9 +10,10 @@ import {
   DEFAULT_ISOLATED_EXECUTION_TIMEOUT_MS,
   type ChildToParentMessage,
   MAX_ISOLATED_REQUEST_BODY_BYTES,
-  parentToChildMessageSchema,
   type ParentToChildMessage,
+  parentToChildMessageSchema,
 } from '@core/lib/plugin-isolation-protocol';
+import type { PluginLifecycleContext } from '@core/types/plugins';
 
 export interface PluginIsolationExecutionMeta {
   executionId: string;
@@ -308,6 +309,53 @@ export async function runIsolatedPublicRouteHandle(params: {
       status: event.status,
       headers: new Headers(event.headers),
     }),
+    meta: {
+      executionId,
+      childPid: event.pid,
+    },
+  };
+}
+
+export async function runIsolatedLifecycleHook(params: {
+  pluginId: string;
+  hookName: 'afterInstall' | 'afterUpgrade' | 'beforeDisable' | 'beforeUninstall' | 'purge';
+  operationId: string;
+  hookExecutionId: string;
+  artifactIdentity: string;
+  context: PluginLifecycleContext;
+  effectiveCapabilities: string[];
+  approvedBrokerOperations: string[];
+}): Promise<{
+  status: 'succeeded' | 'failed' | 'timed_out' | 'blocked' | 'cancelled';
+  message?: string;
+  meta: PluginIsolationExecutionMeta;
+}> {
+  const executionId = randomUUID();
+
+  const event = await runWorkerMessage({
+    type: 'execute-lifecycle-hook',
+    executionId,
+    pluginId: params.pluginId,
+    hookName: params.hookName,
+    operationId: params.operationId,
+    hookExecutionId: params.hookExecutionId,
+    artifactIdentity: params.artifactIdentity,
+    context: params.context,
+    effectiveCapabilities: params.effectiveCapabilities,
+    approvedBrokerOperations: params.approvedBrokerOperations,
+  });
+
+  if (event.type === 'worker-error') {
+    throw new Error(`isolated lifecycle hook execution failed: ${event.code}: ${event.message}`);
+  }
+
+  if (event.type !== 'lifecycle-hook-result') {
+    throw new Error('isolated lifecycle hook execution received an unexpected worker response');
+  }
+
+  return {
+    status: event.status,
+    message: event.message,
     meta: {
       executionId,
       childPid: event.pid,

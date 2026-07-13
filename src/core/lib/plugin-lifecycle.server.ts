@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { getDb } from '@/db';
 import {
   getInstalledPlugin,
@@ -8,6 +9,10 @@ import {
   applyPendingPluginMigrations,
   applyPluginMigrationDowns,
 } from '@core/lib/plugin-migration-runner.server';
+import {
+  executeLifecycleHookWithIsolation,
+  type LifecycleHookName,
+} from '@core/lib/plugin-lifecycle-hook-contract.server';
 import {
   getBundledPluginManifests,
   isVersionCompatible,
@@ -27,7 +32,47 @@ type PurgeOptions = {
   initiatedBy?: string;
 };
 
+type HookExecutionOptions = {
+  manifest: DevholmPluginManifest;
+  hookName: LifecycleHookName;
+  context: PluginLifecycleContext;
+  operationId: string;
+};
+
 const LIFECYCLE_LOCK_NAMESPACE = 'devholm.plugin.lifecycle';
+
+function shouldUseIsolatedLifecycleHooks(): boolean {
+  if (process.env.NODE_ENV !== 'test') {
+    return true;
+  }
+
+  return process.env.PLUGIN_LIFECYCLE_ISOLATION_ENABLE_IN_TESTS === 'true';
+}
+
+async function executeLifecycleHook(options: HookExecutionOptions): Promise<void> {
+  const hook = options.manifest.lifecycle?.[options.hookName];
+  if (!hook) {
+    return;
+  }
+
+  if (!shouldUseIsolatedLifecycleHooks()) {
+    await Promise.resolve(hook(options.context));
+    return;
+  }
+
+  const result = await executeLifecycleHookWithIsolation({
+    manifest: options.manifest,
+    hookName: options.hookName,
+    context: options.context,
+    operationId: options.operationId,
+  });
+
+  if (result.state !== 'succeeded') {
+    throw new Error(
+      `lifecycle hook ${options.hookName} failed for ${options.manifest.id}: ${result.detail ?? result.state}`
+    );
+  }
+}
 
 function getManifest(pluginId: string): DevholmPluginManifest {
   const manifest = getBundledPluginManifests().find((item) => item.id === pluginId);
@@ -233,6 +278,7 @@ export async function installPlugin(
     toVersion: manifest.version,
     initiatedBy: options.initiatedBy,
   };
+  const operationId = randomUUID();
 
   validateCompatibilityAndDependencies();
 
@@ -266,9 +312,12 @@ export async function installPlugin(
       await applyPendingPluginMigrations(pluginId, { lockAlreadyHeld: true });
       await ensureManifestSettings(manifest);
 
-      if (manifest.lifecycle?.afterInstall) {
-        await manifest.lifecycle.afterInstall(context);
-      }
+      await executeLifecycleHook({
+        manifest,
+        hookName: 'afterInstall',
+        context,
+        operationId,
+      });
 
       const now = new Date();
       const enabled = options.enable === true;
@@ -352,6 +401,7 @@ export async function enablePlugin(pluginId: string, initiatedBy?: string): Prom
 
 export async function upgradePlugin(pluginId: string, initiatedBy?: string): Promise<void> {
   const manifest = getManifest(pluginId);
+  const operationId = randomUUID();
 
   await withPluginLifecycleLock(pluginId, async () => {
     const previous = await getInstalledPlugin(pluginId);
@@ -383,14 +433,17 @@ export async function upgradePlugin(pluginId: string, initiatedBy?: string): Pro
       await applyPendingPluginMigrations(pluginId, { lockAlreadyHeld: true });
       await ensureManifestSettings(manifest);
 
-      if (manifest.lifecycle?.afterUpgrade) {
-        await manifest.lifecycle.afterUpgrade({
+      await executeLifecycleHook({
+        manifest,
+        hookName: 'afterUpgrade',
+        context: {
           pluginId,
           fromVersion: previous.installedVersion as string,
           toVersion: manifest.version,
           initiatedBy,
-        });
-      }
+        },
+        operationId,
+      });
 
       await upsertPluginLedgerRecord({
         manifest,
@@ -422,6 +475,7 @@ export async function upgradePlugin(pluginId: string, initiatedBy?: string): Pro
 
 export async function disablePlugin(pluginId: string, initiatedBy?: string): Promise<void> {
   const manifest = getManifest(pluginId);
+  const operationId = randomUUID();
 
   await withPluginLifecycleLock(pluginId, async () => {
     const previous = await getInstalledPlugin(pluginId);
@@ -444,13 +498,16 @@ export async function disablePlugin(pluginId: string, initiatedBy?: string): Pro
         lastError: null,
       });
 
-      if (manifest.lifecycle?.beforeDisable) {
-        await manifest.lifecycle.beforeDisable({
+      await executeLifecycleHook({
+        manifest,
+        hookName: 'beforeDisable',
+        context: {
           pluginId,
           fromVersion: previous.installedVersion,
           initiatedBy,
-        });
-      }
+        },
+        operationId,
+      });
 
       await setPluginEnabledSetting(pluginId, false);
       await upsertPluginLedgerRecord({
@@ -484,6 +541,7 @@ export async function disablePlugin(pluginId: string, initiatedBy?: string): Pro
 
 export async function uninstallPlugin(pluginId: string, initiatedBy?: string): Promise<void> {
   const manifest = getManifest(pluginId);
+  const operationId = randomUUID();
 
   await withPluginLifecycleLock(pluginId, async () => {
     const previous = await getInstalledPlugin(pluginId);
@@ -506,13 +564,16 @@ export async function uninstallPlugin(pluginId: string, initiatedBy?: string): P
         lastError: null,
       });
 
-      if (manifest.lifecycle?.beforeUninstall) {
-        await manifest.lifecycle.beforeUninstall({
+      await executeLifecycleHook({
+        manifest,
+        hookName: 'beforeUninstall',
+        context: {
           pluginId,
           fromVersion: previous.installedVersion,
           initiatedBy,
-        });
-      }
+        },
+        operationId,
+      });
 
       await setPluginEnabledSetting(pluginId, false);
       await upsertPluginLedgerRecord({
@@ -546,6 +607,7 @@ export async function uninstallPlugin(pluginId: string, initiatedBy?: string): P
 
 export async function purgePlugin(pluginId: string, options?: PurgeOptions): Promise<void> {
   const manifest = getManifest(pluginId);
+  const operationId = randomUUID();
 
   if (!options || options.confirmPluginId !== pluginId) {
     throw new Error(`Purge confirmation required. Re-run purge with confirmPluginId='${pluginId}'`);
@@ -581,13 +643,16 @@ export async function purgePlugin(pluginId: string, options?: PurgeOptions): Pro
         lastError: null,
       });
 
-      if (manifest.lifecycle?.purge) {
-        await manifest.lifecycle.purge({
+      await executeLifecycleHook({
+        manifest,
+        hookName: 'purge',
+        context: {
           pluginId,
           fromVersion: previous.installedVersion ?? undefined,
           initiatedBy: options.initiatedBy,
-        });
-      }
+        },
+        operationId,
+      });
 
       await applyPluginMigrationDowns(pluginId, { lockAlreadyHeld: true });
 

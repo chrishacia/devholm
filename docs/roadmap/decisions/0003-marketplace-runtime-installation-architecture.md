@@ -355,6 +355,47 @@ Ordering implications after Phase 5H
 - Issue #71 should implement migration execution controls through this isolated runtime boundary.
 - Issue #69 publisher-trust expansion remains blocked as a containment substitute; trust is provenance/authenticity, not runtime isolation.
 
+Phase 5I: Gated lifecycle-hook execution through isolated runtime boundary (issue #68)
+
+- Objective: execute lifecycle hooks only during explicit lifecycle transitions, with deny-by-default gating and child-process isolation.
+- Repository: devholm.com.
+- Lifecycle-hook contract v1:
+  - supported hook names: `afterInstall`, `afterUpgrade`, `beforeDisable`, `beforeUninstall`, `purge`.
+  - trigger model: each hook executes only inside its owning transition (install, upgrade, disable, uninstall, purge).
+  - identity binding on every dispatch: plugin id, artifact identity, lifecycle operation id, hook execution id, hook name.
+  - worker response is schema-validated and operation-bound.
+- Gating model:
+  - hook dispatch fails closed when hook declaration is missing,
+  - hook dispatch fails closed when capability authorization denies lifecycle execution,
+  - duplicate dispatch for a previously succeeded operation/hook tuple is blocked,
+  - hook execution state is recorded in durable site settings records (pending/approved/running/succeeded/failed/timed_out/cancelled/blocked plus rollback placeholders).
+- Isolation behavior:
+  - lifecycle hooks are executed via the same brokered child runtime introduced in Phase 5H,
+  - parent process does not directly invoke lifecycle hook functions in production mode,
+  - worker validates artifact identity before hook dispatch,
+  - worker blocks child_process API usage during hook execution.
+- Failure and rollback posture:
+  - failed hooks block the owning transition and surface explicit error diagnostics,
+  - lifecycle transition does not advance to success when required hooks fail,
+  - rollback state semantics are tracked as explicit lifecycle-hook states for future rollback orchestration phases.
+- Non-goals in this phase:
+  - no claim of OS-level sandboxing,
+  - no strict CPU/memory quotas,
+  - no migration execution rollout (issue #71),
+  - no third-party trust expansion (issue #69),
+  - no claim of mathematically perfect exactly-once execution.
+
+Residual risk after Phase 5I
+
+- Hook dispatch is identity-bound and durable-status tracked, but destructive exactly-once guarantees still depend on hook idempotency discipline.
+- Worker isolation limits blast radius but does not provide kernel-level containment.
+- Lifecycle-hook gating now exists for bundled lifecycle transitions; migration containment remains a separate follow-up (issue #71).
+
+Ordering implications after Phase 5I
+
+- Issue #71 is the next containment milestone for migration execution controls.
+- Issue #69 remains blocked; publisher trust cannot be used as a substitute for runtime containment and lifecycle/migration controls.
+
 Phase 6: Optional registry service evaluation
 
 - Objective: assess dedicated registry API only after Phase 5A-5G evidence.
