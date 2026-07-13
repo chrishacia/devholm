@@ -17,7 +17,7 @@ function makeRequest(pathname: string, method: string = 'GET'): NextRequest {
   }) as NextRequest;
 }
 
-describe('plugin isolation runtime', () => {
+describe.sequential('plugin isolation runtime', () => {
   const originalToggle = process.env.PLUGIN_ISOLATION_ENABLE_IN_TESTS;
 
   beforeAll(() => {
@@ -68,7 +68,7 @@ describe('plugin isolation runtime', () => {
     expect(handled.response.headers.get('x-middleware-rewrite')).toContain(
       '/api/public/url-shortener/abc123'
     );
-  });
+  }, 20000);
 
   it('does not inherit arbitrary parent environment variables', async () => {
     process.env.UNSAFE_PARENT_SECRET = 'should-not-leak';

@@ -135,10 +135,16 @@ pnpm devholm new:seed seed-example-data
 ## 7. Validate before you commit
 
 ```bash
-pnpm typecheck
-pnpm test
-pnpm build
+pnpm validate:ci
 ```
+
+What this covers:
+
+- deterministic owned PostgreSQL test container on `127.0.0.1:45433`
+- plugin-registry generation checks
+- migrations and bootstrap seeds
+- dependency audit, lint, typecheck, unit tests, PostgreSQL lifecycle integration, runtime gate suites, build, exact Firefox smoke, exact URL shortener E2E, and full E2E
+- automatic cleanup of the owned test container unless `DEVHOLM_KEEP_TEST_DB=true`
 
 ## 8. Prepare for deployment
 

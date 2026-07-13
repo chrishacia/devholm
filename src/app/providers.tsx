@@ -38,7 +38,7 @@ function ThemeWrapper({ children }: { children: ReactNode }) {
       <div style={{ visibility: mounted ? 'visible' : 'hidden' }}>
         <ClientErrorMonitor />
         {children}
-        {showSearchDialog ? <SearchDialog /> : null}
+        {mounted && showSearchDialog ? <SearchDialog /> : null}
       </div>
     </MuiThemeProvider>
   );

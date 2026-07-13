@@ -103,6 +103,30 @@ A major roadmap item is not complete until the applicable gates pass:
 - Deferred work is explicitly tracked
 - Release notes distinguish shipped functionality from skeleton or planned functionality
 
+## Completion doctrine
+
+Mergeable is not complete. Merged is not complete. Issue closure is not complete.
+
+Work is complete only when the exact merged commit has reached a terminal successful state for every applicable verification path.
+
+Required expectations:
+
+- Separate reporting for implementation state, local validation state, PR validation state, merge state, and post-merge health state.
+- All applicable unit, integration, PostgreSQL-backed, and E2E suites must run and pass.
+- Relevant suites may not silently skip because of missing environment, missing services, or broad conditional logic.
+- Typecheck, lint, production build, migrations, seeds, and security checks must pass where applicable.
+- Pending, unknown, flaky, rerun-only, skipped, or baseline-failing relevant checks block completion until they are resolved or explicitly accepted.
+- Rerun-only success is evidence of a flake that must be tracked, not silent proof of health.
+- Local validation should use the repository parity entrypoint `pnpm validate:ci` unless a narrower approved command is explicitly more appropriate.
+- Post-merge workflows for the merged commit must also reach terminal success before a final completion report is issued.
+- If branch-protection or ruleset evidence is unavailable, state that gap explicitly rather than inferring protection from workflow YAML alone.
+- Baseline failures and accepted exceptions must be tracked with evidence, an owner, and an exit condition.
+
+Identity safety:
+
+- Personal project GitHub identity for DevHolm work is `chrishacia`.
+- The work identity `ten-cmh` must not be used for this repository.
+
 ## Labels and milestones
 
 Keep taxonomy minimal.
