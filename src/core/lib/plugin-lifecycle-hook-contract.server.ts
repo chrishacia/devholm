@@ -90,19 +90,46 @@ function resolveLifecycleCapability(manifest: DevholmPluginManifest): {
   capability: string;
   permissionKeys: string[];
 } {
-  const adminPermissions = (manifest.permissions ?? []).filter((entry) => entry.scope === 'admin');
-  const first = adminPermissions[0];
-  if (!first) {
+  const authorization = manifest.lifecycleAuthorization;
+  if (!authorization) {
     throw new Error(
-      `Lifecycle hook execution blocked: ${manifest.id} has no admin-scoped permission declaration`
+      `Lifecycle hook execution blocked: ${manifest.id} is missing explicit lifecycleAuthorization`
+    );
+  }
+
+  const declaredPermissions = manifest.permissions ?? [];
+  const resolvedPermissionKeys = authorization.permissionKeys.map((permissionKey) => {
+    const permission = declaredPermissions.find((entry) => entry.key === permissionKey);
+    if (!permission) {
+      throw new Error(
+        `Lifecycle hook execution blocked: ${manifest.id} lifecycleAuthorization references undeclared permission ${permissionKey}`
+      );
+    }
+
+    if (permission.capability !== authorization.capability) {
+      throw new Error(
+        `Lifecycle hook execution blocked: ${manifest.id} lifecycleAuthorization permission ${permissionKey} does not match capability ${authorization.capability}`
+      );
+    }
+
+    if (permission.scope !== 'admin') {
+      throw new Error(
+        `Lifecycle hook execution blocked: ${manifest.id} lifecycleAuthorization permission ${permissionKey} is not admin-scoped`
+      );
+    }
+
+    return permission.key;
+  });
+
+  if (resolvedPermissionKeys.length === 0) {
+    throw new Error(
+      `Lifecycle hook execution blocked: ${manifest.id} lifecycleAuthorization.permissionKeys is empty`
     );
   }
 
   return {
-    capability: first.capability,
-    permissionKeys: adminPermissions
-      .filter((entry) => entry.capability === first.capability)
-      .map((entry) => entry.key),
+    capability: authorization.capability,
+    permissionKeys: resolvedPermissionKeys,
   };
 }
 
@@ -200,20 +227,6 @@ export async function executeLifecycleHookWithIsolation(params: {
     };
   }
 
-  const { capability, permissionKeys } = resolveLifecycleCapability(params.manifest);
-  const sandboxDecision = await evaluatePluginSandboxAccess({
-    pluginId: params.manifest.id,
-    surface: 'lifecycle-hook',
-    resourceId: `lifecycle:${params.hookName}`,
-    accessPolicy: {
-      scope: 'admin',
-      capability,
-      permissionKeys,
-      runtimeOwner: 'plugin-extension',
-      notes: 'issue-68 lifecycle hook runtime gate',
-    },
-  });
-
   const hookExecutionId = randomUUID();
   const baseRecord: PersistedHookExecutionRecord = {
     contractVersion: 'lifecycle-hook-v1',
@@ -227,16 +240,61 @@ export async function executeLifecycleHookWithIsolation(params: {
     updatedAt: nowIso(),
     context: toTrackedContext(params.context),
     capabilities: {
+      effective: [],
+      approvedBrokerOperations: ['lifecycle-hook-execute'],
+    },
+  };
+
+  let capability: string;
+  let permissionKeys: string[];
+
+  try {
+    const resolvedAuthorization = resolveLifecycleCapability(params.manifest);
+    capability = resolvedAuthorization.capability;
+    permissionKeys = resolvedAuthorization.permissionKeys;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const blockedRecord: PersistedHookExecutionRecord = {
+      ...baseRecord,
+      state: 'blocked',
+      updatedAt: nowIso(),
+      detail: message,
+    };
+    await writeRecord(blockedRecord);
+    return {
+      operationId: params.operationId,
+      hookExecutionId,
+      state: 'blocked',
+      detail: message,
+    };
+  }
+
+  const sandboxDecision = await evaluatePluginSandboxAccess({
+    pluginId: params.manifest.id,
+    surface: 'lifecycle-hook',
+    resourceId: `lifecycle:${params.hookName}`,
+    accessPolicy: {
+      scope: 'admin',
+      capability,
+      permissionKeys,
+      runtimeOwner: 'plugin-extension',
+      notes: 'issue-68 lifecycle hook runtime gate',
+    },
+  });
+
+  const pendingRecord: PersistedHookExecutionRecord = {
+    ...baseRecord,
+    capabilities: {
       effective: [capability],
       approvedBrokerOperations: ['lifecycle-hook-execute'],
     },
     sandboxDecision: applySandboxSnapshot(sandboxDecision),
   };
-  await writeRecord(baseRecord);
+  await writeRecord(pendingRecord);
 
   if (!sandboxDecision.allowed) {
     const blockedRecord: PersistedHookExecutionRecord = {
-      ...baseRecord,
+      ...pendingRecord,
       state: 'blocked',
       updatedAt: nowIso(),
       detail: sandboxDecision.reason,
@@ -251,13 +309,13 @@ export async function executeLifecycleHookWithIsolation(params: {
   }
 
   await writeRecord({
-    ...baseRecord,
+    ...pendingRecord,
     state: 'approved',
     updatedAt: nowIso(),
   });
 
   await writeRecord({
-    ...baseRecord,
+    ...pendingRecord,
     state: 'running',
     updatedAt: nowIso(),
   });
@@ -306,7 +364,7 @@ export async function executeLifecycleHookWithIsolation(params: {
       : 'failed';
 
     await writeRecord({
-      ...baseRecord,
+      ...pendingRecord,
       state: normalizedState,
       updatedAt: nowIso(),
       detail: message,

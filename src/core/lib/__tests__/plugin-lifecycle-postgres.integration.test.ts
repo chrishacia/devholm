@@ -7,8 +7,10 @@ import { createHash } from 'crypto';
 import knex, { type Knex } from 'knex';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT,
   URL_SHORTENER_ENABLEMENT_KEY,
   URL_SHORTENER_LEGACY_PREFIX_ENABLED_KEY,
+  URL_SHORTENER_PERMISSION_ADMIN_MANAGE,
   URL_SHORTENER_PUBLIC_CREATION_MODE_KEY,
   URL_SHORTENER_ROUTE_PREFIX_KEY,
 } from '@user/extensions/plugins/url-shortener/constants';
@@ -137,6 +139,19 @@ function makeManifest(overrides: Partial<DevholmPluginManifest> = {}): DevholmPl
     version: '0.1.0',
     enablementSettingKey: 'plugin:url-shortener:enabled',
     dependencies: { plugins: {}, packages: {} },
+    permissions: [
+      {
+        key: URL_SHORTENER_PERMISSION_ADMIN_MANAGE,
+        capability: URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT,
+        scope: 'admin',
+        description: 'Manage URL shortener lifecycle operations in tests.',
+        runtimeOwner: 'plugin-extension',
+      },
+    ],
+    lifecycleAuthorization: {
+      capability: URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT,
+      permissionKeys: [URL_SHORTENER_PERMISSION_ADMIN_MANAGE],
+    },
     settings: [
       { key: URL_SHORTENER_ROUTE_PREFIX_KEY, type: 'string', defaultValue: '/s' },
       {

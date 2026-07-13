@@ -72,6 +72,10 @@ function manifest(overrides: Partial<DevholmPluginManifest> = {}): DevholmPlugin
         runtimeOwner: 'plugin-extension',
       },
     ],
+    lifecycleAuthorization: {
+      capability: 'calendar.admin-management',
+      permissionKeys: ['plugin-a.admin.manage'],
+    },
     lifecycle: {
       afterInstall: async () => undefined,
     },
@@ -156,6 +160,35 @@ describe('plugin lifecycle hook contract', () => {
     });
 
     expect(result.state).toBe('blocked');
+    expect(runIsolatedLifecycleHook).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when lifecycleAuthorization is missing even if admin permissions exist', async () => {
+    vi.resetModules();
+
+    getDb.mockReturnValue(createDbMock());
+
+    const { executeLifecycleHookWithIsolation } = await import(
+      '@core/lib/plugin-lifecycle-hook-contract.server'
+    );
+
+    const manifestWithoutLifecycleAuthorization = {
+      ...manifest(),
+      lifecycleAuthorization: undefined,
+    };
+
+    const result = await executeLifecycleHookWithIsolation({
+      manifest: manifestWithoutLifecycleAuthorization,
+      hookName: 'afterInstall',
+      context: {
+        pluginId: 'plugin-a',
+      },
+      operationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    });
+
+    expect(result.state).toBe('blocked');
+    expect(result.detail).toContain('missing explicit lifecycleAuthorization');
+    expect(evaluatePluginSandboxAccess).not.toHaveBeenCalled();
     expect(runIsolatedLifecycleHook).not.toHaveBeenCalled();
   });
 });

@@ -46,6 +46,10 @@ export const galleryPluginManifest: DevholmPluginManifest = {
       runtimeOwner: 'core-filesystem',
     },
   ],
+  lifecycleAuthorization: {
+    capability: GALLERY_CAPABILITY_ADMIN_MANAGEMENT,
+    permissionKeys: [GALLERY_PERMISSION_ADMIN_MANAGE],
+  },
   settings: gallerySettingsDefinitions,
   lifecyclePolicy: {
     baselineAdoptionNote:

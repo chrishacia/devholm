@@ -22,6 +22,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:plugin-lifecycle:pg": "PHASE2_REQUIRE_POSTGRES_INTEGRATION=true PHASE2_TEST_DATABASE_URL=${PHASE2_TEST_DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:5432/mysite} vitest run src/core/lib/__tests__/plugin-lifecycle-postgres.integration.test.ts",
     "test:e2e": "playwright test",
     "devholm": "tsx scripts/devholm-cli.ts",
     "db:migrate": "node --import tsx/esm node_modules/knex/bin/cli.js migrate:latest",

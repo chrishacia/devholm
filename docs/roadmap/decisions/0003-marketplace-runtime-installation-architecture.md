@@ -363,6 +363,7 @@ Phase 5I: Gated lifecycle-hook execution through isolated runtime boundary (issu
   - supported hook names: `afterInstall`, `afterUpgrade`, `beforeDisable`, `beforeUninstall`, `purge`.
   - trigger model: each hook executes only inside its owning transition (install, upgrade, disable, uninstall, purge).
   - identity binding on every dispatch: plugin id, artifact identity, lifecycle operation id, hook execution id, hook name.
+  - authorization source: explicit manifest `lifecycleAuthorization` declaration naming the capability and exact permission keys that authorize lifecycle execution.
   - worker response is schema-validated and operation-bound.
 - Gating model:
   - hook dispatch fails closed when hook declaration is missing,

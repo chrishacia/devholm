@@ -42,6 +42,15 @@ type HookExecutionOptions = {
 const LIFECYCLE_LOCK_NAMESPACE = 'devholm.plugin.lifecycle';
 
 function shouldUseIsolatedLifecycleHooks(): boolean {
+  const runningUnderVitest =
+    process.env.VITEST === 'true' ||
+    process.env.VITEST_WORKER_ID !== undefined ||
+    process.env.VITEST_POOL_ID !== undefined;
+
+  if (runningUnderVitest) {
+    return process.env.PLUGIN_LIFECYCLE_ISOLATION_ENABLE_IN_TESTS === 'true';
+  }
+
   if (process.env.NODE_ENV !== 'test') {
     return true;
   }
