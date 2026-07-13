@@ -17,7 +17,7 @@ function makeRequest(pathname: string, method: string = 'GET'): NextRequest {
   }) as NextRequest;
 }
 
-describe('plugin isolation runtime', () => {
+describe.sequential('plugin isolation runtime', () => {
   const originalToggle = process.env.PLUGIN_ISOLATION_ENABLE_IN_TESTS;
 
   beforeAll(() => {

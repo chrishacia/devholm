@@ -161,7 +161,7 @@ test.describe('URL Shortener MVP', () => {
 
     const shortUrlPath = `/s/${createdCode}`;
 
-    const redirectResponse = await page.request.get(`/api/public/url-shortener/${createdCode}`, {
+    const redirectResponse = await page.request.get(shortUrlPath, {
       maxRedirects: 0,
     });
     expect(redirectResponse.status()).toBe(302);
@@ -211,7 +211,7 @@ test.describe('URL Shortener MVP', () => {
     await setPluginEnabledState(false);
 
     const disabledResponse = await page.request.get(
-      `/api/public/url-shortener/${createdCode}?disabledCheck=${Date.now().toString(36)}`,
+      `${shortUrlPath}?disabledCheck=${Date.now().toString(36)}`,
       { maxRedirects: 0 }
     );
     expect(disabledResponse?.status()).toBe(404);

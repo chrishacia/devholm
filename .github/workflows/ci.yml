@@ -310,7 +310,8 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
-    needs: [sync-framework, lint]
+    needs: [sync-framework, changes]
+    if: needs.changes.outputs.docs_only != 'true'
     services:
       postgres:
         image: postgres:16-alpine
@@ -368,12 +369,83 @@ jobs:
           retention-days: 7
 
   # ===========================================================================
+  # PostgreSQL Lifecycle & Runtime Gates
+  # ===========================================================================
+  postgres-integration:
+    name: PostgreSQL Lifecycle & Runtime Gates
+    runs-on: ubuntu-latest
+    needs: [sync-framework, changes]
+    if: needs.changes.outputs.docs_only != 'true'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
+      DATABASE_HOST: 'localhost'
+      DATABASE_PORT: '5432'
+      DATABASE_NAME: 'test'
+      DATABASE_USER: 'test'
+      DATABASE_PASSWORD: 'test'
+      PHASE2_REQUIRE_POSTGRES_INTEGRATION: 'true'
+      PHASE2_TEST_DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
+      NEXTAUTH_URL: 'http://localhost:3000'
+      NEXTAUTH_SECRET: 'test-secret'
+      ADMIN_EMAIL: 'admin@example.test'
+      ADMIN_PASSWORD: 'e2e-test-password-change-me'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync-framework.outputs.target_sha }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate plugin registry
+        run: pnpm plugins:generate
+
+      - name: Run database migrations
+        run: pnpm db:migrate
+
+      - name: Run bootstrap seeds
+        run: pnpm db:seed:bootstrap
+
+      - name: Run PostgreSQL lifecycle integration tests
+        run: pnpm test:plugin-lifecycle:pg:ci
+
+      - name: Run lifecycle and runtime gate suites
+        run: pnpm test:runtime:gates
+
+  # ===========================================================================
   # Build
   # ===========================================================================
   build:
     name: Build Application
     runs-on: ubuntu-latest
-    needs: [sync-framework, lint, unit-tests]
+    needs: [sync-framework, changes, lint, unit-tests, postgres-integration, security]
+    if: needs.changes.outputs.docs_only != 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -423,8 +495,8 @@ jobs:
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-latest
-    needs: [sync-framework, build]
-    if: github.event_name == 'pull_request'
+    needs: [sync-framework, changes, build, postgres-integration]
+    if: needs.changes.outputs.docs_only != 'true'
     services:
       postgres:
         image: postgres:16-alpine
@@ -497,22 +569,8 @@ jobs:
           ADMIN_EMAIL: 'admin@example.test'
           ADMIN_PASSWORD: 'e2e-test-password-change-me'
 
-      - name: Run PostgreSQL plugin lifecycle integration tests
-        run: pnpm vitest --run src/core/lib/__tests__/plugin-lifecycle-postgres.integration.test.ts
-        env:
-          PHASE2_REQUIRE_POSTGRES_INTEGRATION: 'true'
-          PHASE2_TEST_DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
-          DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
-          DATABASE_HOST: 'localhost'
-          DATABASE_PORT: '5432'
-          DATABASE_NAME: 'test'
-          DATABASE_USER: 'test'
-          DATABASE_PASSWORD: 'test'
-          NEXTAUTH_URL: 'http://localhost:3000'
-          NEXTAUTH_SECRET: 'test-secret'
-
       - name: Run E2E tests
-        run: pnpm test:e2e
+        run: pnpm test:e2e:ci
         env:
           DATABASE_URL: 'postgresql://test:test@localhost:5432/test'
           DATABASE_HOST: 'localhost'
@@ -537,7 +595,7 @@ jobs:
   docker:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    needs: [sync-framework, build]
+    needs: [sync-framework, changes, build, postgres-integration, e2e-tests, security]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     permissions:
       contents: read
@@ -1087,7 +1145,8 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    needs: [sync-framework, lint]
+    needs: [sync-framework, changes]
+    if: needs.changes.outputs.docs_only != 'true'
     permissions:
       contents: read
       security-events: write
@@ -1112,10 +1171,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run npm audit
-        run: pnpm audit --audit-level=high || true
-        continue-on-error: true
+        run: pnpm audit:prod
 
       - name: Run Dependency Review
         uses: actions/dependency-review-action@v4
         if: github.event_name == 'pull_request'
-        continue-on-error: true

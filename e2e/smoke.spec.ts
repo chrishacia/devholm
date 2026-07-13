@@ -47,12 +47,15 @@ test.describe('Theme Toggle', () => {
   test('can toggle dark/light mode', async ({ page }) => {
     await page.goto('/');
 
-    // Find and click theme toggle
     const themeToggle = page.locator('[aria-label*="theme"], [data-testid="theme-toggle"]');
-    if (await themeToggle.isVisible()) {
-      await themeToggle.click();
-      // Verify theme changed (check for class or attribute change)
-      await expect(page.locator('html')).toHaveAttribute('class', /(dark|light)/);
-    }
+    await expect(themeToggle).toBeVisible();
+
+    const html = page.locator('html');
+    const initialTheme = await html.getAttribute('data-theme');
+    expect(initialTheme === 'light' || initialTheme === 'dark').toBe(true);
+
+    await themeToggle.click();
+
+    await expect.poll(async () => html.getAttribute('data-theme')).not.toBe(initialTheme);
   });
 });
