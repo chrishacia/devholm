@@ -230,6 +230,85 @@ describe('url shortener validation', () => {
         db
       );
 
+      await recordUrlShortenerClick(link.id, new Request(`http://localhost:3000/s/${code}`), db);
+      await recordUrlShortenerClick(link.id, new Request(`http://localhost:3000/s/${code}`), db);
+
+      const concurrentNullDimensionClicks = 8;
+      await Promise.all(
+        Array.from({ length: concurrentNullDimensionClicks }, () =>
+          recordUrlShortenerClick(link.id, new Request(`http://localhost:3000/s/${code}`), db)
+        )
+      );
+
+      await recordUrlShortenerClick(
+        link.id,
+        new Request(`http://localhost:3000/s/${code}`, {
+          headers: new Headers({
+            referer: 'https://www.google.com/search?q=devholm',
+            'user-agent':
+              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36',
+          }),
+        }),
+        db
+      );
+
+      await recordUrlShortenerClick(
+        link.id,
+        new Request(`http://localhost:3000/s/${code}`, {
+          headers: new Headers({
+            referer: 'https://www.google.com/search?q=devholm',
+            'user-agent':
+              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36',
+          }),
+        }),
+        db
+      );
+
+      await recordUrlShortenerClick(
+        link.id,
+        new Request(`http://localhost:3000/s/${code}`, {
+          headers: new Headers({
+            referer: 'https://x.com/devholm',
+            'user-agent': 'Mozilla/5.0 Firefox/126.0',
+          }),
+        }),
+        db
+      );
+
+      const nullDimensionDailyRows = await db('u_url_shortener_daily_stats')
+        .where({ link_id: link.id })
+        .whereNull('referrer_category')
+        .where({ device_category: 'desktop' })
+        .whereNull('browser_category')
+        .select('total_clicks')
+        .first();
+
+      expect(Number(nullDimensionDailyRows?.total_clicks ?? 0)).toBe(
+        2 + concurrentNullDimensionClicks
+      );
+
+      const googleDesktopChromeRows = await db('u_url_shortener_daily_stats')
+        .where({
+          link_id: link.id,
+          referrer_category: 'search',
+          device_category: 'desktop',
+          browser_category: 'chrome',
+        })
+        .count<{ count: string }[]>({ count: '*' })
+        .first();
+      expect(Number(googleDesktopChromeRows?.count ?? 0)).toBe(1);
+
+      const xDesktopFirefoxRows = await db('u_url_shortener_daily_stats')
+        .where({
+          link_id: link.id,
+          referrer_category: 'social',
+          device_category: 'desktop',
+          browser_category: 'firefox',
+        })
+        .count<{ count: string }[]>({ count: '*' })
+        .first();
+      expect(Number(xDesktopFirefoxRows?.count ?? 0)).toBe(1);
+
       const overviewBefore = await getUrlShortenerOverview(db);
 
       const fromVersion = urlShortenerPluginManifest.version;
@@ -278,7 +357,7 @@ describe('url shortener validation', () => {
 
       expect(linkAfter).not.toBeNull();
       expect(linkAfter?.destinationUrl).toBe('https://example.com/upgrade-check');
-      expect((linkAfter?.cachedClickCount ?? 0) >= 1).toBe(true);
+      expect((linkAfter?.cachedClickCount ?? 0) >= 14).toBe(true);
       expect(settingsAfter.publicCreationMode).toBe('authenticated');
       expect(overviewAfter.totalClicks >= overviewBefore.totalClicks).toBe(true);
       expect(lockAfter?.version).toBe(toVersion);
