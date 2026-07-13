@@ -14,6 +14,22 @@ import { publicRouteExtensions } from '@user/extensions/public-routes';
 
 const WORKER_PID = process.pid;
 
+const DISALLOWED_LIFECYCLE_ENV_KEYS = [
+  'DATABASE_URL',
+  'DATABASE_HOST',
+  'DATABASE_PORT',
+  'DATABASE_USER',
+  'DATABASE_PASSWORD',
+  'DATABASE_NAME',
+  'PGHOST',
+  'PGPORT',
+  'PGUSER',
+  'PGPASSWORD',
+  'PGDATABASE',
+  'PGSSLMODE',
+  'PHASE2_TEST_DATABASE_URL',
+] as const;
+
 const helperProxy: ExtensionHelpers = {
   auth: (() => {
     throw new Error('isolated runtime does not expose auth helper directly');
@@ -291,6 +307,24 @@ async function executeLifecycleHook(
     { type: 'execute-lifecycle-hook' }
   >
 ) {
+  for (const key of DISALLOWED_LIFECYCLE_ENV_KEYS) {
+    if (process.env[key] !== undefined) {
+      sendMessage({
+        type: 'lifecycle-hook-result',
+        executionId: message.executionId,
+        pid: WORKER_PID,
+        pluginId: message.pluginId,
+        hookName: message.hookName,
+        operationId: message.operationId,
+        hookExecutionId: message.hookExecutionId,
+        artifactIdentity: message.artifactIdentity,
+        status: 'blocked',
+        message: 'lifecycle worker received forbidden database credential environment',
+      });
+      return;
+    }
+  }
+
   const manifest = getBundledPluginManifests().find((entry) => entry.id === message.pluginId);
   if (!manifest) {
     sendMessage({

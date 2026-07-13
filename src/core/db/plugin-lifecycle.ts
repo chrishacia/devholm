@@ -128,6 +128,18 @@ export async function insertPluginMigrationLedger(input: {
   appliedAt: Date;
   durationMs: number;
   batchOrder: number;
+  direction?: 'up' | 'down';
+  operationId?: string;
+  executionId?: string;
+  sourceVersion?: string;
+  targetVersion?: string;
+  artifactIdentity?: string;
+  assignedSchema?: string;
+  state?: 'succeeded' | 'failed' | 'blocked';
+  startedAt?: Date;
+  completedAt?: Date;
+  rollbackOfExecutionId?: string | null;
+  errorCategory?: string | null;
   db?: Knex;
 }): Promise<void> {
   const db = input.db ?? getDb();
@@ -140,9 +152,21 @@ export async function insertPluginMigrationLedger(input: {
       applied_at: input.appliedAt,
       execution_duration_ms: input.durationMs,
       batch_order: input.batchOrder,
+      direction: input.direction ?? 'up',
+      operation_id: input.operationId ?? null,
+      execution_id: input.executionId ?? null,
+      source_version: input.sourceVersion ?? null,
+      target_version: input.targetVersion ?? null,
+      artifact_identity: input.artifactIdentity ?? null,
+      assigned_schema: input.assignedSchema ?? null,
+      state: input.state ?? 'succeeded',
+      started_at: input.startedAt ?? input.appliedAt,
+      completed_at: input.completedAt ?? input.appliedAt,
+      rollback_of_execution_id: input.rollbackOfExecutionId ?? null,
+      error_category: input.errorCategory ?? null,
       created_at: new Date(),
     })
-    .onConflict(['plugin_id', 'migration_id'])
+    .onConflict(['plugin_id', 'migration_id', 'direction'])
     .ignore();
 }
 
@@ -169,7 +193,7 @@ export async function getPluginMigrationLedgerWithDb(
 > {
   const rows = await db('devholm_plugin_migrations')
     .select('migration_id', 'checksum', 'plugin_version')
-    .where({ plugin_id: pluginId })
+    .where({ plugin_id: pluginId, direction: 'up', state: 'succeeded' })
     .orderBy('migration_id', 'asc');
 
   return rows.map((row) => ({

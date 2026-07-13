@@ -31,10 +31,26 @@ describe('plugin migration production packaging', () => {
 
     const migrationPath = path.join(migrationDir, '20260701010000_url_shortener_foundation.js');
     const migrationSource = `
-      export async function up() {
-        globalThis.__packagedMigrationExecuted = true;
-      }
-      export async function down() {}
+      export const migrationPlanV1 = {
+        protocolVersion: 'migration-plan-v1',
+        pluginId: 'url-shortener',
+        migrationId: 'url-shortener:20260701010000_url_shortener_foundation',
+        checksum: 'placeholder',
+        artifactIdentity: 'placeholder',
+        sourceVersion: '0.0.0',
+        targetVersion: '0.1.0',
+        reversible: true,
+        up: [
+          {
+            type: 'create-table',
+            table: 'u_url_shortener_packaged_test',
+            columns: [
+              { name: 'id', type: 'uuid', primary: true, defaultUuid: true },
+            ],
+          },
+        ],
+        down: [{ type: 'drop-table', table: 'u_url_shortener_packaged_test' }],
+      };
     `;
     fs.writeFileSync(migrationPath, migrationSource, 'utf8');
 
@@ -75,6 +91,7 @@ describe('plugin migration production packaging', () => {
     vi.doMock('@core/db/plugin-lifecycle', () => ({
       getPluginMigrationLedgerWithDb: vi.fn(async () => []),
       insertPluginMigrationLedger: insertLedger,
+      checksumManifest: vi.fn(() => 'checksum'),
     }));
 
     vi.doMock('@/db', () => ({
@@ -82,10 +99,61 @@ describe('plugin migration production packaging', () => {
         transaction: async (
           callback: (trx: {
             raw: (sql: string, args?: unknown[]) => Promise<void>;
+            schema: {
+              createTable: (
+                name: string,
+                builder: (table: Record<string, unknown>) => void
+              ) => Promise<void>;
+              alterTable: (
+                name: string,
+                builder: (table: Record<string, unknown>) => void
+              ) => Promise<void>;
+              dropTableIfExists: (name: string) => Promise<void>;
+            };
           }) => Promise<void>
         ) => {
+          const chain = {
+            primary: () => chain,
+            unique: () => chain,
+            notNullable: () => chain,
+            nullable: () => chain,
+            defaultTo: () => chain,
+          };
+
+          const tableBuilder = {
+            uuid: () => chain,
+            string: () => chain,
+            text: () => chain,
+            boolean: () => chain,
+            timestamp: () => chain,
+            integer: () => chain,
+            bigInteger: () => chain,
+            smallint: () => chain,
+            date: () => chain,
+            jsonb: () => chain,
+            enu: () => chain,
+            client: { raw: () => undefined },
+            index: () => undefined,
+            unique: () => undefined,
+            foreign: () => ({
+              references: () => ({ inTable: () => ({ onDelete: () => undefined }) }),
+            }),
+            dropIndex: () => undefined,
+            dropForeign: () => undefined,
+            dropColumn: () => undefined,
+          };
+
           await callback({
             raw: async () => undefined,
+            schema: {
+              createTable: async (_name, builder) => {
+                builder(tableBuilder);
+              },
+              alterTable: async (_name, builder) => {
+                builder(tableBuilder);
+              },
+              dropTableIfExists: async () => undefined,
+            },
           });
         },
       })),
@@ -101,15 +169,39 @@ describe('plugin migration production packaging', () => {
       }),
     }));
 
+    vi.doMock('@core/lib/plugin-isolation-runtime.server', () => ({
+      runIsolatedMigrationPlan: vi.fn(async (input: { artifactIdentity: string }) => ({
+        plan: {
+          protocolVersion: 'migration-plan-v1',
+          pluginId: 'url-shortener',
+          migrationId: 'url-shortener:20260701010000_url_shortener_foundation',
+          checksum,
+          artifactIdentity: input.artifactIdentity,
+          sourceVersion: '0.0.0',
+          targetVersion: '0.1.0',
+          reversible: true,
+          up: [
+            {
+              type: 'create-table',
+              table: 'u_url_shortener_packaged_test',
+              columns: [{ name: 'id', type: 'uuid', primary: true, defaultUuid: true }],
+            },
+          ],
+          down: [{ type: 'drop-table', table: 'u_url_shortener_packaged_test' }],
+        },
+        meta: {
+          executionId: '00000000-0000-4000-8000-000000000000',
+          childPid: 123,
+        },
+      })),
+    }));
+
     const { applyPendingPluginMigrations } = await import(
       '@core/lib/plugin-migration-runner.server'
     );
 
     await applyPendingPluginMigrations('url-shortener');
 
-    expect(
-      (globalThis as { __packagedMigrationExecuted?: boolean }).__packagedMigrationExecuted
-    ).toBe(true);
     expect(insertLedger).toHaveBeenCalledTimes(1);
     expect(fs.existsSync(path.join(tempDir, 'src/user/extensions/plugins'))).toBe(false);
   });

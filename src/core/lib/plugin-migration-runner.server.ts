@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { pathToFileURL } from 'url';
+import { createHash } from 'node:crypto';
 import { getDb } from '@/db';
 import {
   discoverPluginMigrations,
@@ -14,9 +14,18 @@ import {
 } from '@core/db/plugin-lifecycle';
 import { getBundledPluginManifests } from '@core/lib/plugin-registry.server';
 import { executePluginMigrationWithGate } from '@core/lib/plugin-migration-contract.server';
+import type { MigrationExecutionLockIdentity } from '@core/lib/plugin-migration-contract.server';
+import { runIsolatedMigrationPlan } from '@core/lib/plugin-isolation-runtime.server';
+import { executeMigrationPlanWithBroker } from '@core/lib/plugin-migration-broker.server';
 import type { DevholmPluginManifest } from '@core/types/plugins';
 
 const LIFECYCLE_LOCK_NAMESPACE = 'devholm.plugin.lifecycle';
+
+type MigrationRunnerOptions = {
+  lockAlreadyHeld?: boolean;
+  operationId?: string;
+  migrationExecutionLock?: MigrationExecutionLockIdentity;
+};
 
 function getRegistryPath(): string {
   const resolved = resolvePluginRegistryPath(process.cwd());
@@ -29,28 +38,9 @@ function getRegistryPath(): string {
   return resolved;
 }
 
-async function executeMigration(
-  absolutePath: string,
-  trx: Awaited<ReturnType<typeof getDb>>
-): Promise<void> {
-  const mod = await import(/* webpackIgnore: true */ pathToFileURL(absolutePath).href);
-  if (typeof mod.up !== 'function') {
-    throw new Error(`Plugin migration ${absolutePath} does not export an up() function`);
-  }
-
-  await mod.up(trx);
-}
-
-async function executeMigrationDown(
-  absolutePath: string,
-  trx: Awaited<ReturnType<typeof getDb>>
-): Promise<void> {
-  const mod = await import(/* webpackIgnore: true */ pathToFileURL(absolutePath).href);
-  if (typeof mod.down !== 'function') {
-    throw new Error(`Plugin migration ${absolutePath} does not export a down() function`);
-  }
-
-  await mod.down(trx);
+function buildArtifactIdentity(manifest: DevholmPluginManifest): string {
+  const manifestChecksum = createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
+  return `bundled:${manifest.id}@${manifest.version}:${manifestChecksum}`;
 }
 
 async function applyPluginMigrationsForEntry(
@@ -61,7 +51,7 @@ async function applyPluginMigrationsForEntry(
     migrations: Array<{ id: string; file: string; checksum: string }>;
   },
   manifest: DevholmPluginManifest,
-  options?: { lockAlreadyHeld?: boolean }
+  options?: MigrationRunnerOptions
 ): Promise<void> {
   const db = getDb();
   await db.transaction(async (trx) => {
@@ -86,9 +76,22 @@ async function applyPluginMigrationsForEntry(
     }
 
     let batchOrder = 0;
-    const operationId = randomUUID();
+    const operationId = options?.operationId ?? randomUUID();
     for (const migration of pending) {
       const startedAt = Date.now();
+      const sourceVersion =
+        applied.length === 0 ? '0.0.0' : applied[applied.length - 1]?.pluginVersion;
+      const targetVersion = migration.pluginVersion;
+      const isolatedPlan = await runIsolatedMigrationPlan({
+        pluginId: migration.pluginId,
+        migrationId: migration.migrationId,
+        checksum: migration.checksum,
+        artifactIdentity: buildArtifactIdentity(manifest),
+        direction: 'up',
+        absolutePath: migration.absolutePath,
+        sourceVersion: sourceVersion ?? '0.0.0',
+        targetVersion,
+      });
       const execution = await executePluginMigrationWithGate({
         manifest,
         migrationId: migration.migrationId,
@@ -96,7 +99,19 @@ async function applyPluginMigrationsForEntry(
         checksum: migration.checksum,
         direction: 'up',
         operationId,
-        execute: () => executeMigration(migration.absolutePath, trx),
+        lockIdentity: options?.migrationExecutionLock,
+        execute: () =>
+          executeMigrationPlanWithBroker({
+            trx,
+            pluginId: migration.pluginId,
+            plan: isolatedPlan.plan,
+            migrationId: migration.migrationId,
+            checksum: migration.checksum,
+            artifactIdentity: buildArtifactIdentity(manifest),
+            direction: 'up',
+            sourceVersion: sourceVersion ?? '0.0.0',
+            targetVersion,
+          }).then(() => undefined),
       });
       if (execution.state !== 'succeeded') {
         throw new Error(
@@ -113,7 +128,23 @@ async function applyPluginMigrationsForEntry(
         appliedAt: new Date(),
         durationMs: Date.now() - startedAt,
         batchOrder,
+        direction: 'up',
+        operationId,
+        executionId: execution.executionId,
+        sourceVersion: sourceVersion ?? '0.0.0',
+        targetVersion,
+        artifactIdentity: buildArtifactIdentity(manifest),
+        assignedSchema: 'public',
+        state: 'succeeded',
+        startedAt: new Date(startedAt),
+        completedAt: new Date(),
         db: trx,
+      });
+
+      applied.push({
+        migrationId: migration.migrationId,
+        checksum: migration.checksum,
+        pluginVersion: migration.pluginVersion,
       });
     }
   });
@@ -121,7 +152,7 @@ async function applyPluginMigrationsForEntry(
 
 export async function applyPendingPluginMigrations(
   pluginId?: string,
-  options?: { lockAlreadyHeld?: boolean }
+  options?: MigrationRunnerOptions
 ): Promise<void> {
   const allEntries = loadPluginMigrationRegistry(getRegistryPath());
   const registryEntries = allEntries.filter((entry) => (pluginId ? entry.id === pluginId : true));
@@ -175,7 +206,7 @@ export async function applyPendingPluginMigrations(
 
 export async function applyPluginMigrationDowns(
   pluginId: string,
-  options?: { lockAlreadyHeld?: boolean }
+  options?: MigrationRunnerOptions
 ): Promise<void> {
   const allEntries = loadPluginMigrationRegistry(getRegistryPath());
   const entry = allEntries.find((item) => item.id === pluginId);
@@ -198,8 +229,29 @@ export async function applyPluginMigrationDowns(
       ]);
     }
 
-    const operationId = randomUUID();
+    const operationId = options?.operationId ?? randomUUID();
     for (const migration of [...discovered].reverse()) {
+      const rollbackTarget = await trx('devholm_plugin_migrations')
+        .select('execution_id')
+        .where({
+          plugin_id: migration.pluginId,
+          migration_id: migration.migrationId,
+          direction: 'up',
+          state: 'succeeded',
+        })
+        .orderBy('completed_at', 'desc')
+        .first();
+
+      const isolatedPlan = await runIsolatedMigrationPlan({
+        pluginId: migration.pluginId,
+        migrationId: migration.migrationId,
+        checksum: migration.checksum,
+        artifactIdentity: buildArtifactIdentity(manifest),
+        direction: 'down',
+        absolutePath: migration.absolutePath,
+        sourceVersion: migration.pluginVersion,
+        targetVersion: '0.0.0',
+      });
       const execution = await executePluginMigrationWithGate({
         manifest,
         migrationId: migration.migrationId,
@@ -207,13 +259,47 @@ export async function applyPluginMigrationDowns(
         checksum: migration.checksum,
         direction: 'down',
         operationId,
-        execute: () => executeMigrationDown(migration.absolutePath, trx),
+        lockIdentity: options?.migrationExecutionLock,
+        execute: () =>
+          executeMigrationPlanWithBroker({
+            trx,
+            pluginId: migration.pluginId,
+            plan: isolatedPlan.plan,
+            migrationId: migration.migrationId,
+            checksum: migration.checksum,
+            artifactIdentity: buildArtifactIdentity(manifest),
+            direction: 'down',
+            sourceVersion: migration.pluginVersion,
+            targetVersion: '0.0.0',
+          }).then(() => undefined),
       });
       if (execution.state !== 'succeeded') {
         throw new Error(
           `Plugin migration rollback failed for ${migration.migrationId}: ${execution.detail ?? execution.state}`
         );
       }
+
+      await insertPluginMigrationLedger({
+        pluginId: migration.pluginId,
+        migrationId: migration.migrationId,
+        pluginVersion: migration.pluginVersion,
+        checksum: migration.checksum,
+        appliedAt: new Date(),
+        durationMs: 0,
+        batchOrder: 0,
+        direction: 'down',
+        operationId,
+        executionId: execution.executionId,
+        sourceVersion: migration.pluginVersion,
+        targetVersion: '0.0.0',
+        artifactIdentity: buildArtifactIdentity(manifest),
+        assignedSchema: 'public',
+        state: 'succeeded',
+        startedAt: new Date(),
+        completedAt: new Date(),
+        rollbackOfExecutionId: (rollbackTarget?.execution_id as string | undefined) ?? null,
+        db: trx,
+      });
     }
   });
 }

@@ -174,4 +174,36 @@ describe('plugin migration contract', () => {
     expect(evaluatePluginSandboxAccess).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
   });
+
+  it('blocks migration when lock identity does not match operation scope', async () => {
+    vi.resetModules();
+
+    getDb.mockReturnValue(createDbMock());
+    const execute = vi.fn(async () => undefined);
+
+    const { executePluginMigrationWithGate } = await import(
+      '@core/lib/plugin-migration-contract.server'
+    );
+
+    const result = await executePluginMigrationWithGate({
+      manifest: manifest(),
+      migrationId: 'plugin-a:20260713000000_init',
+      pluginVersion: '1.0.0',
+      checksum: 'd'.repeat(64),
+      direction: 'up',
+      operationId: '44444444-4444-4444-8444-444444444444',
+      lockIdentity: {
+        model: 'pg-advisory-v1',
+        namespace: 'devholm.plugin.lifecycle',
+        scope: 'plugin:plugin-a:operation:55555555-5555-4555-8555-555555555555',
+        ownerPid: 4242,
+      },
+      execute,
+    });
+
+    expect(result.state).toBe('blocked');
+    expect(result.detail).toContain('lock identity scope mismatch');
+    expect(evaluatePluginSandboxAccess).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+  });
 });
