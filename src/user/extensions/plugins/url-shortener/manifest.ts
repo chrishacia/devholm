@@ -37,6 +37,10 @@ export const urlShortenerPluginManifest: DevholmPluginManifest = {
       runtimeOwner: 'plugin-extension',
     },
   ],
+  lifecycleAuthorization: {
+    capability: URL_SHORTENER_CAPABILITY_ADMIN_MANAGEMENT,
+    permissionKeys: [URL_SHORTENER_PERMISSION_ADMIN_MANAGE],
+  },
   settings: urlShortenerSettingsDefinitions,
   publicRouteExtensionIds: ['url-shortener:redirect'],
   adminPageHrefs: [

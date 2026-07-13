@@ -66,6 +66,10 @@ export const calendarPluginManifest: DevholmPluginManifest = {
       runtimeOwner: 'core-filesystem',
     },
   ],
+  lifecycleAuthorization: {
+    capability: CALENDAR_CAPABILITY_ADMIN_MANAGEMENT,
+    permissionKeys: [CALENDAR_PERMISSION_ADMIN_MANAGE],
+  },
   settings: calendarSettingsDefinitions,
   lifecyclePolicy: {
     baselineAdoptionNote:

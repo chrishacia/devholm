@@ -135,6 +135,52 @@ export function validateManifest(manifest: DevholmPluginManifest): string[] {
         errors.push(`lifecycle.${hookName} must be a function for plugin ${manifest.id}`);
       }
     }
+
+    const declaredHookNames = Object.entries(lifecycle)
+      .filter(([, hookFn]) => hookFn !== undefined)
+      .map(([hookName]) => hookName);
+
+    if (declaredHookNames.length > 0) {
+      const authorization = manifest.lifecycleAuthorization;
+      if (!authorization) {
+        errors.push(
+          `plugin ${manifest.id} must declare lifecycleAuthorization when lifecycle hooks are present`
+        );
+      } else {
+        if (!authorization.capability.trim()) {
+          errors.push(`plugin ${manifest.id} lifecycleAuthorization.capability is required`);
+        }
+
+        if (authorization.permissionKeys.length === 0) {
+          errors.push(
+            `plugin ${manifest.id} lifecycleAuthorization.permissionKeys must not be empty`
+          );
+        }
+
+        const declaredPermissions = manifest.permissions ?? [];
+        for (const permissionKey of authorization.permissionKeys) {
+          const permission = declaredPermissions.find((entry) => entry.key === permissionKey);
+          if (!permission) {
+            errors.push(
+              `plugin ${manifest.id} lifecycleAuthorization.permissionKeys includes undeclared permission ${permissionKey}`
+            );
+            continue;
+          }
+
+          if (permission.capability !== authorization.capability) {
+            errors.push(
+              `plugin ${manifest.id} lifecycleAuthorization permission ${permissionKey} must declare capability ${authorization.capability}`
+            );
+          }
+
+          if (permission.scope !== 'admin') {
+            errors.push(
+              `plugin ${manifest.id} lifecycleAuthorization permission ${permissionKey} must use admin scope`
+            );
+          }
+        }
+      }
+    }
   }
 
   if (manifest.lifecyclePolicy) {
