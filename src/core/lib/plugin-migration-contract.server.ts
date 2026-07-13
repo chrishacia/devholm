@@ -17,6 +17,13 @@ export type PluginMigrationExecutionState =
   | 'failed'
   | 'blocked';
 
+export interface MigrationExecutionLockIdentity {
+  model: 'pg-advisory-v1';
+  namespace: string;
+  scope: string;
+  ownerPid: number;
+}
+
 interface PersistedMigrationExecutionRecord {
   contractVersion: 'plugin-migration-v1';
   operationId: string;
@@ -34,6 +41,7 @@ interface PersistedMigrationExecutionRecord {
     effective: string[];
     approvedBrokerOperations: string[];
   };
+  lockIdentity?: MigrationExecutionLockIdentity;
   sandboxDecision?: {
     allowed: boolean;
     reason: string;
@@ -44,6 +52,27 @@ interface PersistedMigrationExecutionRecord {
   };
   durationMs?: number;
   detail?: string;
+}
+
+function validateLockIdentity(params: {
+  lockIdentity: MigrationExecutionLockIdentity;
+  pluginId: string;
+  operationId: string;
+}): string | null {
+  if (params.lockIdentity.model !== 'pg-advisory-v1') {
+    return `Migration execution blocked: unsupported lock identity model ${params.lockIdentity.model}`;
+  }
+
+  const expectedScope = `plugin:${params.pluginId}:operation:${params.operationId}`;
+  if (params.lockIdentity.scope !== expectedScope) {
+    return `Migration execution blocked: lock identity scope mismatch (expected ${expectedScope}, received ${params.lockIdentity.scope})`;
+  }
+
+  if (!Number.isInteger(params.lockIdentity.ownerPid) || params.lockIdentity.ownerPid <= 0) {
+    return 'Migration execution blocked: lock identity ownerPid must be a positive integer';
+  }
+
+  return null;
 }
 
 function nowIso(): string {
@@ -169,6 +198,7 @@ export async function executePluginMigrationWithGate(params: {
   checksum: string;
   direction: PluginMigrationDirection;
   operationId: string;
+  lockIdentity?: MigrationExecutionLockIdentity;
   execute: () => Promise<void>;
 }): Promise<{
   executionId: string;
@@ -203,7 +233,26 @@ export async function executePluginMigrationWithGate(params: {
       effective: [],
       approvedBrokerOperations: ['migration-execute'],
     },
+    lockIdentity: params.lockIdentity,
   };
+
+  if (params.lockIdentity) {
+    const lockValidation = validateLockIdentity({
+      lockIdentity: params.lockIdentity,
+      pluginId: params.manifest.id,
+      operationId: params.operationId,
+    });
+
+    if (lockValidation) {
+      await writeRecord({
+        ...baseRecord,
+        state: 'blocked',
+        updatedAt: nowIso(),
+        detail: lockValidation,
+      });
+      return { executionId, state: 'blocked', detail: lockValidation };
+    }
+  }
 
   let capability: string;
   let permissionKeys: string[];

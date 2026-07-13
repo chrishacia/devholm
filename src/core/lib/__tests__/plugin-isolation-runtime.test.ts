@@ -3,12 +3,18 @@ import type { NextRequest } from 'next/server';
 import {
   runIsolatedApiExtension,
   runIsolatedLifecycleHook,
+  runIsolatedMigrationPlan,
   runIsolatedPublicRouteHandle,
   runIsolatedPublicRouteMatch,
   testProbeIsolatedEnv,
 } from '@core/lib/plugin-isolation-runtime.server';
 import { checksumManifest } from '@core/db/plugin-lifecycle';
 import { getBundledPluginManifests } from '@core/lib/plugin-registry.server';
+import {
+  resolvePluginRegistryPath,
+  loadPluginMigrationRegistry,
+} from '@core/lib/plugin-migration-discovery.server';
+import path from 'node:path';
 
 function makeRequest(pathname: string, method: string = 'GET'): NextRequest {
   return new Request(`http://localhost:3000${pathname}`, {
@@ -82,6 +88,8 @@ describe.sequential('plugin isolation runtime', () => {
   });
 
   it('executes lifecycle hooks through child isolation boundary', async () => {
+    process.env.DATABASE_PASSWORD = 'must-not-reach-lifecycle-worker';
+
     const manifest = getBundledPluginManifests().find((entry) => entry.id === 'url-shortener');
     if (!manifest) {
       throw new Error('expected url-shortener manifest to exist in bundled plugin registry');
@@ -102,5 +110,41 @@ describe.sequential('plugin isolation runtime', () => {
 
     expect(result.meta.childPid).not.toBe(process.pid);
     expect(['succeeded', 'failed', 'timed_out', 'blocked']).toContain(result.status);
+    expect(result.message).not.toContain('forbidden database credential environment');
+
+    delete process.env.DATABASE_PASSWORD;
+  });
+
+  it('executes migration planning through child isolation boundary without DB secrets', async () => {
+    process.env.DATABASE_PASSWORD = 'never-expose';
+
+    const registryPath = resolvePluginRegistryPath(process.cwd());
+    if (!registryPath) {
+      throw new Error('expected generated plugin registry for migration isolation test');
+    }
+    const entry = loadPluginMigrationRegistry(registryPath).find(
+      (item) => item.id === 'url-shortener'
+    );
+    if (!entry || entry.migrations.length === 0) {
+      throw new Error('expected url-shortener migration entry in generated registry');
+    }
+
+    const migration = entry.migrations[0];
+    const absolutePath = path.resolve(process.cwd(), 'generated/plugins', migration.file);
+    const planResult = await runIsolatedMigrationPlan({
+      pluginId: 'url-shortener',
+      migrationId: migration.id,
+      checksum: migration.checksum,
+      artifactIdentity: 'bundled:url-shortener@0.1.0:test',
+      direction: 'up',
+      absolutePath,
+      sourceVersion: '0.0.0',
+      targetVersion: '0.1.0',
+    });
+
+    expect(planResult.meta.childPid).not.toBe(process.pid);
+    expect(planResult.plan.up.length).toBeGreaterThan(0);
+
+    delete process.env.DATABASE_PASSWORD;
   });
 });

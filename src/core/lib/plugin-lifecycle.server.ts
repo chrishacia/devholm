@@ -9,6 +9,7 @@ import {
   applyPendingPluginMigrations,
   applyPluginMigrationDowns,
 } from '@core/lib/plugin-migration-runner.server';
+import type { MigrationExecutionLockIdentity } from '@core/lib/plugin-migration-contract.server';
 import {
   executeLifecycleHookWithIsolation,
   type LifecycleHookName,
@@ -40,6 +41,23 @@ type HookExecutionOptions = {
 };
 
 const LIFECYCLE_LOCK_NAMESPACE = 'devholm.plugin.lifecycle';
+
+type LifecycleLockContext = {
+  ownerPid: number;
+};
+
+function buildMigrationExecutionLockIdentity(
+  pluginId: string,
+  operationId: string,
+  lock: LifecycleLockContext
+): MigrationExecutionLockIdentity {
+  return {
+    model: 'pg-advisory-v1',
+    namespace: LIFECYCLE_LOCK_NAMESPACE,
+    scope: `plugin:${pluginId}:operation:${operationId}`,
+    ownerPid: lock.ownerPid,
+  };
+}
 
 function shouldUseIsolatedLifecycleHooks(): boolean {
   const runningUnderVitest =
@@ -241,7 +259,10 @@ async function ensureDependentsAllowDisable(pluginId: string): Promise<void> {
   }
 }
 
-async function withPluginLifecycleLock<T>(pluginId: string, work: () => Promise<T>): Promise<T> {
+async function withPluginLifecycleLock<T>(
+  pluginId: string,
+  work: (context: LifecycleLockContext) => Promise<T>
+): Promise<T> {
   const db = getDb();
   const connection = await db.client.acquireConnection();
 
@@ -253,7 +274,15 @@ async function withPluginLifecycleLock<T>(pluginId: string, work: () => Promise<
       ])
       .connection(connection);
 
-    return await work();
+    const backendPidResult = await db
+      .raw<{ rows?: Array<{ pid: number }> }>('select pg_backend_pid() as pid')
+      .connection(connection);
+    const ownerPid = backendPidResult?.rows?.[0]?.pid ?? process.pid;
+    if (!Number.isInteger(ownerPid) || ownerPid <= 0) {
+      throw new Error('failed to resolve lifecycle lock backend pid');
+    }
+
+    return await work({ ownerPid });
   } finally {
     try {
       await db
@@ -291,7 +320,7 @@ export async function installPlugin(
 
   validateCompatibilityAndDependencies();
 
-  await withPluginLifecycleLock(pluginId, async () => {
+  await withPluginLifecycleLock(pluginId, async (lock) => {
     await ensureManifestDependenciesAvailable(manifest, { requireEnabled: true });
 
     const existing = await getInstalledPlugin(pluginId);
@@ -318,7 +347,11 @@ export async function installPlugin(
     });
 
     try {
-      await applyPendingPluginMigrations(pluginId, { lockAlreadyHeld: true });
+      await applyPendingPluginMigrations(pluginId, {
+        lockAlreadyHeld: true,
+        operationId,
+        migrationExecutionLock: buildMigrationExecutionLockIdentity(pluginId, operationId, lock),
+      });
       await ensureManifestSettings(manifest);
 
       await executeLifecycleHook({
@@ -412,7 +445,7 @@ export async function upgradePlugin(pluginId: string, initiatedBy?: string): Pro
   const manifest = getManifest(pluginId);
   const operationId = randomUUID();
 
-  await withPluginLifecycleLock(pluginId, async () => {
+  await withPluginLifecycleLock(pluginId, async (lock) => {
     const previous = await getInstalledPlugin(pluginId);
     const canUpgrade =
       previous &&
@@ -439,7 +472,11 @@ export async function upgradePlugin(pluginId: string, initiatedBy?: string): Pro
     });
 
     try {
-      await applyPendingPluginMigrations(pluginId, { lockAlreadyHeld: true });
+      await applyPendingPluginMigrations(pluginId, {
+        lockAlreadyHeld: true,
+        operationId,
+        migrationExecutionLock: buildMigrationExecutionLockIdentity(pluginId, operationId, lock),
+      });
       await ensureManifestSettings(manifest);
 
       await executeLifecycleHook({
@@ -622,7 +659,7 @@ export async function purgePlugin(pluginId: string, options?: PurgeOptions): Pro
     throw new Error(`Purge confirmation required. Re-run purge with confirmPluginId='${pluginId}'`);
   }
 
-  await withPluginLifecycleLock(pluginId, async () => {
+  await withPluginLifecycleLock(pluginId, async (lock) => {
     const previous = await getInstalledPlugin(pluginId);
 
     if (!previous) {
@@ -663,7 +700,11 @@ export async function purgePlugin(pluginId: string, options?: PurgeOptions): Pro
         operationId,
       });
 
-      await applyPluginMigrationDowns(pluginId, { lockAlreadyHeld: true });
+      await applyPluginMigrationDowns(pluginId, {
+        lockAlreadyHeld: true,
+        operationId,
+        migrationExecutionLock: buildMigrationExecutionLockIdentity(pluginId, operationId, lock),
+      });
 
       const db = getDb();
       await db('devholm_plugin_migrations').where({ plugin_id: pluginId }).del();

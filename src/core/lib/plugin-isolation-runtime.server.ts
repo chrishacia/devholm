@@ -9,6 +9,7 @@ import {
   childToParentMessageSchema,
   DEFAULT_ISOLATED_EXECUTION_TIMEOUT_MS,
   type ChildToParentMessage,
+  type MigrationExecutionPlan,
   MAX_ISOLATED_REQUEST_BODY_BYTES,
   type ParentToChildMessage,
   parentToChildMessageSchema,
@@ -34,12 +35,31 @@ const ALLOWED_CHILD_ENV_KEYS = [
   'DATABASE_URL',
   'DATABASE_HOST',
   'DATABASE_PORT',
-  'DATABASE_NAME',
   'DATABASE_USER',
   'DATABASE_PASSWORD',
+  'DATABASE_NAME',
+  'PGHOST',
+  'PGPORT',
+  'PGUSER',
+  'PGPASSWORD',
+  'PGDATABASE',
+  'PGSSLMODE',
+  'PHASE2_TEST_DATABASE_URL',
+] as const;
+
+const ALLOWED_LIFECYCLE_ENV_KEYS = [
+  'NODE_ENV',
+  'AUTH_SECRET',
+  'NEXTAUTH_SECRET',
+  'AUTH_URL',
+  'NEXTAUTH_URL',
 ] as const;
 
 const WORKER_PATH = path.join(process.cwd(), 'src/core/lib/plugin-isolation-worker.ts');
+const MIGRATION_WORKER_PATH = path.join(
+  process.cwd(),
+  'src/core/lib/plugin-migration-isolation-worker.ts'
+);
 
 function createChildEnv(): NodeJS.ProcessEnv {
   const env: Record<string, string> = {
@@ -54,6 +74,39 @@ function createChildEnv(): NodeJS.ProcessEnv {
   }
 
   return env as NodeJS.ProcessEnv;
+}
+
+function createMinimalChildEnv(): NodeJS.ProcessEnv {
+  return {
+    NODE_ENV: process.env.NODE_ENV ?? 'development',
+  };
+}
+
+function createLifecycleChildEnv(): NodeJS.ProcessEnv {
+  const env: Record<string, string> = {
+    NODE_ENV: process.env.NODE_ENV ?? 'development',
+  };
+
+  for (const key of ALLOWED_LIFECYCLE_ENV_KEYS) {
+    const value = process.env[key];
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+
+  return env as NodeJS.ProcessEnv;
+}
+
+function createChildEnvByProfile(profile: 'default' | 'minimal' | 'lifecycle'): NodeJS.ProcessEnv {
+  if (profile === 'minimal') {
+    return createMinimalChildEnv();
+  }
+
+  if (profile === 'lifecycle') {
+    return createLifecycleChildEnv();
+  }
+
+  return createChildEnv();
 }
 
 async function serializeRequest(request: NextRequest): Promise<{
@@ -104,24 +157,33 @@ async function serializeRequest(request: NextRequest): Promise<{
   };
 }
 
-async function runWorkerMessage(message: ParentToChildMessage): Promise<ChildToParentMessage> {
-  if (!existsSync(WORKER_PATH)) {
+async function runWorkerMessage(
+  message: ParentToChildMessage,
+  options?: {
+    timeoutMs?: number;
+    workerPath?: string;
+    envProfile?: 'default' | 'minimal' | 'lifecycle';
+  }
+): Promise<ChildToParentMessage> {
+  const workerPath = options?.workerPath ?? WORKER_PATH;
+  if (!existsSync(workerPath)) {
     throw new Error('plugin isolation worker file is missing');
   }
 
   const parsedMessage = parentToChildMessageSchema.parse(message);
-  const timeoutMs = DEFAULT_ISOLATED_EXECUTION_TIMEOUT_MS;
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_ISOLATED_EXECUTION_TIMEOUT_MS;
 
   return new Promise<ChildToParentMessage>((resolve, reject) => {
-    const child = fork(WORKER_PATH, [], {
+    const child = fork(workerPath, [], {
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
-      env: createChildEnv(),
+      env: createChildEnvByProfile(options?.envProfile ?? 'default'),
       execArgv: ['--import', 'tsx'],
     });
 
     let settled = false;
     let timeout: NodeJS.Timeout | null = null;
     let hardKillTimeout: NodeJS.Timeout | null = null;
+    const stderrChunks: string[] = [];
 
     const cleanup = () => {
       if (timeout) {
@@ -169,13 +231,18 @@ async function runWorkerMessage(message: ParentToChildMessage): Promise<ChildToP
       if (settled) {
         return;
       }
+      const stderrText = stderrChunks.join('').trim();
       finish(() => {
         reject(
           new Error(
-            `isolated worker exited before response (code=${String(code)}, signal=${String(signal)})`
+            `isolated worker exited before response (code=${String(code)}, signal=${String(signal)})${stderrText ? ` stderr=${stderrText}` : ''}`
           )
         );
       });
+    });
+
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : chunk);
     });
 
     child.on('message', (rawMessage: unknown) => {
@@ -332,18 +399,23 @@ export async function runIsolatedLifecycleHook(params: {
 }> {
   const executionId = randomUUID();
 
-  const event = await runWorkerMessage({
-    type: 'execute-lifecycle-hook',
-    executionId,
-    pluginId: params.pluginId,
-    hookName: params.hookName,
-    operationId: params.operationId,
-    hookExecutionId: params.hookExecutionId,
-    artifactIdentity: params.artifactIdentity,
-    context: params.context,
-    effectiveCapabilities: params.effectiveCapabilities,
-    approvedBrokerOperations: params.approvedBrokerOperations,
-  });
+  const event = await runWorkerMessage(
+    {
+      type: 'execute-lifecycle-hook',
+      executionId,
+      pluginId: params.pluginId,
+      hookName: params.hookName,
+      operationId: params.operationId,
+      hookExecutionId: params.hookExecutionId,
+      artifactIdentity: params.artifactIdentity,
+      context: params.context,
+      effectiveCapabilities: params.effectiveCapabilities,
+      approvedBrokerOperations: params.approvedBrokerOperations,
+    },
+    {
+      envProfile: 'lifecycle',
+    }
+  );
 
   if (event.type === 'worker-error') {
     throw new Error(`isolated lifecycle hook execution failed: ${event.code}: ${event.message}`);
@@ -380,6 +452,64 @@ export async function testProbeIsolatedEnv(keys: string[]): Promise<Record<strin
   }
 
   return event.values;
+}
+
+export async function runIsolatedMigrationPlan(params: {
+  pluginId: string;
+  migrationId: string;
+  checksum: string;
+  artifactIdentity: string;
+  direction: 'up' | 'down';
+  absolutePath: string;
+  sourceVersion: string;
+  targetVersion: string;
+  timeoutMs?: number;
+}): Promise<{
+  plan: MigrationExecutionPlan;
+  meta: PluginIsolationExecutionMeta;
+}> {
+  const executionId = randomUUID();
+
+  const event = await runWorkerMessage(
+    {
+      type: 'execute-migration-plan',
+      executionId,
+      pluginId: params.pluginId,
+      migrationId: params.migrationId,
+      checksum: params.checksum,
+      artifactIdentity: params.artifactIdentity,
+      direction: params.direction,
+      absolutePath: params.absolutePath,
+      sourceVersion: params.sourceVersion,
+      targetVersion: params.targetVersion,
+      timeoutMs: params.timeoutMs,
+    },
+    {
+      timeoutMs: params.timeoutMs,
+      envProfile: 'minimal',
+      workerPath: MIGRATION_WORKER_PATH,
+    }
+  );
+
+  if (event.type === 'worker-error') {
+    throw new Error(`isolated migration planning failed: ${event.code}: ${event.message}`);
+  }
+
+  if (event.type !== 'migration-plan-result') {
+    throw new Error('isolated migration planning received an unexpected worker response');
+  }
+
+  if (event.direction !== params.direction) {
+    throw new Error('isolated migration planning direction mismatch');
+  }
+
+  return {
+    plan: event.plan,
+    meta: {
+      executionId,
+      childPid: event.pid,
+    },
+  };
 }
 
 export function shouldUseIsolatedRuntimeForExtension(input: {
