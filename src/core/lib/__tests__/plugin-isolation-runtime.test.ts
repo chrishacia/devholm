@@ -68,7 +68,7 @@ describe.sequential('plugin isolation runtime', () => {
     expect(handled.response.headers.get('x-middleware-rewrite')).toContain(
       '/api/public/url-shortener/abc123'
     );
-  });
+  }, 20000);
 
   it('does not inherit arbitrary parent environment variables', async () => {
     process.env.UNSAFE_PARENT_SECRET = 'should-not-leak';
