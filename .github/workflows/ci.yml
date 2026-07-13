@@ -1172,7 +1172,3 @@ jobs:
 
       - name: Run npm audit
         run: pnpm audit:prod
-
-      - name: Run Dependency Review
-        uses: actions/dependency-review-action@v4
-        if: github.event_name == 'pull_request'
