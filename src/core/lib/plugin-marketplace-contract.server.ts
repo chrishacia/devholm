@@ -326,10 +326,6 @@ export function validateMarketplaceCatalogEntry(entry: MarketplaceCatalogEntry):
         `runtimeInstallSupported must be true when installReadiness is production-eligible for plugin ${entry.pluginId}`
       );
     }
-
-    if (entry.publisher.classification !== 'first-party') {
-      errors.push(`production-eligible entries must be first-party for plugin ${entry.pluginId}`);
-    }
   }
 
   if (entry.artifact.format !== 'tar.gz') {

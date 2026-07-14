@@ -16,6 +16,7 @@ import {
 } from '@core/lib/plugin-marketplace-install-lock.server';
 import { buildMarketplaceInstallDryRunPlan } from '@core/lib/plugin-marketplace-install-planner.server';
 import { evaluateMarketplaceCapabilityContract } from '@core/lib/plugin-marketplace-capability-contract.server';
+import { loadMarketplacePublisherTrustPolicyFromEnv } from '@core/lib/plugin-marketplace-publisher-trust.server';
 import { verifyMarketplaceArtifactSignature } from '@core/lib/plugin-marketplace-signing.server';
 import { loadTrustedMarketplaceKeysFromEnv } from '@core/lib/plugin-marketplace-trusted-keys.server';
 import {
@@ -108,11 +109,16 @@ export async function executeFirstPartyMarketplaceInstall(
   }
 
   const trustedKeys = loadTrustedMarketplaceKeysFromEnv();
+  const publisherTrustPolicy = loadMarketplacePublisherTrustPolicyFromEnv();
 
   const plan = buildMarketplaceInstallDryRunPlan({
     descriptor: input.descriptor,
     catalogEntry: input.catalogEntry,
     trustedKeys,
+    publisherTrustPolicy,
+    requestedArtifactChannel: 'stable',
+    requestedSiteScope: 'global',
+    requestedOperation: 'install',
   });
 
   if (plan.outcome === 'blocked') {
