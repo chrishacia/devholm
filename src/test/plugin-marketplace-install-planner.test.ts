@@ -6,8 +6,13 @@ import {
 import { parseMarketplaceInstallSourceDescriptor } from '@core/lib/plugin-install-source-descriptor.server';
 import type { MarketplaceInstallSourceDescriptor } from '@core/types/plugin-marketplace-contract';
 import { productionEligibleCatalogFixture } from './fixtures/marketplace-catalog-fixtures';
+import { createMarketplacePublisherTrustPolicyFixture } from './fixtures/marketplace-publisher-trust-policy-fixtures';
 import { validMarketplaceInstallSourceDescriptor } from './fixtures/plugin-install-source-descriptor-fixtures';
-import { MARKETPLACE_TEST_TRUSTED_KEYS } from './fixtures/marketplace-signing-fixtures';
+import {
+  MARKETPLACE_TEST_TRUSTED_KEY_ID,
+  MARKETPLACE_TEST_TRUSTED_KEYS,
+  signMarketplaceCatalogEntryForTests,
+} from './fixtures/marketplace-signing-fixtures';
 
 function descriptorForFixture(overrides?: Partial<MarketplaceInstallSourceDescriptor>) {
   const parsed = parseMarketplaceInstallSourceDescriptor({
@@ -42,6 +47,7 @@ describe('plugin-marketplace-install-planner: dry-run outcomes', () => {
       descriptor: descriptorForFixture(),
       catalogEntry: productionEligibleCatalogFixture,
       trustedKeys: MARKETPLACE_TEST_TRUSTED_KEYS,
+      publisherTrustPolicy: createMarketplacePublisherTrustPolicyFixture(),
     });
 
     expect(plan.outcome).toBe('ready');
@@ -62,6 +68,7 @@ describe('plugin-marketplace-install-planner: dry-run outcomes', () => {
       }),
       catalogEntry: productionEligibleCatalogFixture,
       trustedKeys: MARKETPLACE_TEST_TRUSTED_KEYS,
+      publisherTrustPolicy: createMarketplacePublisherTrustPolicyFixture(),
     });
 
     expect(plan.outcome).toBe('approval-required');
@@ -79,6 +86,7 @@ describe('plugin-marketplace-install-planner: dry-run outcomes', () => {
       }),
       catalogEntry: productionEligibleCatalogFixture,
       trustedKeys: MARKETPLACE_TEST_TRUSTED_KEYS,
+      publisherTrustPolicy: createMarketplacePublisherTrustPolicyFixture(),
     });
 
     expect(plan.outcome).toBe('blocked');
@@ -103,6 +111,7 @@ describe('plugin-marketplace-install-planner: dry-run outcomes', () => {
         },
       },
       trustedKeys: MARKETPLACE_TEST_TRUSTED_KEYS,
+      publisherTrustPolicy: createMarketplacePublisherTrustPolicyFixture(),
     });
 
     expect(plan.outcome).toBe('blocked');
@@ -116,7 +125,7 @@ describe('plugin-marketplace-install-planner: dry-run outcomes', () => {
     expect(canProceedToStaging(plan)).toBe(false);
   });
 
-  it('returns blocked for third-party production planning in this phase', () => {
+  it('returns blocked for third-party production planning without enrollment policy', () => {
     const plan = buildMarketplaceInstallDryRunPlan({
       descriptor: descriptorForFixture(),
       catalogEntry: {
@@ -130,9 +139,61 @@ describe('plugin-marketplace-install-planner: dry-run outcomes', () => {
     });
 
     expect(plan.outcome).toBe('blocked');
-    expect(plan.blockers.some((blocker) => blocker.code === 'third-party-production-blocked')).toBe(
-      true
-    );
+    expect(plan.blockers.some((blocker) => blocker.code === 'publisher-policy-denied')).toBe(true);
+  });
+
+  it('allows private publisher planning when enrollment policy explicitly matches scope', () => {
+    const privateCatalogEntry = {
+      ...productionEligibleCatalogFixture,
+      publisher: {
+        publisherId: 'private-partner',
+        classification: 'private' as const,
+      },
+    };
+
+    const plan = buildMarketplaceInstallDryRunPlan({
+      descriptor: descriptorForFixture(),
+      catalogEntry: {
+        ...privateCatalogEntry,
+        artifact: {
+          ...privateCatalogEntry.artifact,
+          signature: signMarketplaceCatalogEntryForTests(privateCatalogEntry),
+        },
+      },
+      trustedKeys: [
+        {
+          ...MARKETPLACE_TEST_TRUSTED_KEYS[0],
+          permittedPublisherIds: ['private-partner'],
+        },
+      ],
+      publisherTrustPolicy: createMarketplacePublisherTrustPolicyFixture({
+        enrollments: [
+          {
+            policyVersion: 1,
+            enrollmentId: 'private-enroll-1',
+            publisherId: 'private-partner',
+            publisherClass: 'private',
+            publisherStatus: 'active',
+            signingKeyId: MARKETPLACE_TEST_TRUSTED_KEY_ID,
+            trustRootId: 'private-root-1',
+            keyStatus: 'active',
+            enrollmentScope: 'composite',
+            allowedPluginIds: ['calendar'],
+            allowedSiteScopes: ['global'],
+            allowedArtifactChannels: ['stable'],
+            allowedOperations: ['install'],
+            effectiveAt: '2026-01-01T00:00:00.000Z',
+            policySource: 'test',
+            createdAt: '2026-07-13T00:00:00.000Z',
+            createdBy: 'test',
+            updatedAt: '2026-07-13T00:00:00.000Z',
+            updatedBy: 'test',
+          },
+        ],
+      }),
+    });
+
+    expect(plan.outcome).toBe('ready');
   });
 });
 
@@ -146,6 +207,7 @@ describe('plugin-marketplace-install-planner: safety guardrails', () => {
       descriptor: descriptorForFixture(),
       catalogEntry: productionEligibleCatalogFixture,
       trustedKeys: MARKETPLACE_TEST_TRUSTED_KEYS,
+      publisherTrustPolicy: createMarketplacePublisherTrustPolicyFixture(),
     });
 
     expect(plan.outcome).toBe('ready');
@@ -159,6 +221,7 @@ describe('plugin-marketplace-install-planner: safety guardrails', () => {
       descriptor: descriptorForFixture(),
       catalogEntry: productionEligibleCatalogFixture,
       trustedKeys: [],
+      publisherTrustPolicy: createMarketplacePublisherTrustPolicyFixture(),
     });
 
     expect(plan.outcome).toBe('blocked');

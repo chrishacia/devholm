@@ -2,6 +2,7 @@ import {
   normalizeGitHubRepoUrl,
   validateMarketplaceInstallSourceDescriptor,
 } from '@core/lib/plugin-install-source-descriptor.server';
+import { evaluateMarketplacePublisherTrustPolicy } from '@core/lib/plugin-marketplace-publisher-trust.server';
 import { validateMarketplaceCatalogEntry } from '@core/lib/plugin-marketplace-contract.server';
 import { verifyMarketplaceArtifactSignature } from '@core/lib/plugin-marketplace-signing.server';
 import type {
@@ -58,28 +59,59 @@ export function buildMarketplaceInstallDryRunPlan(
   const runtimeReady =
     input.catalogEntry.artifact.readiness === 'available' ||
     input.catalogEntry.installReadiness === 'production-eligible';
+
+  let signatureTrust: ReturnType<typeof verifyMarketplaceArtifactSignature> | null = null;
   if (runtimeReady) {
-    const trust = verifyMarketplaceArtifactSignature({
+    signatureTrust = verifyMarketplaceArtifactSignature({
       catalogEntry: input.catalogEntry,
       signature: input.catalogEntry.artifact.signature,
       trustedKeys: input.trustedKeys ?? [],
       verificationTimestamp: input.verificationTimestamp,
     });
 
-    if (trust.trustDecision !== 'trusted') {
+    if (signatureTrust.trustDecision !== 'trusted') {
       blockers.push({
         code: 'artifact-signature-untrusted',
-        message: `artifact signature trust check failed: ${trust.verificationStatus}`,
+        message: `artifact signature trust check failed: ${signatureTrust.verificationStatus}`,
       });
       pushBlockedState(states, 'verify_signature_trust', [
-        `signature trust failed (${trust.verificationStatus})`,
+        `signature trust failed (${signatureTrust.verificationStatus})`,
       ]);
     } else {
       pushPassedState(states, 'verify_signature_trust', ['signature trust verified']);
     }
+
+    const trustPolicyDecision = evaluateMarketplacePublisherTrustPolicy({
+      publisherId: input.catalogEntry.publisher.publisherId,
+      publisherClass: input.catalogEntry.publisher.classification,
+      signingKeyId: signatureTrust.keyId,
+      pluginId: input.catalogEntry.pluginId,
+      artifactChannel: input.requestedArtifactChannel,
+      siteScope: input.requestedSiteScope,
+      operation: input.requestedOperation ?? 'install',
+      policyDocument: input.publisherTrustPolicy ?? null,
+      evaluatedAt: input.verificationTimestamp,
+    });
+
+    if (trustPolicyDecision.outcome !== 'allow') {
+      blockers.push({
+        code: 'publisher-policy-denied',
+        message: `publisher trust policy denied install: ${trustPolicyDecision.reasonCode}`,
+      });
+      pushBlockedState(states, 'evaluate_publisher_trust_policy', [
+        `publisher trust denied (${trustPolicyDecision.reasonCode})`,
+      ]);
+    } else {
+      pushPassedState(states, 'evaluate_publisher_trust_policy', [
+        `publisher trust policy allowed (${trustPolicyDecision.reasonCode})`,
+      ]);
+    }
   } else {
     pushPassedState(states, 'verify_signature_trust', [
       'signature trust check skipped for non-runtime-ready entry',
+    ]);
+    pushPassedState(states, 'evaluate_publisher_trust_policy', [
+      'publisher trust policy check skipped for non-runtime-ready entry',
     ]);
   }
 
@@ -189,13 +221,6 @@ export function buildMarketplaceInstallDryRunPlan(
     blockers.push({
       code: 'artifact-not-immutable',
       message: 'artifact.immutable must be true for dry-run install planning',
-    });
-  }
-
-  if (input.catalogEntry.publisher.classification !== 'first-party') {
-    blockers.push({
-      code: 'third-party-production-blocked',
-      message: 'third-party production install planning is blocked in this phase',
     });
   }
 

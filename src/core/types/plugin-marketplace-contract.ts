@@ -125,6 +125,98 @@ export interface MarketplaceArtifactTrustVerification {
   notes: readonly string[];
 }
 
+export type MarketplacePublisherClass = 'first-party' | 'private' | 'third-party' | 'unknown';
+
+export type MarketplacePublisherStatus =
+  | 'active'
+  | 'suspended'
+  | 'revoked'
+  | 'expired'
+  | 'misconfigured';
+
+export type MarketplacePublisherKeyStatus = 'active' | 'rotating' | 'retired' | 'revoked';
+
+export type MarketplaceTrustDecisionReasonCode =
+  | 'publisher-unknown'
+  | 'publisher-revoked'
+  | 'publisher-suspended'
+  | 'key-unknown'
+  | 'key-revoked'
+  | 'key-publisher-mismatch'
+  | 'enrollment-missing'
+  | 'enrollment-expired'
+  | 'scope-denied'
+  | 'plugin-denied'
+  | 'site-denied'
+  | 'channel-denied'
+  | 'policy-version-unsupported'
+  | 'policy-malformed'
+  | 'allowed';
+
+export interface MarketplacePublisherEnrollmentRecord {
+  policyVersion: 1;
+  enrollmentId: string;
+  publisherId: string;
+  publisherClass: MarketplacePublisherClass;
+  publisherStatus: MarketplacePublisherStatus;
+  signingKeyId: string;
+  trustRootId: string;
+  keyStatus: MarketplacePublisherKeyStatus;
+  enrollmentScope: 'global' | 'site' | 'plugin' | 'namespace' | 'composite';
+  allowedPluginIds?: readonly string[];
+  allowedPluginNamespaces?: readonly string[];
+  allowedSiteScopes?: readonly string[];
+  allowedArtifactChannels?: readonly string[];
+  allowedOperations?: readonly string[];
+  effectiveAt: string;
+  expiresAt?: string;
+  revokedAt?: string;
+  revocationReason?: string;
+  policySource: string;
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface MarketplacePublisherTrustPolicyDocument {
+  policyVersion: 1;
+  policySource: string;
+  enrollments: readonly MarketplacePublisherEnrollmentRecord[];
+  updatedAt: string;
+}
+
+export interface MarketplacePublisherTrustDecisionInput {
+  publisherId: string;
+  publisherClass: MarketplacePublisherClass;
+  signingKeyId: string;
+  pluginId: string;
+  artifactChannel?: string;
+  siteScope?: string;
+  operation: 'install' | 'update' | 'rollback' | 'enable' | 'lifecycle' | 'migration';
+  policyDocument: MarketplacePublisherTrustPolicyDocument | null;
+  evaluatedAt?: string;
+}
+
+export interface MarketplacePublisherTrustDecision {
+  outcome: 'allow' | 'deny';
+  reasonCode: MarketplaceTrustDecisionReasonCode;
+  matchedEnrollmentId: string | null;
+  matchedTrustRootId: string | null;
+  evaluatedScope: {
+    pluginId: string;
+    artifactChannel: string;
+    siteScope: string;
+    operation: string;
+  };
+  revocationState: 'none' | 'revoked' | 'expired' | 'suspended';
+  metadata: {
+    policyVersion: number | null;
+    policySource: string | null;
+    evaluatedAt: string;
+  };
+}
+
 export interface MarketplaceTrustedMarketplaceKeyRecord {
   keyId: string;
   algorithm: 'Ed25519';
@@ -141,7 +233,7 @@ export interface MarketplaceTrustedMarketplaceKeyRecord {
 
 export interface MarketplacePublisherMetadata {
   publisherId: string;
-  classification: 'first-party' | 'third-party';
+  classification: MarketplacePublisherClass;
 }
 
 export interface MarketplaceCatalogEntry {

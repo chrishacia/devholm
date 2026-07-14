@@ -252,8 +252,8 @@ describe('plugin-marketplace-contract: catalog artifact contract validation', ()
     ).toBe(true);
   });
 
-  it('rejects non-first-party production-eligible publisher classification', () => {
-    const errors = validateMarketplaceCatalogEntry(
+  it('accepts explicit publisher classes for production-eligible entries', () => {
+    const thirdPartyErrors = validateMarketplaceCatalogEntry(
       cloneCatalogFixture({
         publisher: {
           publisherId: 'community-author',
@@ -261,9 +261,17 @@ describe('plugin-marketplace-contract: catalog artifact contract validation', ()
         },
       })
     );
-    expect(
-      errors.some((error) => error.includes('production-eligible entries must be first-party'))
-    ).toBe(true);
+    expect(thirdPartyErrors).toEqual([]);
+
+    const privateErrors = validateMarketplaceCatalogEntry(
+      cloneCatalogFixture({
+        publisher: {
+          publisherId: 'private-partner',
+          classification: 'private',
+        },
+      })
+    );
+    expect(privateErrors).toEqual([]);
   });
 
   it('requires signatures for runtime-ready entries', () => {
