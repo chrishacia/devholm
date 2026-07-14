@@ -2,6 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
 import { bundledPlugins } from '../src/user/extensions/plugins/registry';
+import { toCanonicalPluginConfigEntry } from '../src/core/lib/plugin-canonical-contract-adapters';
+import {
+  buildDeterministicCanonicalRegistry,
+  createCanonicalDocumentFromEntries,
+} from '../src/core/lib/plugin-canonical-resolver.server';
 
 interface GeneratedMigrationAsset {
   id: string;
@@ -18,6 +23,10 @@ interface GeneratedRegistryEntry {
 }
 
 interface GeneratedRegistry {
+  schemaVersion: 1;
+  generatorVersion: string;
+  contentDigestSha256: string;
+  content: unknown;
   plugins: GeneratedRegistryEntry[];
 }
 
@@ -51,6 +60,21 @@ function normalizeRelativeFile(filePath: string): string {
 }
 
 function buildRegistry(rootDir: string, outputDir: string): GeneratedRegistry {
+  const canonicalEntries = bundledPlugins.map(toCanonicalPluginConfigEntry);
+  const { registry, failures } = buildDeterministicCanonicalRegistry({
+    environment: 'ci',
+    document: createCanonicalDocumentFromEntries(canonicalEntries),
+  });
+
+  if (failures.length > 0 || !registry) {
+    const messages = failures.map(
+      (failure) => `${failure.pluginId}:${failure.code}:${failure.message}`
+    );
+    throw new Error(
+      `Canonical resolver failed during registry generation: ${messages.join(' | ')}`
+    );
+  }
+
   const plugins: GeneratedRegistryEntry[] = bundledPlugins
     .map(({ manifest }) => {
       const sourceMigrationDir = path.join(
@@ -143,7 +167,13 @@ function buildRegistry(rootDir: string, outputDir: string): GeneratedRegistry {
     })
     .sort((a, b) => a.id.localeCompare(b.id));
 
-  return { plugins };
+  return {
+    schemaVersion: 1,
+    generatorVersion: registry.generatorVersion,
+    contentDigestSha256: registry.contentDigestSha256,
+    content: registry.content,
+    plugins,
+  };
 }
 
 function writeRegistryFile(rootDir: string, payload: GeneratedRegistry): string {

@@ -2,6 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
 import { bundledPlugins } from '../src/user/extensions/plugins/registry';
+import { toCanonicalPluginConfigEntry } from '../src/core/lib/plugin-canonical-contract-adapters';
+import {
+  buildDeterministicCanonicalRegistry,
+  createCanonicalDocumentFromEntries,
+  verifyDeterministicCanonicalRegistry,
+} from '../src/core/lib/plugin-canonical-resolver.server';
 
 interface GeneratedMigrationAsset {
   id: string;
@@ -18,6 +24,10 @@ interface GeneratedRegistryEntry {
 }
 
 interface GeneratedRegistry {
+  schemaVersion: 1;
+  generatorVersion: string;
+  contentDigestSha256: string;
+  content: unknown;
   plugins: GeneratedRegistryEntry[];
 }
 
@@ -30,7 +40,26 @@ function normalizePath(value: string): string {
 }
 
 function expectedRegistry(rootDir: string): GeneratedRegistry {
+  const canonicalEntries = bundledPlugins.map(toCanonicalPluginConfigEntry);
+  const { registry, failures } = buildDeterministicCanonicalRegistry({
+    environment: 'ci',
+    document: createCanonicalDocumentFromEntries(canonicalEntries),
+  });
+
+  if (failures.length > 0 || !registry) {
+    const messages = failures.map(
+      (failure) => `${failure.pluginId}:${failure.code}:${failure.message}`
+    );
+    throw new Error(
+      `Canonical resolver failed while building expected registry: ${messages.join(' | ')}`
+    );
+  }
+
   return {
+    schemaVersion: 1,
+    generatorVersion: registry.generatorVersion,
+    contentDigestSha256: registry.contentDigestSha256,
+    content: registry.content,
     plugins: bundledPlugins
       .map(({ manifest }) => {
         const sourceMigrationDir = path.join(
@@ -102,6 +131,27 @@ function main(): void {
   const rootDir = process.cwd();
   const expected = expectedRegistry(rootDir);
   const generated = readGenerated(rootDir);
+
+  if (generated.schemaVersion !== 1) {
+    throw new Error(`Generated registry schemaVersion must be 1, found ${generated.schemaVersion}`);
+  }
+
+  if (!generated.generatorVersion.trim()) {
+    throw new Error('Generated registry generatorVersion is required');
+  }
+
+  const digestVerification = verifyDeterministicCanonicalRegistry({
+    schemaVersion: generated.schemaVersion,
+    generatorVersion: generated.generatorVersion,
+    contentDigestSha256: generated.contentDigestSha256,
+    content: generated.content,
+  });
+
+  if (!digestVerification.ok) {
+    throw new Error(
+      `Generated registry digest verification failed (${digestVerification.errorCode ?? 'unknown'}): expected ${digestVerification.expectedDigestSha256}, found ${digestVerification.actualDigestSha256}`
+    );
+  }
 
   const expectedJson = JSON.stringify(expected);
   const generatedJson = JSON.stringify(generated);
