@@ -1,11 +1,11 @@
-# Canonical Plugin Contracts (Issue #93)
+# Canonical Plugin Contracts (Issues #93 and #94)
 
 Parent tracker: #92  
 Implementation issue: #93
 
 ## Scope
 
-This document defines the canonical contract layer introduced in #93:
+This document defines the canonical contract layer introduced in #93 and the resolver boundary convergence in #94:
 
 - architecture vocabulary
 - canonical configuration schema
@@ -15,6 +15,7 @@ This document defines the canonical contract layer introduced in #93:
 - frontend and server contribution boundaries
 - state model axes and summary projection
 - configuration and secret declaration contract
+- resolver output and deterministic registry authority
 
 This issue is additive and non-destructive.
 
@@ -161,6 +162,26 @@ Current validation coverage includes:
 - contradictory build/default intent checks
 - impossible state-axis combinations
 
+## Resolver and Deterministic Registry Boundary (#94)
+
+Canonical resolver implementation:
+
+- `resolveCanonicalPlugins(input)`
+- `buildDeterministicCanonicalRegistry(input)`
+- `verifyDeterministicCanonicalRegistry(snapshot)`
+
+Resolver and deterministic registry generation details are documented in:
+
+- `docs/plugin-canonical-resolver-and-registry.md`
+
+Issue #94 establishes:
+
+- one canonical resolver authority over #93 contract inputs
+- deterministic resolver projection used for generated registry content
+- digest-backed tamper detection for generated registry content
+
+Issue #94 explicitly does not perform runtime/build/lifecycle cutover.
+
 ## Backward Compatibility and Transition
 
 - Existing lifecycle and registry behavior remains unchanged.
@@ -178,6 +199,7 @@ Current validation coverage includes:
 
 ## Follow-up Dependencies
 
-- #94: canonical runtime source resolution and acquisition integration
-- #95: lifecycle orchestration convergence on canonical state machine
-- #96: migration and persistence integration with canonical contracts
+- #95: development source resolution, local override workflow, and watch behavior
+- #96: production build integration for resolved plugin packages
+- #97: lifecycle/deployment/rollback/recovery orchestration convergence
+- #103: final transitional bundled-path reconciliation and removal
