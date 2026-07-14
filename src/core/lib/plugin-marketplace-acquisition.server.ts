@@ -8,6 +8,10 @@ import type {
   MarketplaceArtifactAcquisitionPolicy,
   MarketplaceArtifactAcquisitionResult,
 } from '@core/types/plugin-marketplace-acquisition';
+import {
+  getMarketplaceCachePolicy,
+  registerMarketplaceCacheEntryAccess,
+} from '@/db/marketplace-cache-admin';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const DEFAULT_POLICY: MarketplaceArtifactAcquisitionPolicy = {
@@ -39,19 +43,39 @@ function normalizeSha256(value: string | undefined, label: string): string {
 }
 
 function normalizePolicy(
-  overrides?: Partial<MarketplaceArtifactAcquisitionPolicy>
+  overrides?: Partial<MarketplaceArtifactAcquisitionPolicy>,
+  basePolicy: MarketplaceArtifactAcquisitionPolicy = DEFAULT_POLICY
 ): MarketplaceArtifactAcquisitionPolicy {
   return {
-    ...DEFAULT_POLICY,
+    ...basePolicy,
     ...overrides,
-    allowedHosts: (overrides?.allowedHosts ?? DEFAULT_POLICY.allowedHosts).map((value) =>
+    allowedHosts: (overrides?.allowedHosts ?? basePolicy.allowedHosts).map((value) =>
       normalizeHostname(value)
     ),
     allowPrivateAddressHosts: (
-      overrides?.allowPrivateAddressHosts ?? DEFAULT_POLICY.allowPrivateAddressHosts
+      overrides?.allowPrivateAddressHosts ?? basePolicy.allowPrivateAddressHosts
     ).map((value) => normalizeHostname(value)),
-    allowedPorts: [...(overrides?.allowedPorts ?? DEFAULT_POLICY.allowedPorts)],
+    allowedPorts: [...(overrides?.allowedPorts ?? basePolicy.allowedPorts)],
   };
+}
+
+async function loadAcquisitionPolicy(
+  overrides?: Partial<MarketplaceArtifactAcquisitionPolicy>
+): Promise<MarketplaceArtifactAcquisitionPolicy> {
+  let basePolicy = DEFAULT_POLICY;
+
+  try {
+    const persisted = await getMarketplaceCachePolicy();
+    basePolicy = {
+      ...basePolicy,
+      maxCacheBytes: persisted.maxCacheBytes,
+      maxArtifactAgeMs: persisted.maxArtifactAgeMs,
+    };
+  } catch {
+    // Fail-safe behavior: preserve conservative defaults if policy storage is unavailable.
+  }
+
+  return normalizePolicy(overrides, basePolicy);
 }
 
 function parseAndValidateUrl(
@@ -236,6 +260,7 @@ async function writeCacheMetadata(
 async function tryServeValidCache(
   cacheRoot: string,
   expectedSha256: string,
+  expectedPluginId: string,
   expectedVersion: string,
   artifactUrl: string,
   approvedHost: string,
@@ -271,6 +296,17 @@ async function tryServeValidCache(
     source: 'cache',
   });
 
+  await registerMarketplaceCacheEntryAccess({
+    cacheKey: expectedSha256,
+    source: 'cache',
+    sizeBytes: fileStats.size,
+    pluginId: expectedPluginId,
+    pluginVersion: expectedVersion,
+    artifactUrl,
+    approvedHost,
+    verifiedAt: new Date(),
+  }).catch(() => undefined);
+
   return {
     artifactUrl,
     approvedHost,
@@ -293,7 +329,7 @@ export async function acquireFirstPartyMarketplaceArtifact(
   input: MarketplaceArtifactAcquisitionInput
 ): Promise<MarketplaceArtifactAcquisitionResult> {
   const startedAt = Date.now();
-  const policy = normalizePolicy(input.policyOverrides);
+  const policy = await loadAcquisitionPolicy(input.policyOverrides);
   const expectedSha256 = normalizeSha256(input.expectedSha256, 'expectedSha256');
 
   const firstUrl = parseAndValidateUrl(input.artifactUrl, policy);
@@ -305,6 +341,7 @@ export async function acquireFirstPartyMarketplaceArtifact(
   const cached = await tryServeValidCache(
     cacheRoot,
     expectedSha256,
+    input.expectedPluginId,
     input.expectedVersion,
     input.artifactUrl,
     firstUrl.normalizedHost,
@@ -490,7 +527,11 @@ export async function acquireFirstPartyMarketplaceArtifact(
     }
 
     const usageBytes = await computeCacheUsageBytes(cacheRoot);
+    let warningCode: string | undefined;
+    let warningDetail: string | undefined;
     if (usageBytes > policy.maxCacheBytes) {
+      warningCode = 'cache-over-quota';
+      warningDetail = `usage ${usageBytes} exceeds maxCacheBytes ${policy.maxCacheBytes}`;
       warnings.push('cache size exceeds policy maxCacheBytes; manual cleanup may be required');
     }
 
@@ -504,6 +545,19 @@ export async function acquireFirstPartyMarketplaceArtifact(
       source: 'network',
       redirectChain,
     });
+
+    await registerMarketplaceCacheEntryAccess({
+      cacheKey: expectedSha256,
+      source: 'network',
+      sizeBytes: cacheStats.size,
+      pluginId: input.expectedPluginId,
+      pluginVersion: input.expectedVersion,
+      artifactUrl: currentUrl.toString(),
+      approvedHost: currentHost,
+      verifiedAt: new Date(),
+      warningCode,
+      warningDetail,
+    }).catch(() => undefined);
 
     return {
       artifactUrl: input.artifactUrl,

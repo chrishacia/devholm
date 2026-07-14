@@ -165,6 +165,7 @@ export default function SearchDialog() {
       onClose={() => setOpen(false)}
       maxWidth="sm"
       fullWidth
+      disableScrollLock
       PaperProps={{
         sx: {
           position: 'fixed',
