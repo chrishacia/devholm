@@ -135,6 +135,85 @@ interface MarketplacePluginView {
   };
 }
 
+interface MarketplaceCacheHealthSummary {
+  generatedAt: string;
+  usageBytes: number;
+  usageEntries: number;
+  pinnedUsageBytes: number;
+  pinnedEntries: number;
+  evictableUsageBytes: number;
+  evictableEntries: number;
+  mirrors: {
+    total: number;
+    enabled: number;
+    degraded: number;
+  };
+  audits: {
+    latestRunId: string | null;
+    latestStatus: string | null;
+    latestCompletedAt: string | null;
+  };
+  degraded: {
+    overQuota: boolean;
+    mirrorsDegraded: boolean;
+    latestAuditDegraded: boolean;
+  };
+  policy: {
+    maxCacheBytes: number;
+  };
+}
+
+interface MarketplaceMirrorSummary {
+  mirrorId: string;
+  baseUrl: string;
+  enabled: boolean;
+  priority: number;
+  healthState: string;
+  metadata?: {
+    scope?: string;
+  };
+}
+
+interface MarketplaceCleanupCandidate {
+  cacheKey: string;
+  sizeBytes: number;
+  reasonCodes: string[];
+  selected: boolean;
+}
+
+interface MarketplaceCleanupPlan {
+  selectedBytes: number;
+  selectedEntries: number;
+  evictableBytes: number;
+  evictableEntries: number;
+  candidates: MarketplaceCleanupCandidate[];
+}
+
+interface MarketplaceMirrorEditorModel {
+  mirrorId: string;
+  baseUrl: string;
+  enabled: boolean;
+  priority: number;
+  scope: string;
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return '0 B';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let amount = value;
+  let index = 0;
+  while (amount >= 1024 && index < units.length - 1) {
+    amount /= 1024;
+    index += 1;
+  }
+
+  const rounded = amount >= 100 ? amount.toFixed(0) : amount.toFixed(1);
+  return `${rounded} ${units[index]}`;
+}
+
 function capabilityLabels(capabilities: PluginCapabilities) {
   return [
     capabilities.admin ? 'Admin' : null,
@@ -146,8 +225,34 @@ function capabilityLabels(capabilities: PluginCapabilities) {
   ].filter((value): value is string => Boolean(value));
 }
 
+function mirrorToEditorModel(mirror: MarketplaceMirrorSummary): MarketplaceMirrorEditorModel {
+  return {
+    mirrorId: mirror.mirrorId,
+    baseUrl: mirror.baseUrl,
+    enabled: mirror.enabled,
+    priority: mirror.priority,
+    scope: mirror.metadata?.scope || 'global',
+  };
+}
+
 export default function AdminPluginsPage() {
   const [plugins, setPlugins] = useState<MarketplacePluginView[]>([]);
+  const [cacheHealth, setCacheHealth] = useState<MarketplaceCacheHealthSummary | null>(null);
+  const [mirrors, setMirrors] = useState<MarketplaceMirrorSummary[]>([]);
+  const [mirrorDraft, setMirrorDraft] = useState<MarketplaceMirrorEditorModel>({
+    mirrorId: '',
+    baseUrl: '',
+    enabled: true,
+    priority: 100,
+    scope: 'global',
+  });
+  const [mirrorEdits, setMirrorEdits] = useState<Record<string, MarketplaceMirrorEditorModel>>({});
+  const [cleanupPlan, setCleanupPlan] = useState<MarketplaceCleanupPlan | null>(null);
+  const [auditStatus, setAuditStatus] = useState<string | null>(null);
+  const [cacheActionPending, setCacheActionPending] = useState<
+    'audit' | 'dry-run' | 'execute' | null
+  >(null);
+  const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'installed' | 'not-installed'>('all');
   const [loading, setLoading] = useState(true);
@@ -176,9 +281,39 @@ export default function AdminPluginsPage() {
     }
   }, []);
 
+  const fetchCacheAdministration = useCallback(async () => {
+    try {
+      const [healthResponse, mirrorsResponse] = await Promise.all([
+        fetch('/api/admin/plugins/marketplace/cache-health'),
+        fetch('/api/admin/plugins/marketplace/mirrors'),
+      ]);
+
+      if (healthResponse.ok) {
+        const healthPayload = await healthResponse.json();
+        setCacheHealth((healthPayload.summary || null) as MarketplaceCacheHealthSummary | null);
+      }
+
+      if (mirrorsResponse.ok) {
+        const mirrorsPayload = await mirrorsResponse.json();
+        const loadedMirrors = (mirrorsPayload.mirrors || []) as MarketplaceMirrorSummary[];
+        setMirrors(loadedMirrors);
+        setMirrorEdits((previous) => {
+          const next: Record<string, MarketplaceMirrorEditorModel> = {};
+          for (const mirror of loadedMirrors) {
+            next[mirror.mirrorId] = previous[mirror.mirrorId] ?? mirrorToEditorModel(mirror);
+          }
+          return next;
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load marketplace cache administration state:', err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchPlugins();
-  }, [fetchPlugins]);
+    fetchCacheAdministration();
+  }, [fetchPlugins, fetchCacheAdministration]);
 
   useEffect(() => {
     const hasInProgress = plugins.some((entry) => entry.operation.hasActive);
@@ -192,6 +327,135 @@ export default function AdminPluginsPage() {
 
     return () => clearInterval(timer);
   }, [plugins, fetchPlugins]);
+
+  const requestCleanupDryRun = useCallback(async () => {
+    setCacheActionPending('dry-run');
+    setError(null);
+    try {
+      const response = await fetch('/api/admin/plugins/marketplace/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'dry-run', limit: 25 }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate cleanup dry-run plan');
+      }
+
+      const payload = await response.json();
+      setCleanupPlan((payload.plan || null) as MarketplaceCleanupPlan | null);
+      await fetchCacheAdministration();
+    } catch (err) {
+      console.error('Failed to run cleanup dry-run:', err);
+      setError(err instanceof Error ? err.message : 'Failed to run cleanup dry-run');
+    } finally {
+      setCacheActionPending(null);
+    }
+  }, [fetchCacheAdministration]);
+
+  const requestIntegrityAudit = useCallback(async () => {
+    setCacheActionPending('audit');
+    setError(null);
+    try {
+      const response = await fetch('/api/admin/plugins/marketplace/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'start' }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to run integrity audit');
+      }
+
+      const payload = await response.json();
+      setAuditStatus(payload.run?.status || 'unknown');
+      await fetchCacheAdministration();
+    } catch (err) {
+      console.error('Failed to run integrity audit:', err);
+      setError(err instanceof Error ? err.message : 'Failed to run integrity audit');
+    } finally {
+      setCacheActionPending(null);
+    }
+  }, [fetchCacheAdministration]);
+
+  const requestCleanupExecute = useCallback(async () => {
+    setCacheActionPending('execute');
+    setError(null);
+    try {
+      const response = await fetch('/api/admin/plugins/marketplace/cleanup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'execute',
+          limit: 25,
+          confirmation: 'execute-cleanup',
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || 'Failed to execute cleanup');
+      }
+
+      const payload = await response.json();
+      setCleanupPlan((payload.plan || null) as MarketplaceCleanupPlan | null);
+      await fetchCacheAdministration();
+    } catch (err) {
+      console.error('Failed to execute cleanup:', err);
+      setError(err instanceof Error ? err.message : 'Failed to execute cleanup');
+    } finally {
+      setCacheActionPending(null);
+      setCleanupConfirmOpen(false);
+    }
+  }, [fetchCacheAdministration]);
+
+  const saveMirror = useCallback(
+    async (payload: MarketplaceMirrorEditorModel, method: 'POST' | 'PATCH') => {
+      setError(null);
+      try {
+        const response = await fetch('/api/admin/plugins/marketplace/mirrors', {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mirrorId: payload.mirrorId,
+            baseUrl: payload.baseUrl,
+            enabled: payload.enabled,
+            priority: payload.priority,
+            metadata: {
+              scope: payload.scope,
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          const body = await response.json().catch(() => null);
+          throw new Error(body?.error || 'Failed to save mirror');
+        }
+
+        await fetchCacheAdministration();
+      } catch (err) {
+        console.error('Failed to save mirror:', err);
+        setError(err instanceof Error ? err.message : 'Failed to save mirror');
+      }
+    },
+    [fetchCacheAdministration]
+  );
+
+  const createMirror = useCallback(async () => {
+    if (!mirrorDraft.mirrorId.trim() || !mirrorDraft.baseUrl.trim()) {
+      setError('Mirror ID and base URL are required');
+      return;
+    }
+
+    await saveMirror(mirrorDraft, 'POST');
+    setMirrorDraft({
+      mirrorId: '',
+      baseUrl: '',
+      enabled: true,
+      priority: 100,
+      scope: 'global',
+    });
+  }, [mirrorDraft, saveMirror]);
 
   const togglePlugin = useCallback(
     async (plugin: MarketplacePluginView) => {
@@ -322,6 +586,336 @@ export default function AdminPluginsPage() {
           <MenuItem value="not-installed">Not installed</MenuItem>
         </Select>
       </Stack>
+
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                Cache Usage
+              </Typography>
+              <Typography variant="h6" fontWeight={700}>
+                {cacheHealth
+                  ? `${formatBytes(cacheHealth.usageBytes)} / ${formatBytes(cacheHealth.policy.maxCacheBytes)}`
+                  : 'Unknown'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Pinned {cacheHealth ? formatBytes(cacheHealth.pinnedUsageBytes) : 'Unknown'} •
+                Evictable {cacheHealth ? formatBytes(cacheHealth.evictableUsageBytes) : 'Unknown'}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                Cache Health
+              </Typography>
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                <Chip
+                  size="small"
+                  label={cacheHealth?.degraded.overQuota ? 'Over quota' : 'Quota healthy'}
+                  color={cacheHealth?.degraded.overQuota ? 'warning' : 'success'}
+                />
+                <Chip
+                  size="small"
+                  label={
+                    cacheHealth?.degraded.latestAuditDegraded ? 'Audit degraded' : 'Audit healthy'
+                  }
+                  color={cacheHealth?.degraded.latestAuditDegraded ? 'warning' : 'success'}
+                />
+              </Stack>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Entries: {cacheHealth?.usageEntries ?? 'Unknown'} • Pinned:{' '}
+                {cacheHealth?.pinnedEntries ?? 'Unknown'}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                Mirrors
+              </Typography>
+              <Typography variant="h6" fontWeight={700}>
+                {cacheHealth
+                  ? `${cacheHealth.mirrors.enabled}/${cacheHealth.mirrors.total}`
+                  : 'Unknown'}{' '}
+                enabled
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Degraded: {cacheHealth?.mirrors.degraded ?? 'Unknown'}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                Offline Readiness
+              </Typography>
+              <Chip
+                size="small"
+                label={
+                  cacheHealth && cacheHealth.evictableEntries === 0
+                    ? 'Protected cache only'
+                    : 'Review readiness'
+                }
+                color={cacheHealth && cacheHealth.evictableEntries === 0 ? 'success' : 'warning'}
+              />
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Last audit:{' '}
+                {cacheHealth?.audits.latestCompletedAt
+                  ? new Date(cacheHealth.audits.latestCompletedAt).toLocaleString()
+                  : 'No audit completed'}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      <Card variant="outlined" sx={{ mb: 3 }}>
+        <CardContent>
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={1.5}
+            justifyContent="space-between"
+            alignItems={{ xs: 'flex-start', md: 'center' }}
+          >
+            <Box>
+              <Typography variant="subtitle1" fontWeight={700}>
+                Cache Operations
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Generate deterministic cleanup plans and run integrity audits without destructive
+                defaults.
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1}>
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={cacheActionPending !== null}
+                onClick={() => {
+                  void requestCleanupDryRun();
+                }}
+              >
+                {cacheActionPending === 'dry-run' ? 'Planning…' : 'Dry-run cleanup'}
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                color="warning"
+                disabled={cacheActionPending !== null}
+                onClick={() => {
+                  setCleanupConfirmOpen(true);
+                }}
+              >
+                {cacheActionPending === 'execute' ? 'Executing…' : 'Execute cleanup'}
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={cacheActionPending !== null}
+                onClick={() => {
+                  void requestIntegrityAudit();
+                }}
+              >
+                {cacheActionPending === 'audit' ? 'Auditing…' : 'Run integrity audit'}
+              </Button>
+            </Stack>
+          </Stack>
+
+          {cleanupPlan ? (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Dry-run selected {cleanupPlan.selectedEntries} artifact(s) reclaiming{' '}
+              {formatBytes(cleanupPlan.selectedBytes)}. Evictable total:{' '}
+              {cleanupPlan.evictableEntries} artifact(s) / {formatBytes(cleanupPlan.evictableBytes)}
+              .
+            </Alert>
+          ) : null}
+
+          {cleanupPlan && cleanupPlan.candidates.length > 0 ? (
+            <List dense sx={{ mt: 1 }}>
+              {cleanupPlan.candidates.slice(0, 8).map((candidate) => (
+                <ListItem key={candidate.cacheKey}>
+                  <ListItemText
+                    primary={`${candidate.cacheKey} • ${formatBytes(candidate.sizeBytes)} • ${candidate.selected ? 'selected' : 'retained'}`}
+                    secondary={candidate.reasonCodes.join(', ') || 'no reason code'}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          ) : null}
+
+          {auditStatus ? (
+            <Alert severity={auditStatus === 'succeeded' ? 'success' : 'warning'} sx={{ mt: 2 }}>
+              Latest audit request completed with status: {auditStatus}.
+            </Alert>
+          ) : null}
+
+          <Typography variant="subtitle2" sx={{ mt: 2 }}>
+            Mirror Administration
+          </Typography>
+          <Stack spacing={1.25} sx={{ mt: 1 }}>
+            {mirrors.map((mirror) => {
+              const edit = mirrorEdits[mirror.mirrorId] ?? mirrorToEditorModel(mirror);
+              return (
+                <Stack
+                  key={mirror.mirrorId}
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  alignItems={{ xs: 'stretch', md: 'center' }}
+                >
+                  <TextField
+                    size="small"
+                    label="Mirror ID"
+                    value={edit.mirrorId}
+                    disabled
+                    sx={{ minWidth: 160 }}
+                  />
+                  <TextField
+                    size="small"
+                    label="Base URL"
+                    value={edit.baseUrl}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setMirrorEdits((previous) => ({
+                        ...previous,
+                        [mirror.mirrorId]: { ...edit, baseUrl: value },
+                      }));
+                    }}
+                    sx={{ flex: 1 }}
+                  />
+                  <TextField
+                    size="small"
+                    label="Priority"
+                    type="number"
+                    value={edit.priority}
+                    onChange={(event) => {
+                      const value = Number.parseInt(event.target.value, 10);
+                      setMirrorEdits((previous) => ({
+                        ...previous,
+                        [mirror.mirrorId]: {
+                          ...edit,
+                          priority: Number.isFinite(value) ? value : edit.priority,
+                        },
+                      }));
+                    }}
+                    sx={{ width: 120 }}
+                  />
+                  <TextField
+                    size="small"
+                    label="Scope"
+                    value={edit.scope}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setMirrorEdits((previous) => ({
+                        ...previous,
+                        [mirror.mirrorId]: { ...edit, scope: value },
+                      }));
+                    }}
+                    sx={{ width: 150 }}
+                  />
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    <Typography variant="body2" color="text.secondary">
+                      Enabled
+                    </Typography>
+                    <Switch
+                      checked={edit.enabled}
+                      onChange={(event) => {
+                        setMirrorEdits((previous) => ({
+                          ...previous,
+                          [mirror.mirrorId]: { ...edit, enabled: event.target.checked },
+                        }));
+                      }}
+                    />
+                  </Stack>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => {
+                      void saveMirror(edit, 'PATCH');
+                    }}
+                  >
+                    Save
+                  </Button>
+                  <Chip
+                    size="small"
+                    label={mirror.healthState}
+                    color={
+                      mirror.enabled &&
+                      (mirror.healthState === 'healthy' || mirror.healthState === 'unknown')
+                        ? 'success'
+                        : 'warning'
+                    }
+                  />
+                </Stack>
+              );
+            })}
+
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              spacing={1}
+              alignItems={{ xs: 'stretch', md: 'center' }}
+            >
+              <TextField
+                size="small"
+                label="New mirror ID"
+                value={mirrorDraft.mirrorId}
+                onChange={(event) => {
+                  setMirrorDraft((previous) => ({ ...previous, mirrorId: event.target.value }));
+                }}
+                sx={{ minWidth: 180 }}
+              />
+              <TextField
+                size="small"
+                label="New mirror base URL"
+                value={mirrorDraft.baseUrl}
+                onChange={(event) => {
+                  setMirrorDraft((previous) => ({ ...previous, baseUrl: event.target.value }));
+                }}
+                sx={{ flex: 1 }}
+              />
+              <TextField
+                size="small"
+                label="Priority"
+                type="number"
+                value={mirrorDraft.priority}
+                onChange={(event) => {
+                  const value = Number.parseInt(event.target.value, 10);
+                  setMirrorDraft((previous) => ({
+                    ...previous,
+                    priority: Number.isFinite(value) ? value : previous.priority,
+                  }));
+                }}
+                sx={{ width: 120 }}
+              />
+              <TextField
+                size="small"
+                label="Scope"
+                value={mirrorDraft.scope}
+                onChange={(event) => {
+                  setMirrorDraft((previous) => ({ ...previous, scope: event.target.value }));
+                }}
+                sx={{ width: 140 }}
+              />
+              <Button
+                size="small"
+                variant="contained"
+                onClick={() => {
+                  void createMirror();
+                }}
+              >
+                Add mirror
+              </Button>
+            </Stack>
+          </Stack>
+        </CardContent>
+      </Card>
 
       {error ? (
         <Alert severity="error" sx={{ mb: 3 }}>
@@ -676,6 +1270,39 @@ export default function AdminPluginsPage() {
             );
           })()
         : null}
+
+      <Dialog
+        open={cleanupConfirmOpen}
+        onClose={() => setCleanupConfirmOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Confirm cleanup execution</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1.25}>
+            <Typography color="text.secondary">
+              This deletes eligible cache entries after a fresh pin recheck. Protected artifacts
+              remain retained.
+            </Typography>
+            <Alert severity="warning">
+              Proceed only when rollback and recovery pins are current.
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCleanupConfirmOpen(false)}>Cancel</Button>
+          <Button
+            color="warning"
+            variant="contained"
+            disabled={cacheActionPending !== null}
+            onClick={() => {
+              void requestCleanupExecute();
+            }}
+          >
+            {cacheActionPending === 'execute' ? 'Executing…' : 'Execute cleanup'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
