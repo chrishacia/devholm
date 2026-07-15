@@ -38,6 +38,7 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 ENV HUSKY=0
+ENV DEVHOLM_PLUGIN_RESOLUTION_ENV=production
 ENV COMMIT_SHA=${COMMIT_SHA}
 ENV GITHUB_SHA=${COMMIT_SHA}
 ENV REPO_SLUG=${REPO_SLUG}
@@ -45,6 +46,9 @@ ENV GITHUB_REPOSITORY=${REPO_SLUG}
 
 # Build the application
 RUN pnpm build
+
+# Record build metadata derived from the canonical production preparation artifact
+RUN node -e "const fs=require('fs'); const manifest=JSON.parse(fs.readFileSync('/app/generated/plugins/production-build-preparation.json','utf8')); fs.writeFileSync('/app/generated/plugins/build-metadata.json', JSON.stringify({ commitSha: process.env.COMMIT_SHA, buildInputSetDigestSha256: manifest.buildInputSetDigestSha256, configurationDigestSha256: manifest.configurationDigestSha256, registryDigestSha256: manifest.registryDigestSha256, productionPreparationDigestSha256: manifest.contentDigestSha256 }, null, 2) + '\n')"
 
 # Create a flat production deployment for migrations (resolves pnpm symlink issues)
 # The --legacy flag is required for pnpm v10 compatibility
@@ -67,6 +71,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 ENV COMMIT_SHA=${COMMIT_SHA}
+
+LABEL org.opencontainers.image.revision=${COMMIT_SHA}
+LABEL org.devholm.production-preparation=/app/generated/plugins/build-metadata.json
 
 # Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \

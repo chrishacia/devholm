@@ -466,9 +466,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Generate plugin registry
-        run: pnpm plugins:generate
-
       - name: Build application
         run: pnpm build
         env:
@@ -476,6 +473,7 @@ jobs:
           DATABASE_URL: 'postgresql://user:pass@localhost:5432/db'
           NEXTAUTH_URL: 'http://localhost:3000'
           NEXTAUTH_SECRET: 'build-secret-not-for-production'
+          DEVHOLM_PLUGIN_RESOLUTION_ENV: 'production'
 
       - name: Remove build cache before upload
         run: rm -rf .next/cache
