@@ -13,7 +13,7 @@
     "dev": "tsx scripts/dev-with-plugin-workflow.ts",
     "build": "pnpm plugins:generate && pnpm plugins:check && NODE_ENV=production next build --webpack",
     "start": "next start",
-    "audit:prod": "pnpm audit --prod --audit-level=high",
+    "audit:prod": "tsx scripts/security-audit-prod.ts",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "format": "prettier --write .",

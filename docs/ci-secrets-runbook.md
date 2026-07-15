@@ -139,6 +139,24 @@ If admin password is lost, use one-off reset procedure from [GitHub Secrets Setu
 - Restrict deploy workflow to protected branch.
 - Require pull request checks before merge.
 
+## Security Scan Gate
+
+CI security scan policy is enforced through the repository-owned command:
+
+- `pnpm audit:prod`
+
+Implementation notes:
+
+- command executes `pnpm audit --prod --json` through `scripts/security-audit-prod.ts`
+- policy fails when production dependency vulnerabilities include any `high` or `critical`
+- scanner/tooling failures are treated as hard failures (fail-closed) and are distinct from policy failures
+- low/moderate findings are reported in logs but do not fail the gate
+- CI Security Scan pins pnpm `11.2.2` for this job to avoid retired v10 audit endpoint behavior
+
+Operational check:
+
+- if Security Scan fails with scanner errors, treat downstream skipped build/e2e/deploy jobs as incomplete evidence and resolve the scanner failure before closing feature work
+
 ## Recommended Automation Hardening
 
 - Enable branch protection on main.
