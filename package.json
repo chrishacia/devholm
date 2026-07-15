@@ -11,7 +11,7 @@
   "private": false,
   "scripts": {
     "dev": "tsx scripts/dev-with-plugin-workflow.ts",
-    "build": "pnpm plugins:generate && pnpm plugins:check && NODE_ENV=production next build --webpack",
+    "build": "pnpm plugins:prepare-production && NODE_ENV=production next build --webpack",
     "start": "next start",
     "audit:prod": "tsx scripts/security-audit-prod.ts",
     "lint": "eslint . --ext .ts,.tsx",
@@ -44,6 +44,7 @@
     "db:test:status": "bash scripts/test-db-container.sh status",
     "plugins:generate": "tsx scripts/plugins-generate-registry.ts",
     "plugins:check": "tsx scripts/plugins-check-registry.ts",
+    "plugins:prepare-production": "tsx scripts/plugins-prepare-production.ts",
     "sdk:version-sync": "tsx scripts/sync-sdk-version-cli.ts",
     "seed:admin": "tsx src/db/seed-admin.ts",
     "debug:smoke": "node scripts/debug-smoke.js",

@@ -90,6 +90,21 @@ Issue #94 is additive and transitional:
 - does not perform lifecycle/deployment orchestration cutover (#97)
 - does not remove transitional bundled path (#103)
 
+## Production Build Preparation (#96)
+
+Production build integration uses a separate authoritative prep command:
+
+- `pnpm plugins:prepare-production`
+
+That command:
+
+- runs the canonical production resolver path
+- validates the generated registry output
+- emits `generated/plugins/production-build-preparation.json`
+- records build-prep state axes for configured plugins using build-pending and deploy-pending transitions
+
+The production build, CI build job, and Docker builder stage all consume the same prep entrypoint.
+
 ## Explicit Non-Goals for #94
 
 - no development watcher integration

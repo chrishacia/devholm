@@ -113,3 +113,4 @@ Source-of-truth remains plugin manifests and migration source files in plugin so
 - generated/plugins is treated as derived output and is gitignored.
 - Regenerate with pnpm plugins:generate, validate with pnpm plugins:check.
 - CI must generate plugin assets before lint/test/build steps that depend on registry/runtime migration assets.
+- Production builds use pnpm plugins:prepare-production to generate the registry and production build-preparation manifest before next build.
