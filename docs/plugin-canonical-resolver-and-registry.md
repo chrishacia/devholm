@@ -104,3 +104,36 @@ Issue #94 is additive and transitional:
 - #96: production build integration of resolved plugin packages
 - #97: lifecycle/deployment/rollback/recovery orchestration convergence
 - #103: final transitional bundled-path reconciliation and removal
+
+## Issue #95 Development Workflow
+
+The `pnpm dev` workflow now runs through canonical plugin source resolution before the Next.js dev
+server starts.
+
+Behavior:
+
+- runs deterministic `plugins:generate` with resolver environment `development` before dev readiness
+- watches plugin source roots and coalesces rebuilds to avoid duplicate regeneration work
+- keeps watchers active after generation failures so the next edit can recover automatically
+- writes generated registry payloads atomically to avoid partial file reads
+
+### Local Override Contract
+
+Development-only local overrides are configured through:
+
+- `DEVHOLM_PLUGIN_LOCAL_OVERRIDES`
+
+Format:
+
+- JSON object mapping existing configured plugin IDs to local checkout directories
+
+Example:
+
+- `{ "calendar": "../devholm-plugins/plugins/calendar" }`
+
+Guardrails:
+
+- unknown plugin IDs are rejected
+- override paths must resolve to existing directories
+- overrides are rejected outside development resolution (`ci` and `production`)
+- override state is projected in plugin management status as source-resolution metadata

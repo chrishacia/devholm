@@ -1,9 +1,14 @@
 import { listPluginStates } from '@/db/plugins';
 import { getPluginUpdateHistory } from '@core/db/plugin-versioning';
+import { resolveCanonicalPluginSourceStatus } from '@core/lib/plugin-development-source-resolution.server';
 import { readMarketplaceInstallOperationState } from '@core/lib/plugin-marketplace-install-operation.server';
 import { verifyMarketplaceArtifactSignature } from '@core/lib/plugin-marketplace-signing.server';
 import { evaluateMarketplacePublisherTrustPolicy } from '@core/lib/plugin-marketplace-publisher-trust.server';
 import { loadTrustedMarketplaceKeysFromEnv } from '@core/lib/plugin-marketplace-trusted-keys.server';
+import type {
+  CanonicalEnvironment,
+  CanonicalSourceDescriptor,
+} from '@core/types/plugin-canonical-contracts';
 import type {
   MarketplaceArtifactReference,
   MarketplaceArtifactTrustVerification,
@@ -269,6 +274,17 @@ export interface MarketplaceAdminPluginView {
     updatedAt: string | null;
     recoveryRequired: boolean;
   };
+  sourceResolution: {
+    configuredSourceKind: CanonicalSourceDescriptor['sourceKind'];
+    resolvedSourceKind: CanonicalSourceDescriptor['sourceKind'] | null;
+    localOverrideEnabled: boolean;
+    localOverrideFilesystemPath: string | null;
+    resolverFailureCodes: readonly string[];
+    diagnostics: {
+      hasErrors: boolean;
+      errorCount: number;
+    };
+  };
   history: Array<{
     fromVersion: string;
     toVersion: string;
@@ -279,8 +295,33 @@ export interface MarketplaceAdminPluginView {
   actions: ReturnType<typeof mapActionability>;
 }
 
+function resolveMarketplaceEnvironment(): CanonicalEnvironment {
+  if (process.env.NODE_ENV === 'production') {
+    return 'production';
+  }
+
+  if (process.env.CI === 'true') {
+    return 'ci';
+  }
+
+  return 'development';
+}
+
 export async function listMarketplaceAdminPlugins(): Promise<MarketplaceAdminPluginView[]> {
   const pluginStates = await listPluginStates();
+  const sourceEnvironment = resolveMarketplaceEnvironment();
+  const sourceResolution = resolveCanonicalPluginSourceStatus({
+    environment: sourceEnvironment,
+    rootDir: process.cwd(),
+    overrideRaw: process.env.DEVHOLM_PLUGIN_LOCAL_OVERRIDES,
+  });
+  const sourceStatusByPluginId = new Map(
+    sourceResolution.plugins.map((entry) => [entry.pluginId, entry])
+  );
+  const sourceDiagnostics = {
+    hasErrors: sourceResolution.diagnostics.errors.length > 0,
+    errorCount: sourceResolution.diagnostics.errors.length,
+  };
 
   return Promise.all(
     pluginStates.map(async (plugin) => {
@@ -300,6 +341,7 @@ export async function listMarketplaceAdminPlugins(): Promise<MarketplaceAdminPlu
         const until = Date.parse(item.rollbackAvailableUntil);
         return Number.isFinite(until) && until > nowMs && item.status === 'success';
       });
+      const sourceStatus = sourceStatusByPluginId.get(plugin.id);
 
       return {
         plugin,
@@ -329,6 +371,14 @@ export async function listMarketplaceAdminPlugins(): Promise<MarketplaceAdminPlu
           operationId: operation?.operationId ?? null,
           updatedAt: operation?.updatedAt ?? null,
           recoveryRequired: operation?.status === 'failed' || operation?.status === 'interrupted',
+        },
+        sourceResolution: {
+          configuredSourceKind: sourceStatus?.configuredSourceKind ?? 'bundled-fallback-artifact',
+          resolvedSourceKind: sourceStatus?.resolvedSourceKind ?? null,
+          localOverrideEnabled: sourceStatus?.localOverrideEnabled ?? false,
+          localOverrideFilesystemPath: sourceStatus?.localOverrideFilesystemPath ?? null,
+          resolverFailureCodes: sourceStatus?.resolverFailureCodes ?? [],
+          diagnostics: sourceDiagnostics,
         },
         history: history.map((item) => ({
           fromVersion: item.fromVersion,

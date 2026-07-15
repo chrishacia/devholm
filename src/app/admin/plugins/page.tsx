@@ -119,6 +119,17 @@ interface MarketplacePluginView {
     updatedAt: string | null;
     recoveryRequired: boolean;
   };
+  sourceResolution: {
+    configuredSourceKind: string;
+    resolvedSourceKind: string | null;
+    localOverrideEnabled: boolean;
+    localOverrideFilesystemPath: string | null;
+    resolverFailureCodes: string[];
+    diagnostics: {
+      hasErrors: boolean;
+      errorCount: number;
+    };
+  };
   history: Array<{
     fromVersion: string;
     toVersion: string;
@@ -1042,7 +1053,29 @@ export default function AdminPluginsPage() {
                         variant="outlined"
                         label={`Installed: ${entry.plugin.installedVersion || 'none'}`}
                       />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        color={entry.sourceResolution.localOverrideEnabled ? 'info' : 'default'}
+                        label={
+                          entry.sourceResolution.localOverrideEnabled
+                            ? 'Source: Local Override'
+                            : 'Source: Bundled Default'
+                        }
+                      />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`Resolved source: ${entry.sourceResolution.resolvedSourceKind || 'unresolved'}`}
+                      />
                     </Stack>
+
+                    {entry.sourceResolution.resolverFailureCodes.length > 0 ? (
+                      <Alert severity="error" sx={{ mt: 2 }}>
+                        Source resolution failed:{' '}
+                        {entry.sourceResolution.resolverFailureCodes.join(', ')}
+                      </Alert>
+                    ) : null}
 
                     {!entry.actions.install.allowed && !plugin.installed ? (
                       <Alert severity="warning" sx={{ mt: 2 }}>
@@ -1133,6 +1166,14 @@ export default function AdminPluginsPage() {
                   size="small"
                   label={`Install readiness: ${selectedPlugin.catalogEntry.installReadiness}`}
                 />
+                <Chip
+                  size="small"
+                  label={`Configured source: ${selectedPlugin.sourceResolution.configuredSourceKind}`}
+                />
+                <Chip
+                  size="small"
+                  label={`Resolved source: ${selectedPlugin.sourceResolution.resolvedSourceKind || 'unresolved'}`}
+                />
               </Stack>
 
               <Typography variant="subtitle2">Capabilities and lifecycle</Typography>
@@ -1176,6 +1217,28 @@ export default function AdminPluginsPage() {
                       selectedPlugin.operation.recoveryRequired
                         ? 'Recovery required. Open Recovery Center to continue safely.'
                         : 'No recovery action required.'
+                    }
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Development source"
+                    secondary={
+                      selectedPlugin.sourceResolution.localOverrideEnabled
+                        ? `Local override active at ${selectedPlugin.sourceResolution.localOverrideFilesystemPath || 'unknown path'}`
+                        : 'Using bundled default source configuration'
+                    }
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Resolver diagnostics"
+                    secondary={
+                      selectedPlugin.sourceResolution.resolverFailureCodes.length > 0
+                        ? selectedPlugin.sourceResolution.resolverFailureCodes.join(', ')
+                        : selectedPlugin.sourceResolution.diagnostics.hasErrors
+                          ? `Global source diagnostics present (${selectedPlugin.sourceResolution.diagnostics.errorCount} error(s))`
+                          : 'No source resolution errors detected'
                     }
                   />
                 </ListItem>
