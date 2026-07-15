@@ -2,12 +2,15 @@ import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
 import { bundledPlugins } from '../src/user/extensions/plugins/registry';
-import { toCanonicalPluginConfigEntry } from '../src/core/lib/plugin-canonical-contract-adapters';
 import {
   buildDeterministicCanonicalRegistry,
-  createCanonicalDocumentFromEntries,
   verifyDeterministicCanonicalRegistry,
 } from '../src/core/lib/plugin-canonical-resolver.server';
+import {
+  buildCanonicalPluginSourceResolution,
+  LOCAL_PLUGIN_OVERRIDE_ENV,
+} from '../src/core/lib/plugin-development-source-resolution.server';
+import type { CanonicalEnvironment } from '../src/core/types/plugin-canonical-contracts';
 
 interface GeneratedMigrationAsset {
   id: string;
@@ -39,11 +42,33 @@ function normalizePath(value: string): string {
   return value.replace(/\\/g, '/');
 }
 
-function expectedRegistry(rootDir: string): GeneratedRegistry {
-  const canonicalEntries = bundledPlugins.map(toCanonicalPluginConfigEntry);
+function resolveCheckEnvironment(): CanonicalEnvironment {
+  const configured = (process.env.DEVHOLM_PLUGIN_RESOLUTION_ENV ?? 'ci').trim();
+  if (configured === 'development' || configured === 'ci' || configured === 'production') {
+    return configured;
+  }
+
+  throw new Error(
+    `DEVHOLM_PLUGIN_RESOLUTION_ENV must be development, ci, or production (received ${configured})`
+  );
+}
+
+function expectedRegistry(rootDir: string, environment: CanonicalEnvironment): GeneratedRegistry {
+  const configured = buildCanonicalPluginSourceResolution({
+    environment,
+    rootDir,
+    overrideRaw: process.env[LOCAL_PLUGIN_OVERRIDE_ENV],
+  });
+
+  if (configured.diagnostics.warnings.length > 0) {
+    for (const warning of configured.diagnostics.warnings) {
+      console.warn(`plugins:check warning: ${warning}`);
+    }
+  }
+
   const { registry, failures } = buildDeterministicCanonicalRegistry({
-    environment: 'ci',
-    document: createCanonicalDocumentFromEntries(canonicalEntries),
+    environment,
+    document: configured.document,
   });
 
   if (failures.length > 0 || !registry) {
@@ -129,7 +154,8 @@ function readGenerated(rootDir: string): GeneratedRegistry {
 
 function main(): void {
   const rootDir = process.cwd();
-  const expected = expectedRegistry(rootDir);
+  const environment = resolveCheckEnvironment();
+  const expected = expectedRegistry(rootDir, environment);
   const generated = readGenerated(rootDir);
 
   if (generated.schemaVersion !== 1) {
@@ -197,7 +223,7 @@ function main(): void {
     }
   }
 
-  console.log('Plugin registry check passed');
+  console.log(`Plugin registry check passed (environment=${environment})`);
 }
 
 main();

@@ -10,7 +10,7 @@
   },
   "private": false,
   "scripts": {
-    "dev": "next dev",
+    "dev": "tsx scripts/dev-with-plugin-workflow.ts",
     "build": "pnpm plugins:generate && pnpm plugins:check && NODE_ENV=production next build --webpack",
     "start": "next start",
     "audit:prod": "pnpm audit --prod --audit-level=high",

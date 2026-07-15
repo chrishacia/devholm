@@ -2,11 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
 import { bundledPlugins } from '../src/user/extensions/plugins/registry';
-import { toCanonicalPluginConfigEntry } from '../src/core/lib/plugin-canonical-contract-adapters';
+import { buildDeterministicCanonicalRegistry } from '../src/core/lib/plugin-canonical-resolver.server';
 import {
-  buildDeterministicCanonicalRegistry,
-  createCanonicalDocumentFromEntries,
-} from '../src/core/lib/plugin-canonical-resolver.server';
+  buildCanonicalPluginSourceResolution,
+  LOCAL_PLUGIN_OVERRIDE_ENV,
+} from '../src/core/lib/plugin-development-source-resolution.server';
+import type { CanonicalEnvironment } from '../src/core/types/plugin-canonical-contracts';
 
 interface GeneratedMigrationAsset {
   id: string;
@@ -38,13 +39,22 @@ function ensureDirectory(dirPath: string): void {
   fs.mkdirSync(dirPath, { recursive: true });
 }
 
-function clearGeneratedPluginsDir(rootDir: string): string {
+function prepareGeneratedPluginsDir(rootDir: string): string {
   const outputDir = path.join(rootDir, 'generated/plugins');
-  if (fs.existsSync(outputDir)) {
-    fs.rmSync(outputDir, { recursive: true, force: true });
+  ensureDirectory(outputDir);
+
+  const registryFile = path.join(outputDir, 'registry.json');
+  if (fs.existsSync(registryFile)) {
+    fs.rmSync(registryFile, { force: true });
   }
 
-  ensureDirectory(outputDir);
+  for (const { manifest } of bundledPlugins) {
+    const pluginOutputDir = path.join(outputDir, manifest.id);
+    if (fs.existsSync(pluginOutputDir)) {
+      fs.rmSync(pluginOutputDir, { recursive: true, force: true });
+    }
+  }
+
   return outputDir;
 }
 
@@ -59,11 +69,37 @@ function normalizeRelativeFile(filePath: string): string {
   return filePath.replace(/\\/g, '/');
 }
 
-function buildRegistry(rootDir: string, outputDir: string): GeneratedRegistry {
-  const canonicalEntries = bundledPlugins.map(toCanonicalPluginConfigEntry);
+function resolveGenerationEnvironment(): CanonicalEnvironment {
+  const configured = (process.env.DEVHOLM_PLUGIN_RESOLUTION_ENV ?? 'ci').trim();
+  if (configured === 'development' || configured === 'ci' || configured === 'production') {
+    return configured;
+  }
+
+  throw new Error(
+    `DEVHOLM_PLUGIN_RESOLUTION_ENV must be development, ci, or production (received ${configured})`
+  );
+}
+
+function buildRegistry(
+  rootDir: string,
+  outputDir: string,
+  environment: CanonicalEnvironment
+): GeneratedRegistry {
+  const configured = buildCanonicalPluginSourceResolution({
+    environment,
+    rootDir,
+    overrideRaw: process.env[LOCAL_PLUGIN_OVERRIDE_ENV],
+  });
+
+  if (configured.diagnostics.warnings.length > 0) {
+    for (const warning of configured.diagnostics.warnings) {
+      console.warn(`plugins:generate warning: ${warning}`);
+    }
+  }
+
   const { registry, failures } = buildDeterministicCanonicalRegistry({
-    environment: 'ci',
-    document: createCanonicalDocumentFromEntries(canonicalEntries),
+    environment,
+    document: configured.document,
   });
 
   if (failures.length > 0 || !registry) {
@@ -179,17 +215,20 @@ function buildRegistry(rootDir: string, outputDir: string): GeneratedRegistry {
 function writeRegistryFile(rootDir: string, payload: GeneratedRegistry): string {
   const outputDir = path.join(rootDir, 'generated/plugins');
   const outputPath = path.join(outputDir, 'registry.json');
+  const tempPath = path.join(outputDir, `registry.json.tmp-${process.pid}-${Date.now()}`);
   fs.mkdirSync(outputDir, { recursive: true });
-  fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  fs.writeFileSync(tempPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  fs.renameSync(tempPath, outputPath);
   return outputPath;
 }
 
 function main(): void {
   const rootDir = process.cwd();
-  const outputDir = clearGeneratedPluginsDir(rootDir);
-  const payload = buildRegistry(rootDir, outputDir);
+  const environment = resolveGenerationEnvironment();
+  const outputDir = prepareGeneratedPluginsDir(rootDir);
+  const payload = buildRegistry(rootDir, outputDir, environment);
   const outputPath = writeRegistryFile(rootDir, payload);
-  console.log(`Generated plugin registry at ${outputPath}`);
+  console.log(`Generated plugin registry at ${outputPath} (environment=${environment})`);
 }
 
 main();
