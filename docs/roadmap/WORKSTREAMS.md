@@ -167,6 +167,11 @@ These are valid strategic directions but should remain in the idea inbox until p
 - Convert Resume, Uses, and Projects into lifecycle-managed marketplace plugins that remain configured as stock DevHolm capabilities
 - Admin navigation ordering UI for core and plugin-contributed administration links
 - ChatGPT and compatible agent integration plugin built on a reviewed, hardened agentic API foundation
+- Marketplace e-commerce plugin with native payment-provider integrations and optional hosted checkout delegation
+- Global DevHolm webring plugin with category-based discovery and optional future browser-extension exploration
+- Multi-list mailing-list plugin with provider connectors such as Mailchimp and SendGrid
+- Twilio integration plugin placeholder for future messaging, telephony, notification, and verification use cases
+- Shared image editing and derivative-management capability available anywhere DevHolm accepts image media
 
 ### Stock marketplace plugin boundary
 
@@ -181,6 +186,28 @@ Provide an authorized admin experience for arranging core and plugin-contributed
 The future agent integration should begin as a least-privilege, read-only plugin and progressively add controlled write capabilities through explicit scopes, approvals, audit logging, rate limits, and revocable credentials. It must reuse supported SDK, lifecycle, authorization, and capability-sandbox contracts rather than exposing framework internals, unrestricted database access, filesystem access, or shell execution.
 
 Before promotion into implementation work, revisit and sanity-check the existing agentic-style API endpoint and define the supported machine-readable capability contract. This direction must not interrupt the active plugin-convergence sequence tracked by #92 through #104.
+
+### E-commerce plugin boundary
+
+The future e-commerce plugin should support a DevHolm-native catalog and order-management experience while allowing multiple checkout and payment strategies. Initial provider candidates include Stripe and similar payment APIs, with an optional Shopify-hosted checkout path for users who want Shopify to remain the commerce authority. The design must separate products, inventory, orders, taxes, shipping, payment state, refunds, webhooks, provider credentials, and provider-specific adapters so one provider does not become a permanent framework dependency. PCI-sensitive card data must remain with compliant providers rather than passing through DevHolm directly.
+
+### Global webring boundary
+
+The webring concept should allow DevHolm site owners to opt in, register their site, select one or more categories, and expose related sites through a configurable widget. A centralized directory may be operated by `devholm.com`, but the protocol, governance, privacy, moderation, abuse controls, availability expectations, category model, ranking/discovery behavior, and export/portability requirements need dedicated workshopping before implementation. Widget concepts may include a simple branded webring control or a richer related-sites list. A future StumbleUpon-style browser extension may be explored separately and must not be required for the plugin itself.
+
+### Mailing-list plugin boundary
+
+The mailing-list plugin should manage multiple independent lists, list metadata, signup forms, consent records, subscriber state, unsubscribe and suppression behavior, import/export, segmentation, and campaign/provider synchronization. Mailchimp and SendGrid should be evaluated as initial connectors, but provider abstraction must remain explicit so additional services can be added. DevHolm must not become an unsafe bulk-mail relay; deliverability, consent, anti-spam controls, webhook verification, bounce/complaint handling, credential isolation, and audit history are required parts of the eventual design.
+
+### Twilio integration placeholder
+
+Preserve a future Twilio plugin direction for workshopping after higher-priority roadmap items are complete. Potential capabilities may include SMS notifications, transactional messaging, phone verification, voice workflows, or other communications features. No implementation scope should be assumed until supported use cases, consent requirements, regional rules, pricing controls, abuse prevention, audit behavior, and the boundary between shared communication services and plugin-owned features are defined.
+
+### Shared image editing boundary
+
+Image editing should be implemented as a reusable platform capability available to core features and plugins anywhere image media is uploaded or managed. For supported image uploads, DevHolm should offer an editing modal with crop, resize, rotation/orientation correction, and a small set of safe generic adjustments such as brightness, contrast, exposure, saturation, and similar non-destructive filters. Existing media should be editable through the same workflow.
+
+The media model should support retaining the original, creating one or more edited derivatives, choosing whether the original remains stored, preserving metadata and ownership links, and recording derivative provenance. The design must address aspect-ratio presets, output format and quality, file-size limits, EXIF orientation and metadata policy, accessibility text, storage accounting, cleanup, rollback, permissions, audit history, and plugin access through supported media contracts. Editing must not silently overwrite an original unless the user explicitly chooses that behavior.
 
 The detailed intake records are preserved in [issue #16](https://github.com/chrishacia/devholm/issues/16).
 
