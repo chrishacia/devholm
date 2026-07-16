@@ -50,6 +50,11 @@ URL Shortener functional product: not completed.
 - Revisit and sanity-check the existing agentic-style API endpoint before using it as the integration foundation.
 - Begin with least-privilege read-only capabilities, then add explicitly scoped and auditable write actions.
 - Keep authentication, authorization, approval boundaries, rate limits, revocation, and capability declarations inside supported DevHolm contracts.
+- Build a marketplace e-commerce plugin with provider adapters for Stripe and similar payment APIs plus an optional Shopify-hosted checkout path.
+- Explore a global opt-in DevHolm webring with category-based related-site discovery, centralized directory governance, configurable widgets, and a separately scoped future browser-extension concept.
+- Build a multi-list mailing-list plugin with provider connectors such as Mailchimp and SendGrid, including consent, suppression, bounce, complaint, and audit handling.
+- Preserve a Twilio integration plugin placeholder for future SMS, verification, voice, notification, or other communications use cases after dedicated workshopping.
+- Add shared image-editing capabilities across all image-upload and media-management surfaces, including crop, resize, orientation correction, generic visual adjustments, original retention, edited derivatives, and editing of existing media.
 
 The detailed ideas remain in the long-lived [idea inbox](https://github.com/chrishacia/devholm/issues/16) until they are mature enough for dedicated implementation issues. See [`WORKSTREAMS.md`](./WORKSTREAMS.md) for sequencing and architectural boundaries.
 
@@ -64,6 +69,7 @@ The detailed ideas remain in the long-lived [idea inbox](https://github.com/chri
 - Plugins own their schema, settings, migrations, lifecycle, versions, dependencies, and compatibility declarations.
 - Framework and plugin upgrades fail visibly and recoverably instead of silently corrupting state.
 - Marketplace compatibility is designed into package/version contracts before a marketplace exists.
+- Shared platform capabilities such as media processing should be exposed through supported contracts so core features and plugins do not duplicate incompatible implementations.
 - New ideas are recorded and scoped before substantial implementation begins.
 
 ## Directory policy
