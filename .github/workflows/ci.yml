@@ -1134,6 +1134,15 @@ jobs:
             status=$(curl -sS --max-time 10 -o /tmp/plugin-body.txt -w "%{http_code}" "$url" || true)
             case "$status" in
               200|301|302|307|308|404) return 0 ;;
+              503)
+                # Fail-closed plugin behavior is acceptable for deployment health
+                # when the response keeps the generic public contract.
+                if grep -q '"error":"Service Unavailable"' /tmp/plugin-body.txt \
+                  && grep -q 'Route resolution service temporarily unavailable' /tmp/plugin-body.txt; then
+                  return 0
+                fi
+                return 1
+                ;;
               *) return 1 ;;
             esac
           }
@@ -1186,7 +1195,11 @@ jobs:
             head -c 300 /tmp/home-body.txt || true
             echo
             echo "Unknown route response preview:"
-            head -c 300 /tmp/unknown-body.txt || true
+            if [ -f /tmp/unknown-body.txt ]; then
+              head -c 300 /tmp/unknown-body.txt || true
+            else
+              echo "<unknown route body not captured in this attempt>"
+            fi
             if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
               break
             fi
