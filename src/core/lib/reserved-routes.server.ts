@@ -27,6 +27,7 @@ export function getReservedRoutes(): Set<string> {
   reserved.add('/sitemap.xml');
 
   // Framework routes that must be protected
+  reserved.add('/');
   reserved.add('/admin');
   reserved.add('/api');
   reserved.add('/auth');
