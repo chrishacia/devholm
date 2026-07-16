@@ -40,6 +40,15 @@ Planned after SDK:
 Plugin lifecycle foundation: completed.
 URL Shortener functional product: not completed.
 
+## Later strategic directions
+
+- Build a ChatGPT and compatible agent integration plugin after plugin convergence is complete.
+- Revisit and sanity-check the existing agentic-style API endpoint before using it as the integration foundation.
+- Begin with least-privilege read-only capabilities, then add explicitly scoped and auditable write actions.
+- Keep authentication, authorization, approval boundaries, rate limits, revocation, and capability declarations inside supported DevHolm contracts.
+
+The detailed idea remains in the long-lived [idea inbox](https://github.com/chrishacia/devholm/issues/16) until it is mature enough for a dedicated implementation issue. See [`WORKSTREAMS.md`](./WORKSTREAMS.md) for its sequencing boundary.
+
 ## Architectural principles
 
 - DevHolm remains a useful site and framework out of the box.
