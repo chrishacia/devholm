@@ -172,6 +172,7 @@ These are valid strategic directions but should remain in the idea inbox until p
 - Multi-list mailing-list plugin with provider connectors such as Mailchimp and SendGrid
 - Twilio integration plugin placeholder for future messaging, telephony, notification, and verification use cases
 - Shared image editing and derivative-management capability available anywhere DevHolm accepts image media
+- Pre-1.0 release/versioning realignment with a durable update-order mechanism independent of visible product SemVer
 
 ### Stock marketplace plugin boundary
 
@@ -208,6 +209,16 @@ Preserve a future Twilio plugin direction for workshopping after higher-priority
 Image editing should be implemented as a reusable platform capability available to core features and plugins anywhere image media is uploaded or managed. For supported image uploads, DevHolm should offer an editing modal with crop, resize, rotation/orientation correction, and a small set of safe generic adjustments such as brightness, contrast, exposure, saturation, and similar non-destructive filters. Existing media should be editable through the same workflow.
 
 The media model should support retaining the original, creating one or more edited derivatives, choosing whether the original remains stored, preserving metadata and ownership links, and recording derivative provenance. The design must address aspect-ratio presets, output format and quality, file-size limits, EXIF orientation and metadata policy, accessibility text, storage accounting, cleanup, rollback, permissions, audit history, and plugin access through supported media contracts. Editing must not silently overwrite an original unless the user explicitly chooses that behavior.
+
+### Pre-1.0 release and versioning boundary
+
+Before DevHolm is presented as a stable `1.x` product, define and adopt an explicit release philosophy that reflects actual product maturity rather than incrementing the major version for ordinary development milestones. The policy must classify patch, minor, major, prerelease, release-candidate, and stable releases; define what qualifies as a breaking change; and establish concrete readiness criteria for `1.0.0`, including feature completeness, robustness, stability, migration confidence, documentation, accessibility, security, operational recovery, and substantially improved UI/UX.
+
+The current `3.x` line may be realigned to an intentional pre-1.0 line, or replaced by another carefully evaluated scheme such as calendar-based or Apple-style marketing versions, but the chosen system must remain understandable to developers, users, deployment automation, package tooling, and marketplace compatibility checks. Existing Git tags, published artifacts, database migrations, schema sequences, and deployment history must remain immutable historical records rather than being rewritten or reused.
+
+Because normal SemVer comparison treats `0.x` and `1.x` as older than `3.x`, update ordering must use a separate monotonic release identity such as a release epoch plus release sequence. The migration should include a final bridge release on the old line, a signed release manifest, explicit supersedence metadata, staged upgrade support for installations that missed the bridge, rollback and compatibility rules, and immutable image-digest binding. Framework, plugin, schema/migration, API-contract, and marketplace version domains must remain distinct so a product-version realignment does not reset or corrupt unrelated compatibility histories.
+
+This work should be promoted into a dedicated implementation issue after the active #92–#104 plugin-convergence sequence, but before public marketplace distribution, broad automated-update adoption, or any declaration of DevHolm `1.0.0` readiness.
 
 The detailed intake records are preserved in [issue #16](https://github.com/chrishacia/devholm/issues/16).
 
