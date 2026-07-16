@@ -8,6 +8,7 @@ import {
 import {
   buildDeterministicCanonicalRegistry,
   createCanonicalDocumentFromEntries,
+  sha256Hex,
 } from '@core/lib/plugin-canonical-resolver.server';
 import { createProductionBuildPreparationManifest } from '@core/lib/plugin-production-build-preparation.server';
 
@@ -123,6 +124,7 @@ describe('production build preparation manifest', () => {
     expect(manifest.contentDigestSha256).toBeTruthy();
     expect(manifest.plugins).toHaveLength(1);
     expect(manifest.plugins[0]?.pluginId).toBe('calendar');
+    expect(manifest.plugins[0]?.version).toBe('1.2.3');
     expect(manifest.plugins[0]?.stateAxes.build).toBe('build-pending');
     expect(manifest.plugins[0]?.stateAxes.deployment).toBe('deploy-pending');
     expect(manifest.plugins[0]?.summaryState).toBe('disabled');
@@ -212,5 +214,145 @@ describe('production build preparation manifest', () => {
 
     expect(included.contentDigestSha256).not.toBe(excluded.contentDigestSha256);
     expect(excluded.includedPluginIds).toEqual([]);
+  });
+
+  it('uses the authoritative resolver-selected version in the manifest', () => {
+    const entries = [makeEntry('calendar')];
+    const registry = buildDeterministicCanonicalRegistry({
+      environment: 'production',
+      document: makeDocument(entries),
+    });
+
+    expect(registry.failures).toEqual([]);
+    expect(registry.registry).not.toBeNull();
+
+    const mutatedRegistry = {
+      ...registry.registry!,
+      content: {
+        ...registry.registry!.content,
+        plugins: registry.registry!.content.plugins.map((plugin) =>
+          plugin.pluginId === 'calendar' ? { ...plugin, selectedVersion: '1.2.4' } : plugin
+        ),
+      },
+    };
+    const mutatedDigest = sha256Hex(mutatedRegistry.content);
+
+    const manifest = createProductionBuildPreparationManifest({
+      environment: 'production',
+      entries,
+      registry: {
+        ...mutatedRegistry,
+        contentDigestSha256: mutatedDigest,
+      },
+      registryVerification: {
+        ok: true,
+        expectedDigestSha256: mutatedDigest,
+        actualDigestSha256: mutatedDigest,
+      },
+    });
+
+    expect(manifest.plugins[0]?.version).toBe('1.2.4');
+    expect(manifest.plugins[0]?.configurationProjection.desiredVersion).toBe('1.2.3');
+  });
+
+  it('rejects unverified registry input', () => {
+    const entries = [makeEntry('calendar')];
+    const registry = buildDeterministicCanonicalRegistry({
+      environment: 'production',
+      document: makeDocument(entries),
+    });
+
+    expect(registry.failures).toEqual([]);
+    expect(registry.registry).not.toBeNull();
+
+    expect(() =>
+      createProductionBuildPreparationManifest({
+        environment: 'production',
+        entries,
+        registry: registry.registry!,
+        registryVerification: {
+          ok: false,
+          expectedDigestSha256: registry.registry!.contentDigestSha256,
+          actualDigestSha256: `${registry.registry!.contentDigestSha256}-tampered`,
+          errorCode: 'registry-tampering',
+        },
+      })
+    ).toThrow(/requires a verified registry/);
+  });
+
+  it('rejects registry verification digests that do not match the registry snapshot', () => {
+    const entries = [makeEntry('calendar')];
+    const registry = buildDeterministicCanonicalRegistry({
+      environment: 'production',
+      document: makeDocument(entries),
+    });
+
+    expect(registry.failures).toEqual([]);
+    expect(registry.registry).not.toBeNull();
+
+    expect(() =>
+      createProductionBuildPreparationManifest({
+        environment: 'production',
+        entries,
+        registry: registry.registry!,
+        registryVerification: {
+          ok: true,
+          expectedDigestSha256: 'expected-mismatch',
+          actualDigestSha256: 'actual-mismatch',
+        },
+      })
+    ).toThrow(/verification digest mismatch/);
+  });
+
+  it('rejects a registry snapshot whose stored digest does not match its content', () => {
+    const entries = [makeEntry('calendar')];
+    const registry = buildDeterministicCanonicalRegistry({
+      environment: 'production',
+      document: makeDocument(entries),
+    });
+
+    expect(registry.failures).toEqual([]);
+    expect(registry.registry).not.toBeNull();
+
+    expect(() =>
+      createProductionBuildPreparationManifest({
+        environment: 'production',
+        entries,
+        registry: {
+          ...registry.registry!,
+          contentDigestSha256: 'tampered-digest',
+        },
+        registryVerification: {
+          ok: true,
+          expectedDigestSha256: 'tampered-digest',
+          actualDigestSha256: 'tampered-digest',
+        },
+      })
+    ).toThrow(/registry snapshot digest mismatch/);
+  });
+
+  it('computes a content digest that can be recomputed from the manifest alone', () => {
+    const entries = [makeEntry('calendar'), makeEntry('gallery')];
+    const registry = buildDeterministicCanonicalRegistry({
+      environment: 'production',
+      document: makeDocument(entries),
+    });
+
+    expect(registry.failures).toEqual([]);
+    expect(registry.registry).not.toBeNull();
+
+    const manifest = createProductionBuildPreparationManifest({
+      environment: 'production',
+      entries,
+      registry: registry.registry!,
+      registryVerification: {
+        ok: true,
+        expectedDigestSha256: registry.registry!.contentDigestSha256,
+        actualDigestSha256: registry.registry!.contentDigestSha256,
+      },
+    });
+
+    const { contentDigestSha256, ...manifestWithoutDigest } = manifest;
+    expect(contentDigestSha256).toBe(sha256Hex(manifestWithoutDigest));
   });
 });

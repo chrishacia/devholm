@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import {
   buildCanonicalPluginSourceResolution,
   LOCAL_PLUGIN_OVERRIDE_ENV,
@@ -12,6 +13,23 @@ import {
 import { verifyDeterministicCanonicalRegistry } from '../src/core/lib/plugin-canonical-resolver.server';
 import type { CanonicalResolverRegistrySnapshot } from '../src/core/types/plugin-canonical-resolver';
 
+export function assertPnpmExecutionSucceeded(
+  args: readonly string[],
+  result: ReturnType<typeof spawnSync>
+): void {
+  if (result.error) {
+    throw new Error(`pnpm ${args.join(' ')} failed to start: ${result.error.message}`);
+  }
+
+  if (result.signal) {
+    throw new Error(`pnpm ${args.join(' ')} terminated by signal ${result.signal}`);
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`pnpm ${args.join(' ')} failed with exit code ${result.status ?? 'unknown'}`);
+  }
+}
+
 function runPnpm(rootDir: string, args: readonly string[]): void {
   const result = spawnSync('pnpm', args, {
     cwd: rootDir,
@@ -22,9 +40,7 @@ function runPnpm(rootDir: string, args: readonly string[]): void {
     },
   });
 
-  if (result.status !== 0) {
-    throw new Error(`pnpm ${args.join(' ')} failed with exit code ${result.status ?? 'unknown'}`);
-  }
+  assertPnpmExecutionSucceeded(args, result);
 }
 
 function readGeneratedRegistry(rootDir: string): CanonicalResolverRegistrySnapshot {
@@ -70,4 +86,6 @@ function main(): void {
   console.log(`Generated production build preparation at ${outputPath}`);
 }
 
-main();
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main();
+}
