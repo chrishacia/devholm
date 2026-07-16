@@ -164,5 +164,14 @@ These are valid strategic directions but should remain in the idea inbox until p
 - Marketplace security scanning and revocation
 - Advanced plugin capability sandboxing
 - Additional first-party plugins
+- ChatGPT and compatible agent integration plugin built on a reviewed, hardened agentic API foundation
+
+### ChatGPT and agent integration boundary
+
+The future agent integration should begin as a least-privilege, read-only plugin and progressively add controlled write capabilities through explicit scopes, approvals, audit logging, rate limits, and revocable credentials. It must reuse supported SDK, lifecycle, authorization, and capability-sandbox contracts rather than exposing framework internals, unrestricted database access, filesystem access, or shell execution.
+
+Before promotion into implementation work, revisit and sanity-check the existing agentic-style API endpoint and define the supported machine-readable capability contract. This direction must not interrupt the active plugin-convergence sequence tracked by #92 through #104.
+
+The detailed intake record is preserved in [issue #16](https://github.com/chrishacia/devholm/issues/16).
 
 Add new ideas to [issue #16](https://github.com/chrishacia/devholm/issues/16) rather than starting implementation from an untracked discussion.
