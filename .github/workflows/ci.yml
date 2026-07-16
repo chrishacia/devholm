@@ -1130,18 +1130,19 @@ jobs:
 
           verify_plugin_route() {
             local url="$1"
-            local status
-            status=$(curl -sS --max-time 10 -o /tmp/plugin-body.txt -w "%{http_code}" "$url" || true)
+            local status content_type
+            status=$(curl -sS --max-time 10 -o /tmp/plugin-body.txt -D /tmp/plugin-headers.txt -w "%{http_code}" "$url" || true)
+            content_type=$(grep -i '^content-type:' /tmp/plugin-headers.txt | tail -1 | cut -d' ' -f2- | tr -d '\r' || true)
             case "$status" in
               200|301|302|307|308|404) return 0 ;;
               503)
                 # Fail-closed plugin behavior is acceptable for deployment health
-                # when the response keeps the generic public contract.
-                if grep -q '"error":"Service Unavailable"' /tmp/plugin-body.txt \
-                  && grep -q 'Route resolution service temporarily unavailable' /tmp/plugin-body.txt; then
-                  return 0
-                fi
-                return 1
+                # only when the response matches the strict public JSON contract.
+                node scripts/verify-plugin-probe-response.mjs \
+                  --status "$status" \
+                  --content-type "$content_type" \
+                  --body-file /tmp/plugin-body.txt
+                return $?
                 ;;
               *) return 1 ;;
             esac
