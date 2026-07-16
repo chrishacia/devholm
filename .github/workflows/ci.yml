@@ -1091,7 +1091,7 @@ jobs:
             local url="$1"
             local status content_type
             status=$(curl -sS --max-time 10 -o /tmp/home-body.txt -D /tmp/home-headers.txt -w "%{http_code}" "$url" || true)
-            content_type=$(grep -i '^content-type:' /tmp/home-headers.txt | tail -1 | cut -d' ' -f2- | tr -d '\r')
+            content_type=$(grep -i '^content-type:' /tmp/home-headers.txt | tail -1 | cut -d' ' -f2- | tr -d '\r' || true)
 
             if [ "$status" != "200" ]; then
               echo "Homepage status mismatch: $status"
@@ -1142,7 +1142,7 @@ jobs:
             local url="$1"
             local status content_type
             status=$(curl -sS --max-time 10 -o /tmp/unknown-body.txt -D /tmp/unknown-headers.txt -w "%{http_code}" "$url" || true)
-            content_type=$(grep -i '^content-type:' /tmp/unknown-headers.txt | tail -1 | cut -d' ' -f2- | tr -d '\r')
+            content_type=$(grep -i '^content-type:' /tmp/unknown-headers.txt | tail -1 | cut -d' ' -f2- | tr -d '\r' || true)
 
             if [ "$status" != "404" ]; then
               return 1
