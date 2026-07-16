@@ -164,7 +164,17 @@ These are valid strategic directions but should remain in the idea inbox until p
 - Marketplace security scanning and revocation
 - Advanced plugin capability sandboxing
 - Additional first-party plugins
+- Convert Resume, Uses, and Projects into lifecycle-managed marketplace plugins that remain configured as stock DevHolm capabilities
+- Admin navigation ordering UI for core and plugin-contributed administration links
 - ChatGPT and compatible agent integration plugin built on a reviewed, hardened agentic API foundation
+
+### Stock marketplace plugin boundary
+
+Resume, Uses, and Projects should ultimately follow the same first-party marketplace model intended for Calendar, Gallery, and the URL Shortener: distributed through the marketplace and managed through canonical lifecycle contracts, while still shipping as part of the default DevHolm experience. Their conversions must preserve existing routes, content, records, settings, SEO behavior, and navigation, and must support disable, removal, reinstall, update, pinning, rollback, and recovery without reverting to one-off bundled implementation paths.
+
+### Admin navigation ordering boundary
+
+Provide an authorized admin experience for arranging core and plugin-contributed admin navigation links. Ordering must use stable identifiers, persist through a supported configuration or settings contract, handle new/removed/disabled entries deterministically, and include reset-to-default and recovery behavior. It must not depend on direct source edits.
 
 ### ChatGPT and agent integration boundary
 
@@ -172,6 +182,6 @@ The future agent integration should begin as a least-privilege, read-only plugin
 
 Before promotion into implementation work, revisit and sanity-check the existing agentic-style API endpoint and define the supported machine-readable capability contract. This direction must not interrupt the active plugin-convergence sequence tracked by #92 through #104.
 
-The detailed intake record is preserved in [issue #16](https://github.com/chrishacia/devholm/issues/16).
+The detailed intake records are preserved in [issue #16](https://github.com/chrishacia/devholm/issues/16).
 
 Add new ideas to [issue #16](https://github.com/chrishacia/devholm/issues/16) rather than starting implementation from an untracked discussion.
