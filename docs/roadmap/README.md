@@ -42,12 +42,16 @@ URL Shortener functional product: not completed.
 
 ## Later strategic directions
 
+- Build the DevHolm plugin marketplace and distribute first-party plugins through it.
+- Convert Resume, Uses, and Projects into lifecycle-managed marketplace plugins while keeping them configured as stock DevHolm capabilities by default.
+- Preserve the out-of-box experience while allowing stock plugins to be disabled, removed, reinstalled, updated, pinned, rolled back, and recovered through supported lifecycle contracts.
+- Add an authorized admin page for arranging the order of core and plugin-contributed admin navigation links, with stable identifiers, deterministic fallback ordering, persistence, reset, and recovery behavior.
 - Build a ChatGPT and compatible agent integration plugin after plugin convergence is complete.
 - Revisit and sanity-check the existing agentic-style API endpoint before using it as the integration foundation.
 - Begin with least-privilege read-only capabilities, then add explicitly scoped and auditable write actions.
 - Keep authentication, authorization, approval boundaries, rate limits, revocation, and capability declarations inside supported DevHolm contracts.
 
-The detailed idea remains in the long-lived [idea inbox](https://github.com/chrishacia/devholm/issues/16) until it is mature enough for a dedicated implementation issue. See [`WORKSTREAMS.md`](./WORKSTREAMS.md) for its sequencing boundary.
+The detailed ideas remain in the long-lived [idea inbox](https://github.com/chrishacia/devholm/issues/16) until they are mature enough for dedicated implementation issues. See [`WORKSTREAMS.md`](./WORKSTREAMS.md) for sequencing and architectural boundaries.
 
 ## Architectural principles
 
