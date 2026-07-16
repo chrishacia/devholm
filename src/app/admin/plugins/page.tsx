@@ -137,6 +137,10 @@ interface MarketplacePluginView {
     appliedAt: string;
     rollbackAvailableUntil?: string;
   }>;
+  lifecycleState: {
+    summaryState: string;
+    validationErrors: string[];
+  };
   actions: {
     install: { allowed: boolean; reasonCode: string | null; remediation: string };
     update: { allowed: boolean; reasonCode: string | null; remediation: string };
@@ -987,6 +991,11 @@ export default function AdminPluginsPage() {
                             size="small"
                             label={plugin.installed ? 'Installed' : 'Not installed'}
                             color={plugin.installed ? 'success' : 'default'}
+                          />
+                          <Chip
+                            size="small"
+                            label={`Canonical ${entry.lifecycleState.summaryState}`}
+                            variant="outlined"
                           />
                           <Chip
                             size="small"

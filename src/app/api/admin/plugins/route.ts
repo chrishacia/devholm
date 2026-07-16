@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { verifyAdmin } from '@/lib/auth-helpers';
 import { listPluginStates } from '@/db/plugins';
-import { disablePlugin, enablePlugin, installPlugin } from '@core/lib/plugin-lifecycle.server';
+import { orchestratePluginLifecycleMutation } from '@core/lib/plugin-lifecycle-orchestrator.server';
 
 const updateSchema = z.object({
   pluginId: z.string().min(1).max(120),
@@ -65,11 +65,11 @@ export async function PATCH(request: NextRequest) {
       (typeof token.name === 'string' && token.name) ||
       undefined;
 
-    if (parsed.data.isEnabled) {
-      await enablePlugin(parsed.data.pluginId, initiatedBy);
-    } else {
-      await disablePlugin(parsed.data.pluginId, initiatedBy);
-    }
+    await orchestratePluginLifecycleMutation({
+      action: parsed.data.isEnabled ? 'enable' : 'disable',
+      pluginId: parsed.data.pluginId,
+      initiatedBy,
+    });
 
     const plugins = await listPluginStates();
     return NextResponse.json({ plugins });
@@ -107,7 +107,11 @@ export async function POST(request: NextRequest) {
       (typeof token.name === 'string' && token.name) ||
       undefined;
 
-    await installPlugin(parsed.data.pluginId, { initiatedBy });
+    await orchestratePluginLifecycleMutation({
+      action: 'install',
+      pluginId: parsed.data.pluginId,
+      initiatedBy,
+    });
 
     const plugins = await listPluginStates();
     return NextResponse.json({ plugins });

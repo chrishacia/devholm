@@ -5,9 +5,13 @@ import { readMarketplaceInstallOperationState } from '@core/lib/plugin-marketpla
 import { verifyMarketplaceArtifactSignature } from '@core/lib/plugin-marketplace-signing.server';
 import { evaluateMarketplacePublisherTrustPolicy } from '@core/lib/plugin-marketplace-publisher-trust.server';
 import { loadTrustedMarketplaceKeysFromEnv } from '@core/lib/plugin-marketplace-trusted-keys.server';
+import { deriveCanonicalMarketplaceLifecycleView } from '@core/lib/plugin-lifecycle-state-view.server';
+import { readLatestPluginLifecycleOperation } from '@core/lib/plugin-lifecycle-orchestrator.server';
 import type {
   CanonicalEnvironment,
   CanonicalSourceDescriptor,
+  CanonicalPluginStateAxes,
+  CanonicalPluginSummaryState,
 } from '@core/types/plugin-canonical-contracts';
 import type {
   MarketplaceArtifactReference,
@@ -292,6 +296,11 @@ export interface MarketplaceAdminPluginView {
     appliedAt: string;
     rollbackAvailableUntil?: string;
   }>;
+  lifecycleState: {
+    axes: CanonicalPluginStateAxes;
+    summaryState: CanonicalPluginSummaryState;
+    validationErrors: readonly string[];
+  };
   actions: ReturnType<typeof mapActionability>;
 }
 
@@ -331,8 +340,10 @@ export async function listMarketplaceAdminPlugins(): Promise<MarketplaceAdminPlu
       const migration = toMigrationSummary(plugin.id);
       const { signature, trustPolicy } = evaluateSignatureAndTrust(catalogEntry);
       const operation = await readOperation(plugin.id);
+      const lifecycleOperation = await readLatestPluginLifecycleOperation(plugin.id);
       const history = await getPluginUpdateHistory(plugin.id);
-      const hasActiveOperation = operation?.status === 'in_progress';
+      const hasActiveOperation =
+        operation?.status === 'in_progress' || lifecycleOperation?.status === 'running';
       const nowMs = Date.now();
       const hasRollbackCandidate = history.some((item) => {
         if (!item.rollbackAvailableUntil) {
@@ -366,11 +377,28 @@ export async function listMarketplaceAdminPlugins(): Promise<MarketplaceAdminPlu
             },
         operation: {
           hasActive: Boolean(hasActiveOperation),
-          status: operation?.status ?? null,
-          stage: operation?.stage ?? null,
+          status:
+            operation?.status ??
+            (lifecycleOperation?.status === 'running'
+              ? 'in_progress'
+              : lifecycleOperation?.status === 'failed'
+                ? 'failed'
+                : lifecycleOperation?.status === 'succeeded'
+                  ? 'succeeded'
+                  : null),
+          stage:
+            operation?.stage ??
+            (lifecycleOperation?.currentPhase === 'executing'
+              ? 'executing'
+              : lifecycleOperation?.currentPhase === 'completed'
+                ? 'complete'
+                : null),
           operationId: operation?.operationId ?? null,
-          updatedAt: operation?.updatedAt ?? null,
-          recoveryRequired: operation?.status === 'failed' || operation?.status === 'interrupted',
+          updatedAt: operation?.updatedAt ?? lifecycleOperation?.updatedAt ?? null,
+          recoveryRequired:
+            operation?.status === 'failed' ||
+            operation?.status === 'interrupted' ||
+            lifecycleOperation?.status === 'failed',
         },
         sourceResolution: {
           configuredSourceKind: sourceStatus?.configuredSourceKind ?? 'bundled-fallback-artifact',
@@ -387,6 +415,32 @@ export async function listMarketplaceAdminPlugins(): Promise<MarketplaceAdminPlu
           appliedAt: item.appliedAt,
           rollbackAvailableUntil: item.rollbackAvailableUntil,
         })),
+        lifecycleState: deriveCanonicalMarketplaceLifecycleView({
+          installed: plugin.installed,
+          enabled: plugin.isEnabled,
+          operation: {
+            hasActive: Boolean(hasActiveOperation),
+            status: operation?.status ?? null,
+            stage: operation?.stage ?? null,
+            recoveryRequired: operation?.status === 'failed' || operation?.status === 'interrupted',
+          },
+          signature: {
+            decision: signature.trustDecision,
+            status: signature.verificationStatus,
+          },
+          trustPolicy: trustPolicy
+            ? {
+                outcome: trustPolicy.outcome,
+                reasonCode: trustPolicy.reasonCode,
+              }
+            : {
+                outcome: 'unknown',
+                reasonCode: 'signature-missing-or-key-unknown',
+              },
+          sourceResolutionHasErrors: sourceDiagnostics.hasErrors,
+          history,
+          nowMs,
+        }),
         actions: mapActionability({
           plugin,
           catalogEntry,
