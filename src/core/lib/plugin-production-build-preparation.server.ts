@@ -149,9 +149,25 @@ export function createProductionBuildPreparationManifest(input: {
     );
   }
 
+  const computedRegistryDigestSha256 = sha256Hex(input.registry.content);
+  if (computedRegistryDigestSha256 !== input.registry.contentDigestSha256) {
+    throw new Error(
+      `Production build preparation registry snapshot digest mismatch: expected ${computedRegistryDigestSha256}, found ${input.registry.contentDigestSha256}`
+    );
+  }
+
   if (!input.registryVerification.ok) {
     throw new Error(
       `Production build preparation requires a verified registry: expected ${input.registryVerification.expectedDigestSha256}, found ${input.registryVerification.actualDigestSha256}`
+    );
+  }
+
+  if (
+    input.registryVerification.expectedDigestSha256 !== input.registry.contentDigestSha256 ||
+    input.registryVerification.actualDigestSha256 !== input.registry.contentDigestSha256
+  ) {
+    throw new Error(
+      `Production build preparation verification digest mismatch: registry ${input.registry.contentDigestSha256}, expected ${input.registryVerification.expectedDigestSha256}, actual ${input.registryVerification.actualDigestSha256}`
     );
   }
 

@@ -280,6 +280,57 @@ describe('production build preparation manifest', () => {
     ).toThrow(/requires a verified registry/);
   });
 
+  it('rejects registry verification digests that do not match the registry snapshot', () => {
+    const entries = [makeEntry('calendar')];
+    const registry = buildDeterministicCanonicalRegistry({
+      environment: 'production',
+      document: makeDocument(entries),
+    });
+
+    expect(registry.failures).toEqual([]);
+    expect(registry.registry).not.toBeNull();
+
+    expect(() =>
+      createProductionBuildPreparationManifest({
+        environment: 'production',
+        entries,
+        registry: registry.registry!,
+        registryVerification: {
+          ok: true,
+          expectedDigestSha256: 'expected-mismatch',
+          actualDigestSha256: 'actual-mismatch',
+        },
+      })
+    ).toThrow(/verification digest mismatch/);
+  });
+
+  it('rejects a registry snapshot whose stored digest does not match its content', () => {
+    const entries = [makeEntry('calendar')];
+    const registry = buildDeterministicCanonicalRegistry({
+      environment: 'production',
+      document: makeDocument(entries),
+    });
+
+    expect(registry.failures).toEqual([]);
+    expect(registry.registry).not.toBeNull();
+
+    expect(() =>
+      createProductionBuildPreparationManifest({
+        environment: 'production',
+        entries,
+        registry: {
+          ...registry.registry!,
+          contentDigestSha256: 'tampered-digest',
+        },
+        registryVerification: {
+          ok: true,
+          expectedDigestSha256: 'tampered-digest',
+          actualDigestSha256: 'tampered-digest',
+        },
+      })
+    ).toThrow(/registry snapshot digest mismatch/);
+  });
+
   it('computes a content digest that can be recomputed from the manifest alone', () => {
     const entries = [makeEntry('calendar'), makeEntry('gallery')];
     const registry = buildDeterministicCanonicalRegistry({
