@@ -10,6 +10,7 @@ GitHub issues carry actionable work. The documents here preserve the long-lived 
 - Idea inbox: [#16](https://github.com/chrishacia/devholm/issues/16)
 - Roadmap governance implementation: [#13](https://github.com/chrishacia/devholm/issues/13)
 - Active workstreams: [`WORKSTREAMS.md`](./WORKSTREAMS.md)
+- Privacy-first analytics enhancement direction: [`analytics-enhancement-direction.md`](./analytics-enhancement-direction.md)
 - Process and completion rules: [`GOVERNANCE.md`](./GOVERNANCE.md)
 - Architectural decisions: [`decisions/`](./decisions/)
 - Completed milestone summaries: [`archive/`](./archive/)
@@ -55,6 +56,7 @@ URL Shortener functional product: not completed.
 - Build a multi-list mailing-list plugin with provider connectors such as Mailchimp and SendGrid, including consent, suppression, bounce, complaint, and audit handling.
 - Preserve a Twilio integration plugin placeholder for future SMS, verification, voice, notification, or other communications use cases after dedicated workshopping.
 - Add shared image-editing capabilities across all image-upload and media-management surfaces, including crop, resize, orientation correction, generic visual adjustments, original retention, edited derivatives, and editing of existing media.
+- Expand first-party analytics into a privacy-first product with journey reconstruction, funnels, goals, cohorts, return-visitor measurement, performance/error correlation, and typed custom-event instrumentation for content authors, site-owned code, and plugins.
 - Define and implement a coherent pre-1.0 release/versioning strategy before public marketplace distribution, broad automatic updates, or declaring DevHolm stable.
 - Realign the inflated historical `3.x` product line without rewriting tags, artifacts, migrations, or deployment history, using a separate monotonic release epoch/sequence so lower visible product versions can still be authoritative upgrades.
 - Establish explicit `1.0.0` readiness gates covering feature depth, robustness, stability, migration confidence, documentation, accessibility, security, operational recovery, and substantially improved UI/UX.
@@ -74,6 +76,7 @@ The detailed ideas remain in the long-lived [idea inbox](https://github.com/chri
 - Marketplace compatibility is designed into package/version contracts before a marketplace exists.
 - Visible product versions communicate maturity and compatibility; immutable release identity and update ordering must remain monotonic even across a deliberate version-line realignment.
 - Database/schema migration sequences, plugin versions, API-contract versions, image digests, and product marketing versions are distinct domains and must not be reset together.
+- Analytics remains anonymous-first by default, distinguishes anonymous from pseudonymous processing honestly, minimizes collected data, and exposes supported event instrumentation rather than encouraging unsafe inline tracking code.
 - Shared platform capabilities such as media processing should be exposed through supported contracts so core features and plugins do not duplicate incompatible implementations.
 - New ideas are recorded and scoped before substantial implementation begins.
 
