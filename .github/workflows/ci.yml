@@ -1075,26 +1075,125 @@ jobs:
           echo "🔍 Verifying deployment..."
           MAX_ATTEMPTS=10
           ATTEMPT=0
-          HEALTH_URL="${{ steps.deploy_inputs.outputs.site_url }}/api/health"
+          BASE_URL="${{ steps.deploy_inputs.outputs.site_url }}"
+
+          verify_health() {
+            local url="$1"
+            local status
+            status=$(curl -sS --max-time 10 -o /tmp/health-body.txt -w "%{http_code}" "$url" || true)
+            if [ "$status" != "200" ]; then
+              return 1
+            fi
+            return 0
+          }
+
+          verify_homepage() {
+            local url="$1"
+            local status content_type
+            status=$(curl -sS --max-time 10 -o /tmp/home-body.txt -D /tmp/home-headers.txt -w "%{http_code}" "$url" || true)
+            content_type=$(grep -i '^content-type:' /tmp/home-headers.txt | tail -1 | cut -d' ' -f2- | tr -d '\r')
+
+            if [ "$status" != "200" ]; then
+              echo "Homepage status mismatch: $status"
+              return 1
+            fi
+
+            if ! echo "$content_type" | grep -qi 'text/html'; then
+              echo "Homepage content-type mismatch: ${content_type:-<missing>}"
+              return 1
+            fi
+
+            if grep -q 'Route resolution service temporarily unavailable' /tmp/home-body.txt; then
+              echo "Homepage contains dispatcher 503 marker"
+              return 1
+            fi
+
+            if grep -q '"error":"Service Unavailable"' /tmp/home-body.txt; then
+              echo "Homepage contains service unavailable JSON"
+              return 1
+            fi
+
+            if ! grep -Eqi '<html|<main|<body' /tmp/home-body.txt; then
+              echo "Homepage missing expected HTML landmark"
+              return 1
+            fi
+
+            return 0
+          }
+
+          verify_secondary_core() {
+            local url="$1"
+            local status
+            status=$(curl -sS --max-time 10 -o /tmp/about-body.txt -w "%{http_code}" "$url" || true)
+            [ "$status" = "200" ]
+          }
+
+          verify_plugin_route() {
+            local url="$1"
+            local status
+            status=$(curl -sS --max-time 10 -o /tmp/plugin-body.txt -w "%{http_code}" "$url" || true)
+            case "$status" in
+              200|301|302|307|308|404) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          verify_unknown_route() {
+            local url="$1"
+            local status content_type
+            status=$(curl -sS --max-time 10 -o /tmp/unknown-body.txt -D /tmp/unknown-headers.txt -w "%{http_code}" "$url" || true)
+            content_type=$(grep -i '^content-type:' /tmp/unknown-headers.txt | tail -1 | cut -d' ' -f2- | tr -d '\r')
+
+            if [ "$status" != "404" ]; then
+              return 1
+            fi
+
+            if grep -q 'Route resolution service temporarily unavailable' /tmp/unknown-body.txt; then
+              return 1
+            fi
+
+            # Next.js 404 can be html or plain text depending on stack state.
+            if ! echo "$content_type" | grep -Eqi 'text/html|text/plain'; then
+              return 1
+            fi
+
+            return 0
+          }
+
           until [ $ATTEMPT -ge $MAX_ATTEMPTS ]; do
-            HTTP_STATUS=$(curl -sS --max-time 10 -o /tmp/health-body.txt -w "%{http_code}" "$HEALTH_URL" || true)
-            if [ "$HTTP_STATUS" = "200" ]; then
+            if verify_health "$BASE_URL/api/health" \
+              && verify_homepage "$BASE_URL/" \
+              && verify_secondary_core "$BASE_URL/about" \
+              && verify_plugin_route "$BASE_URL/s/devholm-healthcheck" \
+              && verify_unknown_route "$BASE_URL/__devholm_route_probe_not_found"; then
               echo "✅ Deployment verification complete"
+              echo "Health body:"
               cat /tmp/health-body.txt
+              echo "Homepage head:"
+              head -c 500 /tmp/home-body.txt || true
+              echo
+              echo "Unknown route head:"
+              head -c 300 /tmp/unknown-body.txt || true
               exit 0
             fi
 
             ATTEMPT=$((ATTEMPT + 1))
-            echo "⏳ Attempt $ATTEMPT/$MAX_ATTEMPTS failed (HTTP $HTTP_STATUS), retrying in 10s..."
-            echo "Response body preview:"
-            head -c 500 /tmp/health-body.txt || true
+            echo "⏳ Attempt $ATTEMPT/$MAX_ATTEMPTS failed, retrying in 10s..."
+            echo "Health response preview:"
+            head -c 300 /tmp/health-body.txt || true
+            echo
+            echo "Homepage response preview:"
+            head -c 300 /tmp/home-body.txt || true
+            echo
+            echo "Unknown route response preview:"
+            head -c 300 /tmp/unknown-body.txt || true
             if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
               break
             fi
             sleep 10
           done
 
-          echo "❌ Health check failed after $MAX_ATTEMPTS attempts!"
+          echo "❌ Deployment verification failed after $MAX_ATTEMPTS attempts!"
           exit 1
 
       - name: Collect deploy diagnostics on failure
@@ -1104,6 +1203,12 @@ jobs:
 
           echo "External health endpoint response:"
           curl -sS -i --max-time 10 "${{ steps.deploy_inputs.outputs.site_url }}/api/health" | head -n 80 || true
+
+          echo "External homepage response:"
+          curl -sS -i --max-time 10 "${{ steps.deploy_inputs.outputs.site_url }}/" | head -n 80 || true
+
+          echo "External unknown-route response:"
+          curl -sS -i --max-time 10 "${{ steps.deploy_inputs.outputs.site_url }}/__devholm_route_probe_not_found" | head -n 80 || true
 
           APP_PORT_VALUE='${{ steps.port.outputs.app_port }}'
           TARGET_CONTAINER='${{ secrets.PROJECT_NAME }}-app'
@@ -1129,6 +1234,12 @@ jobs:
 
             echo "\n=== local health check via app port ==="
             curl -sS -i --max-time 10 "http://127.0.0.1:${APP_PORT_VALUE}/api/health" | head -n 80 || true
+
+            echo "\n=== local homepage check via app port ==="
+            curl -sS -i --max-time 10 "http://127.0.0.1:${APP_PORT_VALUE}/" | head -n 80 || true
+
+            echo "\n=== local unknown-route check via app port ==="
+            curl -sS -i --max-time 10 "http://127.0.0.1:${APP_PORT_VALUE}/__devholm_route_probe_not_found" | head -n 80 || true
 
             echo "\n=== nginx active config excerpt ==="
             run_root nginx -T 2>/dev/null | grep -E "server_name|proxy_pass|upstream|listen" -n | head -n 120 || true

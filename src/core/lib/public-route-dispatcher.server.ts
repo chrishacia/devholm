@@ -9,6 +9,7 @@ import type { NextRequest } from 'next/server';
 import { publicRouteExtensions } from '@user/extensions/public-routes';
 import { getReservedRoutes } from '@core/lib/reserved-routes.server';
 import type { ExtensionHelpers } from '@core/types/extensions.server';
+import type { PublicRouteMatchContext } from '@core/lib/public-route-match-context.server';
 import {
   dispatchPublicRoute,
   type PublicRouteDispatcherDependencies,
@@ -36,7 +37,14 @@ function withIsolationBoundary(extension: (typeof publicRouteExtensions)[number]
 
   return {
     ...extension,
-    match: async (pathname: string, request: NextRequest) => {
+    match: async (pathname: string, request: NextRequest, context: PublicRouteMatchContext) => {
+      // Run a cheap in-process matcher preflight first so clearly unrelated
+      // paths avoid isolated runtime overhead and failure surfaces.
+      const preflightMatch = await extension.match(pathname, request, context);
+      if (preflightMatch === null || preflightMatch === undefined) {
+        return null;
+      }
+
       const result = await runIsolatedPublicRouteMatch({
         pluginId: extension.pluginId!,
         extensionId: extension.id,
