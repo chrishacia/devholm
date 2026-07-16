@@ -22,6 +22,10 @@ function runPnpm(rootDir: string, args: readonly string[]): void {
     },
   });
 
+  if (result.error) {
+    throw new Error(`pnpm ${args.join(' ')} failed to start: ${result.error.message}`);
+  }
+
   if (result.status !== 0) {
     throw new Error(`pnpm ${args.join(' ')} failed with exit code ${result.status ?? 'unknown'}`);
   }

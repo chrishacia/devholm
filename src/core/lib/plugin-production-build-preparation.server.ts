@@ -97,7 +97,7 @@ function toPluginRecord(input: {
 
   return {
     pluginId: input.entry.pluginId,
-    version: input.entry.desiredVersion,
+    version: input.resolved.selectedVersion,
     includedInBuild: true,
     pluginSourceWorkspaceRoot: `src/user/extensions/plugins/${input.entry.pluginId}`,
     generatedPluginRoot: `generated/plugins/${input.entry.pluginId}`,
@@ -146,6 +146,12 @@ export function createProductionBuildPreparationManifest(input: {
   if (input.registry.content.environment !== input.environment) {
     throw new Error(
       `Production build preparation registry environment mismatch: expected ${input.environment}, found ${input.registry.content.environment}`
+    );
+  }
+
+  if (!input.registryVerification.ok) {
+    throw new Error(
+      `Production build preparation requires a verified registry: expected ${input.registryVerification.expectedDigestSha256}, found ${input.registryVerification.actualDigestSha256}`
     );
   }
 
@@ -225,15 +231,7 @@ export function createProductionBuildPreparationManifest(input: {
     plugins,
   };
 
-  const contentDigestSha256 = sha256Hex({
-    ...payloadWithoutDigest,
-    registry: {
-      schemaVersion: input.registry.schemaVersion,
-      generatorVersion: input.registry.generatorVersion,
-      contentDigestSha256: input.registry.contentDigestSha256,
-      content: input.registry.content,
-    },
-  });
+  const contentDigestSha256 = sha256Hex(payloadWithoutDigest);
 
   return {
     ...payloadWithoutDigest,
