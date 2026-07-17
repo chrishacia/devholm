@@ -117,7 +117,40 @@ interface MarketplacePluginView {
     stage: string | null;
     operationId: string | null;
     updatedAt: string | null;
+    leaseOwner: string | null;
+    leaseExpiresAt: string | null;
+    leaseExpired: boolean;
     recoveryRequired: boolean;
+  };
+  desiredLifecycleState: string;
+  observedLifecycleState: string;
+  reconciliation: {
+    action: string;
+    recoveryClassification:
+      | 'none'
+      | 'retryable'
+      | 'recovery-required'
+      | 'manual-intervention-required';
+    message: string;
+    remediation: string;
+  };
+  rollback: {
+    eligible: boolean;
+    reasonCode: string;
+  };
+  latestTransition: {
+    eventId: string | null;
+    transition: string | null;
+    result: 'succeeded' | 'failed' | null;
+    timestamp: string | null;
+    errorCode: string | null;
+  };
+  migrationCheckpoint: {
+    interrupted: boolean;
+    interruptedMigrationId: string | null;
+    interruptedDirection: 'up' | 'down' | null;
+    completedCount: number;
+    latestCompletedMigrationId: string | null;
   };
   sourceResolution: {
     configuredSourceKind: string;
@@ -137,6 +170,43 @@ interface MarketplacePluginView {
     appliedAt: string;
     rollbackAvailableUntil?: string;
   }>;
+  lifecycleState: {
+    axes: {
+      desired: string;
+      resolution: string;
+      build: string;
+      deployment: string;
+      runtime: string;
+      trust: string;
+      health: string;
+      recovery: string;
+    };
+    summaryState: string;
+    validationErrors: string[];
+  };
+  actionAuthority: {
+    byId: Record<
+      string,
+      {
+        id: string;
+        enabled: boolean;
+        reasonCode: string | null;
+        safeExplanation: string;
+        approvalRequired: boolean;
+        destructive: boolean;
+        recoveryClassification: string;
+      }
+    >;
+    available: Array<{
+      id: string;
+      safeExplanation: string;
+    }>;
+    blocked: Array<{
+      id: string;
+      reasonCode: string | null;
+      safeExplanation: string;
+    }>;
+  };
   actions: {
     install: { allowed: boolean; reasonCode: string | null; remediation: string };
     update: { allowed: boolean; reasonCode: string | null; remediation: string };
@@ -956,6 +1026,11 @@ export default function AdminPluginsPage() {
               recoveryRequired: entry.operation.recoveryRequired,
             });
             const uiStateDef = getMarketplaceUiStateDefinition(uiState);
+            const toggleAction = plugin.isEnabled
+              ? entry.actionAuthority.byId.disable
+              : entry.actionAuthority.byId.enable;
+            const installAction = entry.actionAuthority.byId.install;
+            const rollbackAction = entry.actionAuthority.byId.rollback;
 
             return (
               <Grid key={plugin.id} size={{ xs: 12, md: 6 }}>
@@ -990,15 +1065,26 @@ export default function AdminPluginsPage() {
                           />
                           <Chip
                             size="small"
+                            label={`Canonical ${entry.lifecycleState.summaryState}`}
+                            variant="outlined"
+                          />
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            color={entry.reconciliation.action === 'none' ? 'default' : 'warning'}
+                            label={`Recovery ${entry.reconciliation.action}`}
+                          />
+                          <Chip
+                            size="small"
                             label={plugin.isEnabled ? 'Enabled' : 'Disabled'}
                             color={plugin.isEnabled ? 'success' : 'default'}
                           />
-                          <Chip size="small" label={uiStateDef.label} />
+                          <Chip size="small" label={`Legacy (transitional): ${uiStateDef.label}`} />
                         </Stack>
                       </Box>
                       <Switch
                         checked={plugin.isEnabled}
-                        disabled={isPending || (!entry.actions.enable.allowed && !plugin.isEnabled)}
+                        disabled={isPending || !toggleAction?.enabled}
                         onChange={() => {
                           void togglePlugin(entry);
                         }}
@@ -1077,10 +1163,10 @@ export default function AdminPluginsPage() {
                       </Alert>
                     ) : null}
 
-                    {!entry.actions.install.allowed && !plugin.installed ? (
+                    {!installAction?.enabled && !plugin.installed ? (
                       <Alert severity="warning" sx={{ mt: 2 }}>
-                        Install blocked: {entry.actions.install.reasonCode}.{' '}
-                        {entry.actions.install.remediation}
+                        Install blocked: {installAction?.reasonCode || 'blocked'}.{' '}
+                        {installAction?.safeExplanation}
                       </Alert>
                     ) : null}
 
@@ -1090,6 +1176,50 @@ export default function AdminPluginsPage() {
                         {entry.operation.status || 'unknown'}).
                       </Alert>
                     ) : null}
+
+                    {entry.operation.recoveryRequired ? (
+                      <Alert severity="error" sx={{ mt: 2 }}>
+                        Recovery required: {entry.reconciliation.message}{' '}
+                        {entry.reconciliation.remediation}
+                      </Alert>
+                    ) : null}
+
+                    {entry.migrationCheckpoint.interrupted ? (
+                      <Alert severity="warning" sx={{ mt: 2 }}>
+                        Interrupted migration checkpoint:{' '}
+                        {entry.migrationCheckpoint.interruptedMigrationId || 'unknown migration'} (
+                        {entry.migrationCheckpoint.interruptedDirection || 'unknown direction'}).
+                      </Alert>
+                    ) : null}
+
+                    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 2 }}>
+                      <Chip
+                        size="small"
+                        color={rollbackAction?.enabled ? 'success' : 'default'}
+                        label={
+                          rollbackAction?.enabled
+                            ? 'Rollback available'
+                            : `Rollback blocked: ${entry.rollback.reasonCode}`
+                        }
+                      />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`Desired ${entry.desiredLifecycleState}`}
+                      />
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`Observed ${entry.observedLifecycleState}`}
+                      />
+                      {entry.operation.leaseOwner ? (
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={`Lease ${entry.operation.leaseOwner}${entry.operation.leaseExpired ? ' (expired)' : ''}`}
+                        />
+                      ) : null}
+                    </Stack>
                   </CardContent>
                   <CardActions sx={{ px: 2, pb: 2, pt: 0, justifyContent: 'space-between' }}>
                     <Typography variant="caption" color="text.secondary">
@@ -1108,7 +1238,7 @@ export default function AdminPluginsPage() {
                       {!plugin.installed ? (
                         <Button
                           size="small"
-                          disabled={!entry.actions.install.allowed || isPending}
+                          disabled={!installAction?.enabled || isPending}
                           onClick={() => setInstallDialogPluginId(plugin.id)}
                         >
                           Install
@@ -1222,6 +1352,30 @@ export default function AdminPluginsPage() {
                 </ListItem>
                 <ListItem>
                   <ListItemText
+                    primary="Reconciliation"
+                    secondary={`${selectedPlugin.reconciliation.action} (${selectedPlugin.reconciliation.recoveryClassification}) - ${selectedPlugin.reconciliation.message}`}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Rollback"
+                    secondary={`${selectedPlugin.rollback.eligible ? 'eligible' : 'blocked'} (${selectedPlugin.rollback.reasonCode})`}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Migration checkpoints"
+                    secondary={`completed=${selectedPlugin.migrationCheckpoint.completedCount}, interrupted=${selectedPlugin.migrationCheckpoint.interrupted ? 'yes' : 'no'}, latestCompleted=${selectedPlugin.migrationCheckpoint.latestCompletedMigrationId || 'none'}`}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Action authority"
+                    secondary={`available=${selectedPlugin.actionAuthority.available.map((action) => action.id).join(', ') || 'none'}; blocked=${selectedPlugin.actionAuthority.blocked.map((action) => `${action.id}:${action.reasonCode || 'blocked'}`).join(', ') || 'none'}`}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
                     primary="Development source"
                     secondary={
                       selectedPlugin.sourceResolution.localOverrideEnabled
@@ -1307,10 +1461,10 @@ export default function AdminPluginsPage() {
                     <Typography color="text.secondary">
                       Data risk: destructiveDataWipe={plugin.migration.destructiveDataWipe}.
                     </Typography>
-                    {!plugin.actions.install.allowed ? (
+                    {!plugin.actionAuthority.byId.install.enabled ? (
                       <Alert severity="warning">
-                        Install blocked: {plugin.actions.install.reasonCode}.{' '}
-                        {plugin.actions.install.remediation}
+                        Install blocked: {plugin.actionAuthority.byId.install.reasonCode}.{' '}
+                        {plugin.actionAuthority.byId.install.safeExplanation}
                       </Alert>
                     ) : null}
                   </Stack>
@@ -1320,7 +1474,8 @@ export default function AdminPluginsPage() {
                   <Button
                     variant="contained"
                     disabled={
-                      !plugin.actions.install.allowed || pendingPluginId === plugin.plugin.id
+                      !plugin.actionAuthority.byId.install.enabled ||
+                      pendingPluginId === plugin.plugin.id
                     }
                     onClick={() => {
                       void submitInstall(plugin);

@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { PluginLifecycleError } from '@core/lib/plugin-lifecycle-errors';
 
 const verifyAdmin = vi.hoisted(() => vi.fn());
 const listPluginStates = vi.hoisted(() => vi.fn());
-const enablePlugin = vi.hoisted(() => vi.fn());
-const disablePlugin = vi.hoisted(() => vi.fn());
-const installPlugin = vi.hoisted(() => vi.fn());
+const orchestratePluginLifecycleMutation = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/auth-helpers', () => ({
   verifyAdmin,
@@ -15,10 +14,8 @@ vi.mock('@/db/plugins', () => ({
   listPluginStates,
 }));
 
-vi.mock('@core/lib/plugin-lifecycle.server', () => ({
-  enablePlugin,
-  disablePlugin,
-  installPlugin,
+vi.mock('@core/lib/plugin-lifecycle-orchestrator.server', () => ({
+  orchestratePluginLifecycleMutation,
 }));
 
 import { PATCH, POST } from './route';
@@ -32,9 +29,7 @@ describe('admin plugins PATCH route', () => {
       roles: ['admin'],
     });
     listPluginStates.mockResolvedValue([{ id: 'url-shortener' }]);
-    enablePlugin.mockResolvedValue(undefined);
-    disablePlugin.mockResolvedValue(undefined);
-    installPlugin.mockResolvedValue(undefined);
+    orchestratePluginLifecycleMutation.mockResolvedValue(undefined);
   });
 
   it('delegates enable requests to enablePlugin with initiator identity', async () => {
@@ -46,8 +41,13 @@ describe('admin plugins PATCH route', () => {
 
     const response = await PATCH(request);
     expect(response.status).toBe(200);
-    expect(enablePlugin).toHaveBeenCalledWith('url-shortener', 'admin@example.com');
-    expect(disablePlugin).not.toHaveBeenCalled();
+    expect(orchestratePluginLifecycleMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'enable',
+        pluginId: 'url-shortener',
+        initiatedBy: 'admin@example.com',
+      })
+    );
   });
 
   it('delegates disable requests to disablePlugin with initiator identity', async () => {
@@ -59,12 +59,17 @@ describe('admin plugins PATCH route', () => {
 
     const response = await PATCH(request);
     expect(response.status).toBe(200);
-    expect(disablePlugin).toHaveBeenCalledWith('url-shortener', 'admin@example.com');
-    expect(enablePlugin).not.toHaveBeenCalled();
+    expect(orchestratePluginLifecycleMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'disable',
+        pluginId: 'url-shortener',
+        initiatedBy: 'admin@example.com',
+      })
+    );
   });
 
   it('returns conflict response for uninstalled-enable failures', async () => {
-    enablePlugin.mockRejectedValue(
+    orchestratePluginLifecycleMutation.mockRejectedValue(
       new Error('Cannot enable url-shortener: plugin is not installed')
     );
 
@@ -82,7 +87,7 @@ describe('admin plugins PATCH route', () => {
   });
 
   it('returns conflict response for reverse dependency rejection', async () => {
-    disablePlugin.mockRejectedValue(
+    orchestratePluginLifecycleMutation.mockRejectedValue(
       new Error('Cannot disable/uninstall/purge plugin-a: enabled dependent plugin-b requires it')
     );
 
@@ -108,13 +113,17 @@ describe('admin plugins PATCH route', () => {
 
     const response = await POST(request);
     expect(response.status).toBe(200);
-    expect(installPlugin).toHaveBeenCalledWith('url-shortener', {
-      initiatedBy: 'admin@example.com',
-    });
+    expect(orchestratePluginLifecycleMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'install',
+        pluginId: 'url-shortener',
+        initiatedBy: 'admin@example.com',
+      })
+    );
   });
 
   it('returns conflict response for install dependency rejection', async () => {
-    installPlugin.mockRejectedValue(
+    orchestratePluginLifecycleMutation.mockRejectedValue(
       new Error('Plugin dependency dep-a is not installed for url-shortener')
     );
 
@@ -129,5 +138,26 @@ describe('admin plugins PATCH route', () => {
 
     expect(response.status).toBe(409);
     expect(body.error).toContain('not installed');
+  });
+
+  it('maps stable lifecycle error metadata to response status and message', async () => {
+    orchestratePluginLifecycleMutation.mockRejectedValue(
+      new PluginLifecycleError({
+        code: 'LIFECYCLE_INFRASTRUCTURE_UNAVAILABLE',
+        internalDiagnostic: 'database unavailable',
+      })
+    );
+
+    const request = new NextRequest('http://localhost:3000/api/admin/plugins', {
+      method: 'PATCH',
+      body: JSON.stringify({ pluginId: 'url-shortener', isEnabled: true }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await PATCH(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.error).toBe('Lifecycle infrastructure is temporarily unavailable.');
   });
 });

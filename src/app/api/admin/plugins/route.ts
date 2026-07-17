@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { verifyAdmin } from '@/lib/auth-helpers';
 import { listPluginStates } from '@/db/plugins';
-import { disablePlugin, enablePlugin, installPlugin } from '@core/lib/plugin-lifecycle.server';
+import { orchestratePluginLifecycleMutation } from '@core/lib/plugin-lifecycle-orchestrator.server';
+import { PluginLifecycleError, mapUnknownLifecycleError } from '@core/lib/plugin-lifecycle-errors';
 
 const updateSchema = z.object({
   pluginId: z.string().min(1).max(120),
@@ -10,21 +11,12 @@ const updateSchema = z.object({
 });
 
 function mapLifecycleError(error: unknown): { status: number; body: { error: string } } {
-  const message = error instanceof Error ? error.message : String(error);
-
-  if (message.includes('Unknown plugin')) {
-    return { status: 404, body: { error: message } };
-  }
-
-  if (
-    message.includes('not installed') ||
-    message.includes('requires it') ||
-    message.includes('must be enabled')
-  ) {
-    return { status: 409, body: { error: message } };
-  }
-
-  return { status: 500, body: { error: 'Failed to update plugin state' } };
+  const lifecycleError =
+    error instanceof PluginLifecycleError ? error : mapUnknownLifecycleError(error);
+  return {
+    status: lifecycleError.httpStatus,
+    body: { error: lifecycleError.publicMessage },
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -64,12 +56,21 @@ export async function PATCH(request: NextRequest) {
       (typeof token.sub === 'string' && token.sub) ||
       (typeof token.name === 'string' && token.name) ||
       undefined;
+    const idempotencyKey = request.headers.get('x-idempotency-key')?.trim() || undefined;
+    const correlationId = request.headers.get('x-correlation-id')?.trim() || undefined;
 
-    if (parsed.data.isEnabled) {
-      await enablePlugin(parsed.data.pluginId, initiatedBy);
-    } else {
-      await disablePlugin(parsed.data.pluginId, initiatedBy);
-    }
+    await orchestratePluginLifecycleMutation({
+      action: parsed.data.isEnabled ? 'enable' : 'disable',
+      pluginId: parsed.data.pluginId,
+      initiatedBy,
+      idempotencyKey,
+      correlationId,
+      authorizationContext: {
+        isAdmin: true,
+        principal: initiatedBy,
+        roles: ['admin'],
+      },
+    });
 
     const plugins = await listPluginStates();
     return NextResponse.json({ plugins });
@@ -106,8 +107,21 @@ export async function POST(request: NextRequest) {
       (typeof token.sub === 'string' && token.sub) ||
       (typeof token.name === 'string' && token.name) ||
       undefined;
+    const idempotencyKey = request.headers.get('x-idempotency-key')?.trim() || undefined;
+    const correlationId = request.headers.get('x-correlation-id')?.trim() || undefined;
 
-    await installPlugin(parsed.data.pluginId, { initiatedBy });
+    await orchestratePluginLifecycleMutation({
+      action: 'install',
+      pluginId: parsed.data.pluginId,
+      initiatedBy,
+      idempotencyKey,
+      correlationId,
+      authorizationContext: {
+        isAdmin: true,
+        principal: initiatedBy,
+        roles: ['admin'],
+      },
+    });
 
     const plugins = await listPluginStates();
     return NextResponse.json({ plugins });

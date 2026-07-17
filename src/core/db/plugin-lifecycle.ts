@@ -7,6 +7,88 @@ import type {
   PluginOperationStatus,
 } from '@core/types/plugins';
 
+export type PluginLifecycleMutationAction =
+  | 'install'
+  | 'enable'
+  | 'disable'
+  | 'update'
+  | 'rollback'
+  | 'recover';
+
+export type PluginLifecycleMutationStatus =
+  | 'requested'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted';
+
+export type PluginLifecycleMutationPhase = 'requested' | 'executing' | 'completed';
+
+export interface PluginLifecycleStateSnapshot {
+  installed: boolean;
+  enabled: boolean;
+  lifecycleState: string;
+  operationStatus: string;
+  installedVersion: string | null;
+  bundledVersion: string | null;
+  updatedAt: string | null;
+}
+
+export interface PluginLifecycleOperationRecord {
+  schemaVersion: 1;
+  operationId: string;
+  pluginId: string;
+  action: PluginLifecycleMutationAction;
+  idempotencyKey?: string;
+  status: PluginLifecycleMutationStatus;
+  actor?: string;
+  leaseOwner?: string;
+  leaseExpiresAt?: string;
+  expectedLifecycleState?: string;
+  authorizationContext?: Record<string, unknown>;
+  mutationAuthorityVersion?: string;
+  correlationId: string;
+  currentPhase: PluginLifecycleMutationPhase;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+  attemptCount: number;
+  priorStateSnapshot: PluginLifecycleStateSnapshot | null;
+  nextStateSnapshot?: PluginLifecycleStateSnapshot | null;
+  error?: {
+    code?: string;
+    message: string;
+    retryable?: boolean;
+    recoveryClassification?: string;
+  };
+}
+
+export interface PluginLifecycleTransitionEventRecord {
+  schemaVersion: 1;
+  eventId: string;
+  operationId: string;
+  pluginId: string;
+  transition: PluginLifecycleMutationAction;
+  result: 'succeeded' | 'failed';
+  actor?: string;
+  correlationId: string;
+  timestamp: string;
+  previousState: PluginLifecycleStateSnapshot | null;
+  nextState: PluginLifecycleStateSnapshot | null;
+  desiredState?: string | null;
+  buildReference?: Record<string, unknown> | null;
+  deploymentReference?: Record<string, unknown> | null;
+  pluginVersion?: string | null;
+  artifactDigest?: string | null;
+  error?: {
+    code?: string;
+    message: string;
+    retryable?: boolean;
+    recoveryClassification?: string;
+  };
+}
+
 export interface InstalledPluginRecord {
   pluginId: string;
   bundledVersion: string;
@@ -97,6 +179,329 @@ export async function getInstalledPlugin(pluginId: string): Promise<InstalledPlu
     updatedAt: row.updated_at,
     lastError: row.last_error,
     manifestChecksum: row.manifest_checksum,
+  };
+}
+
+function lifecycleOperationsTable(db: Knex) {
+  return db('devholm_plugin_lifecycle_operations');
+}
+
+function lifecycleEventsTable(db: Knex) {
+  return db('devholm_plugin_lifecycle_events');
+}
+
+function parseJsonColumn<T>(value: unknown): T {
+  if (typeof value === 'string') {
+    return JSON.parse(value) as T;
+  }
+
+  return value as T;
+}
+
+export async function writePluginLifecycleOperationRecord(
+  record: PluginLifecycleOperationRecord,
+  db: Knex = getDb()
+): Promise<void> {
+  const payload = {
+    schema_version: record.schemaVersion,
+    operation_id: record.operationId,
+    plugin_id: record.pluginId,
+    action: record.action,
+    idempotency_key: record.idempotencyKey ?? null,
+    status: record.status,
+    actor: record.actor ?? null,
+    lease_owner: record.leaseOwner ?? null,
+    lease_expires_at: record.leaseExpiresAt ?? null,
+    expected_lifecycle_state: record.expectedLifecycleState ?? null,
+    authorization_context: record.authorizationContext
+      ? JSON.stringify(record.authorizationContext)
+      : null,
+    mutation_authority_version: record.mutationAuthorityVersion ?? 'v1',
+    correlation_id: record.correlationId,
+    current_phase: record.currentPhase,
+    started_at: record.startedAt,
+    updated_at: record.updatedAt,
+    finished_at: record.finishedAt ?? null,
+    attempt_count: record.attemptCount,
+    prior_state_snapshot: record.priorStateSnapshot
+      ? JSON.stringify(record.priorStateSnapshot)
+      : null,
+    next_state_snapshot: record.nextStateSnapshot ? JSON.stringify(record.nextStateSnapshot) : null,
+    error_code: record.error?.code ?? null,
+    public_message: record.error?.message ?? null,
+    internal_diagnostic: record.error?.message ?? null,
+    retryable: record.error?.retryable ?? false,
+    recovery_classification: record.error?.recoveryClassification ?? null,
+  };
+
+  await lifecycleOperationsTable(db)
+    .insert({
+      ...payload,
+      created_at: new Date(),
+    })
+    .onConflict('operation_id')
+    .merge(payload);
+}
+
+export async function writePluginLifecycleTransitionEvent(
+  event: PluginLifecycleTransitionEventRecord,
+  db: Knex = getDb()
+): Promise<void> {
+  const payload = {
+    schema_version: event.schemaVersion,
+    event_id: event.eventId,
+    operation_id: event.operationId,
+    plugin_id: event.pluginId,
+    transition: event.transition,
+    result: event.result,
+    actor: event.actor ?? null,
+    correlation_id: event.correlationId,
+    timestamp: event.timestamp,
+    previous_state: event.previousState ? JSON.stringify(event.previousState) : null,
+    next_state: event.nextState ? JSON.stringify(event.nextState) : null,
+    desired_state: event.desiredState ?? null,
+    build_reference: event.buildReference ? JSON.stringify(event.buildReference) : null,
+    deployment_reference: event.deploymentReference
+      ? JSON.stringify(event.deploymentReference)
+      : null,
+    plugin_version: event.pluginVersion ?? null,
+    artifact_digest: event.artifactDigest ?? null,
+    error_code: event.error?.code ?? null,
+    public_message: event.error?.message ?? null,
+    internal_diagnostic: event.error?.message ?? null,
+    retryable: event.error?.retryable ?? false,
+    recovery_classification: event.error?.recoveryClassification ?? null,
+    created_at: new Date(),
+  };
+
+  await lifecycleEventsTable(db).insert(payload).onConflict('event_id').ignore();
+}
+
+export async function readLatestPluginLifecycleOperationRecord(
+  pluginId: string,
+  db: Knex = getDb()
+): Promise<PluginLifecycleOperationRecord | null> {
+  const row = await lifecycleOperationsTable(db)
+    .where({ plugin_id: pluginId })
+    .orderBy('updated_at', 'desc')
+    .first();
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    schemaVersion: Number(row.schema_version ?? 1) as 1,
+    operationId: String(row.operation_id),
+    pluginId: String(row.plugin_id),
+    action: row.action as PluginLifecycleMutationAction,
+    idempotencyKey: row.idempotency_key ? String(row.idempotency_key) : undefined,
+    status: row.status as PluginLifecycleMutationStatus,
+    actor: row.actor ?? undefined,
+    leaseOwner: row.lease_owner ? String(row.lease_owner) : undefined,
+    leaseExpiresAt: row.lease_expires_at ? String(row.lease_expires_at) : undefined,
+    expectedLifecycleState: row.expected_lifecycle_state
+      ? String(row.expected_lifecycle_state)
+      : undefined,
+    authorizationContext: row.authorization_context
+      ? parseJsonColumn<Record<string, unknown>>(row.authorization_context)
+      : undefined,
+    mutationAuthorityVersion: row.mutation_authority_version
+      ? String(row.mutation_authority_version)
+      : 'v1',
+    correlationId: String(row.correlation_id),
+    currentPhase: row.current_phase as PluginLifecycleMutationPhase,
+    startedAt: String(row.started_at),
+    updatedAt: String(row.updated_at),
+    finishedAt: row.finished_at ? String(row.finished_at) : undefined,
+    attemptCount: Number(row.attempt_count ?? 1),
+    priorStateSnapshot: row.prior_state_snapshot
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.prior_state_snapshot)
+      : null,
+    nextStateSnapshot: row.next_state_snapshot
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.next_state_snapshot)
+      : undefined,
+    error:
+      row.error_code || row.public_message || row.recovery_classification
+        ? {
+            code: row.error_code ?? undefined,
+            message: String(
+              row.public_message ?? row.internal_diagnostic ?? 'Unknown lifecycle error'
+            ),
+            retryable: Boolean(row.retryable),
+            recoveryClassification: row.recovery_classification ?? undefined,
+          }
+        : undefined,
+  };
+}
+
+export async function findPluginLifecycleOperationByIdempotencyKey(
+  pluginId: string,
+  idempotencyKey: string,
+  db: Knex = getDb()
+): Promise<PluginLifecycleOperationRecord | null> {
+  const row = await lifecycleOperationsTable(db)
+    .where({ plugin_id: pluginId, idempotency_key: idempotencyKey })
+    .orderBy('updated_at', 'desc')
+    .first();
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    schemaVersion: Number(row.schema_version ?? 1) as 1,
+    operationId: String(row.operation_id),
+    pluginId: String(row.plugin_id),
+    action: row.action as PluginLifecycleMutationAction,
+    idempotencyKey: row.idempotency_key ? String(row.idempotency_key) : undefined,
+    status: row.status as PluginLifecycleMutationStatus,
+    actor: row.actor ?? undefined,
+    leaseOwner: row.lease_owner ? String(row.lease_owner) : undefined,
+    leaseExpiresAt: row.lease_expires_at ? String(row.lease_expires_at) : undefined,
+    expectedLifecycleState: row.expected_lifecycle_state
+      ? String(row.expected_lifecycle_state)
+      : undefined,
+    authorizationContext: row.authorization_context
+      ? parseJsonColumn<Record<string, unknown>>(row.authorization_context)
+      : undefined,
+    mutationAuthorityVersion: row.mutation_authority_version
+      ? String(row.mutation_authority_version)
+      : 'v1',
+    correlationId: String(row.correlation_id),
+    currentPhase: row.current_phase as PluginLifecycleMutationPhase,
+    startedAt: String(row.started_at),
+    updatedAt: String(row.updated_at),
+    finishedAt: row.finished_at ? String(row.finished_at) : undefined,
+    attemptCount: Number(row.attempt_count ?? 1),
+    priorStateSnapshot: row.prior_state_snapshot
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.prior_state_snapshot)
+      : null,
+    nextStateSnapshot: row.next_state_snapshot
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.next_state_snapshot)
+      : undefined,
+    error:
+      row.error_code || row.public_message || row.recovery_classification
+        ? {
+            code: row.error_code ?? undefined,
+            message: String(
+              row.public_message ?? row.internal_diagnostic ?? 'Unknown lifecycle error'
+            ),
+            retryable: Boolean(row.retryable),
+            recoveryClassification: row.recovery_classification ?? undefined,
+          }
+        : undefined,
+  };
+}
+
+export async function findActivePluginLifecycleOperation(
+  pluginId: string,
+  db: Knex = getDb()
+): Promise<PluginLifecycleOperationRecord | null> {
+  const row = await lifecycleOperationsTable(db)
+    .where({ plugin_id: pluginId })
+    .whereIn('status', ['requested', 'running'])
+    .orderBy('updated_at', 'desc')
+    .first();
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    schemaVersion: Number(row.schema_version ?? 1) as 1,
+    operationId: String(row.operation_id),
+    pluginId: String(row.plugin_id),
+    action: row.action as PluginLifecycleMutationAction,
+    idempotencyKey: row.idempotency_key ? String(row.idempotency_key) : undefined,
+    status: row.status as PluginLifecycleMutationStatus,
+    actor: row.actor ?? undefined,
+    leaseOwner: row.lease_owner ? String(row.lease_owner) : undefined,
+    leaseExpiresAt: row.lease_expires_at ? String(row.lease_expires_at) : undefined,
+    expectedLifecycleState: row.expected_lifecycle_state
+      ? String(row.expected_lifecycle_state)
+      : undefined,
+    authorizationContext: row.authorization_context
+      ? parseJsonColumn<Record<string, unknown>>(row.authorization_context)
+      : undefined,
+    mutationAuthorityVersion: row.mutation_authority_version
+      ? String(row.mutation_authority_version)
+      : 'v1',
+    correlationId: String(row.correlation_id),
+    currentPhase: row.current_phase as PluginLifecycleMutationPhase,
+    startedAt: String(row.started_at),
+    updatedAt: String(row.updated_at),
+    finishedAt: row.finished_at ? String(row.finished_at) : undefined,
+    attemptCount: Number(row.attempt_count ?? 1),
+    priorStateSnapshot: row.prior_state_snapshot
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.prior_state_snapshot)
+      : null,
+    nextStateSnapshot: row.next_state_snapshot
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.next_state_snapshot)
+      : undefined,
+    error:
+      row.error_code || row.public_message || row.recovery_classification
+        ? {
+            code: row.error_code ?? undefined,
+            message: String(
+              row.public_message ?? row.internal_diagnostic ?? 'Unknown lifecycle error'
+            ),
+            retryable: Boolean(row.retryable),
+            recoveryClassification: row.recovery_classification ?? undefined,
+          }
+        : undefined,
+  };
+}
+
+export async function readLatestPluginLifecycleTransitionEventRecord(
+  pluginId: string,
+  db: Knex = getDb()
+): Promise<PluginLifecycleTransitionEventRecord | null> {
+  const row = await lifecycleEventsTable(db)
+    .where({ plugin_id: pluginId })
+    .orderBy('timestamp', 'desc')
+    .first();
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    schemaVersion: Number(row.schema_version ?? 1) as 1,
+    eventId: String(row.event_id),
+    operationId: String(row.operation_id),
+    pluginId: String(row.plugin_id),
+    transition: row.transition as PluginLifecycleMutationAction,
+    result: row.result as 'succeeded' | 'failed',
+    actor: row.actor ?? undefined,
+    correlationId: String(row.correlation_id),
+    timestamp: String(row.timestamp),
+    previousState: row.previous_state
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.previous_state)
+      : null,
+    nextState: row.next_state
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.next_state)
+      : null,
+    desiredState: row.desired_state ? String(row.desired_state) : null,
+    buildReference: row.build_reference
+      ? parseJsonColumn<Record<string, unknown>>(row.build_reference)
+      : null,
+    deploymentReference: row.deployment_reference
+      ? parseJsonColumn<Record<string, unknown>>(row.deployment_reference)
+      : null,
+    pluginVersion: row.plugin_version ? String(row.plugin_version) : null,
+    artifactDigest: row.artifact_digest ? String(row.artifact_digest) : null,
+    error:
+      row.error_code || row.public_message || row.recovery_classification
+        ? {
+            code: row.error_code ?? undefined,
+            message: String(
+              row.public_message ?? row.internal_diagnostic ?? 'Unknown lifecycle error'
+            ),
+            retryable: Boolean(row.retryable),
+            recoveryClassification: row.recovery_classification ?? undefined,
+          }
+        : undefined,
   };
 }
 
