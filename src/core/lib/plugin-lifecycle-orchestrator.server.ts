@@ -55,12 +55,18 @@ async function snapshotPluginState(pluginId: string): Promise<PluginLifecycleSta
   };
 }
 
-async function recordLifecycleOperation(record: PluginLifecycleOperationRecord): Promise<void> {
-  await writePluginLifecycleOperationRecord(record);
+async function recordLifecycleOperation(
+  record: PluginLifecycleOperationRecord,
+  db = getDb()
+): Promise<void> {
+  await writePluginLifecycleOperationRecord(record, db);
 }
 
-async function appendLifecycleEvent(event: PluginLifecycleTransitionEventRecord): Promise<void> {
-  await writePluginLifecycleTransitionEvent(event);
+async function appendLifecycleEvent(
+  event: PluginLifecycleTransitionEventRecord,
+  db = getDb()
+): Promise<void> {
+  await writePluginLifecycleTransitionEvent(event, db);
 }
 
 export async function readLatestPluginLifecycleOperation(
@@ -246,42 +252,48 @@ export async function orchestratePluginLifecycleMutation(
       const nextStateSnapshot = await snapshotPluginState(input.pluginId);
 
       await db.transaction(async (trx) => {
-        await recordLifecycleOperation({
-          schemaVersion: 1,
-          operationId,
-          pluginId: input.pluginId,
-          action: input.action,
-          idempotencyKey,
-          status: 'succeeded',
-          actor: input.initiatedBy,
-          leaseOwner: process.env.HOSTNAME || 'devholm-local',
-          leaseExpiresAt,
-          expectedLifecycleState: input.expectedLifecycleState,
-          authorizationContext: input.authorizationContext as Record<string, unknown> | undefined,
-          mutationAuthorityVersion: MUTATION_AUTHORITY_VERSION,
-          correlationId,
-          currentPhase: 'completed',
-          startedAt,
-          updatedAt: finishedAt,
-          finishedAt,
-          attemptCount: 1,
-          priorStateSnapshot,
-          nextStateSnapshot,
-        });
+        await recordLifecycleOperation(
+          {
+            schemaVersion: 1,
+            operationId,
+            pluginId: input.pluginId,
+            action: input.action,
+            idempotencyKey,
+            status: 'succeeded',
+            actor: input.initiatedBy,
+            leaseOwner: process.env.HOSTNAME || 'devholm-local',
+            leaseExpiresAt,
+            expectedLifecycleState: input.expectedLifecycleState,
+            authorizationContext: input.authorizationContext as Record<string, unknown> | undefined,
+            mutationAuthorityVersion: MUTATION_AUTHORITY_VERSION,
+            correlationId,
+            currentPhase: 'completed',
+            startedAt,
+            updatedAt: finishedAt,
+            finishedAt,
+            attemptCount: 1,
+            priorStateSnapshot,
+            nextStateSnapshot,
+          },
+          trx
+        );
 
-        await appendLifecycleEvent({
-          schemaVersion: 1,
-          eventId: randomUUID(),
-          operationId,
-          pluginId: input.pluginId,
-          transition: input.action,
-          result: 'succeeded',
-          actor: input.initiatedBy,
-          correlationId,
-          timestamp: finishedAt,
-          previousState: priorStateSnapshot,
-          nextState: nextStateSnapshot,
-        });
+        await appendLifecycleEvent(
+          {
+            schemaVersion: 1,
+            eventId: randomUUID(),
+            operationId,
+            pluginId: input.pluginId,
+            transition: input.action,
+            result: 'succeeded',
+            actor: input.initiatedBy,
+            correlationId,
+            timestamp: finishedAt,
+            previousState: priorStateSnapshot,
+            nextState: nextStateSnapshot,
+          },
+          trx
+        );
       });
 
       return {
@@ -293,52 +305,58 @@ export async function orchestratePluginLifecycleMutation(
       const finishedAt = new Date().toISOString();
       const mappedError = mapUnknownLifecycleError(error);
       await db.transaction(async (trx) => {
-        await recordLifecycleOperation({
-          schemaVersion: 1,
-          operationId,
-          pluginId: input.pluginId,
-          action: input.action,
-          idempotencyKey,
-          status: 'failed',
-          actor: input.initiatedBy,
-          leaseOwner: process.env.HOSTNAME || 'devholm-local',
-          leaseExpiresAt,
-          expectedLifecycleState: input.expectedLifecycleState,
-          authorizationContext: input.authorizationContext as Record<string, unknown> | undefined,
-          mutationAuthorityVersion: MUTATION_AUTHORITY_VERSION,
-          correlationId,
-          currentPhase: 'completed',
-          startedAt,
-          updatedAt: finishedAt,
-          finishedAt,
-          attemptCount: 1,
-          priorStateSnapshot,
-          error: {
-            code: mappedError.code,
-            message: mappedError.publicMessage,
-            retryable: mappedError.retryable,
-            recoveryClassification: mappedError.recoveryClassification,
+        await recordLifecycleOperation(
+          {
+            schemaVersion: 1,
+            operationId,
+            pluginId: input.pluginId,
+            action: input.action,
+            idempotencyKey,
+            status: 'failed',
+            actor: input.initiatedBy,
+            leaseOwner: process.env.HOSTNAME || 'devholm-local',
+            leaseExpiresAt,
+            expectedLifecycleState: input.expectedLifecycleState,
+            authorizationContext: input.authorizationContext as Record<string, unknown> | undefined,
+            mutationAuthorityVersion: MUTATION_AUTHORITY_VERSION,
+            correlationId,
+            currentPhase: 'completed',
+            startedAt,
+            updatedAt: finishedAt,
+            finishedAt,
+            attemptCount: 1,
+            priorStateSnapshot,
+            error: {
+              code: mappedError.code,
+              message: mappedError.publicMessage,
+              retryable: mappedError.retryable,
+              recoveryClassification: mappedError.recoveryClassification,
+            },
           },
-        });
-        await appendLifecycleEvent({
-          schemaVersion: 1,
-          eventId: randomUUID(),
-          operationId,
-          pluginId: input.pluginId,
-          transition: input.action,
-          result: 'failed',
-          actor: input.initiatedBy,
-          correlationId,
-          timestamp: finishedAt,
-          previousState: priorStateSnapshot,
-          nextState: priorStateSnapshot,
-          error: {
-            code: mappedError.code,
-            message: mappedError.publicMessage,
-            retryable: mappedError.retryable,
-            recoveryClassification: mappedError.recoveryClassification,
+          trx
+        );
+        await appendLifecycleEvent(
+          {
+            schemaVersion: 1,
+            eventId: randomUUID(),
+            operationId,
+            pluginId: input.pluginId,
+            transition: input.action,
+            result: 'failed',
+            actor: input.initiatedBy,
+            correlationId,
+            timestamp: finishedAt,
+            previousState: priorStateSnapshot,
+            nextState: priorStateSnapshot,
+            error: {
+              code: mappedError.code,
+              message: mappedError.publicMessage,
+              retryable: mappedError.retryable,
+              recoveryClassification: mappedError.recoveryClassification,
+            },
           },
-        });
+          trx
+        );
       });
       throw mappedError;
     }
@@ -351,7 +369,123 @@ export async function orchestratePluginLifecycleMutation(
       const nextStateSnapshot = await snapshotPluginState(input.pluginId);
 
       await db.transaction(async (trx) => {
-        await recordLifecycleOperation({
+        await recordLifecycleOperation(
+          {
+            schemaVersion: 1,
+            operationId,
+            pluginId: input.pluginId,
+            action: input.action,
+            idempotencyKey,
+            status: 'succeeded',
+            actor: input.initiatedBy,
+            leaseOwner: process.env.HOSTNAME || 'devholm-local',
+            leaseExpiresAt,
+            expectedLifecycleState: input.expectedLifecycleState,
+            authorizationContext: input.authorizationContext as Record<string, unknown> | undefined,
+            mutationAuthorityVersion: MUTATION_AUTHORITY_VERSION,
+            correlationId,
+            currentPhase: 'completed',
+            startedAt,
+            updatedAt: finishedAt,
+            finishedAt,
+            attemptCount: 1,
+            priorStateSnapshot,
+            nextStateSnapshot,
+          },
+          trx
+        );
+        await appendLifecycleEvent(
+          {
+            schemaVersion: 1,
+            eventId: randomUUID(),
+            operationId,
+            pluginId: input.pluginId,
+            transition: input.action,
+            result: 'succeeded',
+            actor: input.initiatedBy,
+            correlationId,
+            timestamp: finishedAt,
+            previousState: priorStateSnapshot,
+            nextState: nextStateSnapshot,
+          },
+          trx
+        );
+      });
+
+      return {
+        operationId,
+        status: 'succeeded',
+        replayed: false,
+      };
+    } catch (error) {
+      const finishedAt = new Date().toISOString();
+      const mappedError = mapUnknownLifecycleError(error);
+      await db.transaction(async (trx) => {
+        await recordLifecycleOperation(
+          {
+            schemaVersion: 1,
+            operationId,
+            pluginId: input.pluginId,
+            action: input.action,
+            idempotencyKey,
+            status: 'failed',
+            actor: input.initiatedBy,
+            leaseOwner: process.env.HOSTNAME || 'devholm-local',
+            leaseExpiresAt,
+            expectedLifecycleState: input.expectedLifecycleState,
+            authorizationContext: input.authorizationContext as Record<string, unknown> | undefined,
+            mutationAuthorityVersion: MUTATION_AUTHORITY_VERSION,
+            correlationId,
+            currentPhase: 'completed',
+            startedAt,
+            updatedAt: finishedAt,
+            finishedAt,
+            attemptCount: 1,
+            priorStateSnapshot,
+            error: {
+              code: mappedError.code,
+              message: mappedError.publicMessage,
+              retryable: mappedError.retryable,
+              recoveryClassification: mappedError.recoveryClassification,
+            },
+          },
+          trx
+        );
+        await appendLifecycleEvent(
+          {
+            schemaVersion: 1,
+            eventId: randomUUID(),
+            operationId,
+            pluginId: input.pluginId,
+            transition: input.action,
+            result: 'failed',
+            actor: input.initiatedBy,
+            correlationId,
+            timestamp: finishedAt,
+            previousState: priorStateSnapshot,
+            nextState: priorStateSnapshot,
+            error: {
+              code: mappedError.code,
+              message: mappedError.publicMessage,
+              retryable: mappedError.retryable,
+              recoveryClassification: mappedError.recoveryClassification,
+            },
+          },
+          trx
+        );
+      });
+      throw mappedError;
+    }
+  }
+
+  try {
+    await disablePlugin(input.pluginId, input.initiatedBy);
+    const finishedAt = new Date().toISOString();
+    const nextStateSnapshot = await snapshotPluginState(input.pluginId);
+
+    await db.transaction(async (trx) => {
+      await recordLifecycleOperation(
+        {
           schemaVersion: 1,
           operationId,
           pluginId: input.pluginId,
@@ -372,8 +506,11 @@ export async function orchestratePluginLifecycleMutation(
           attemptCount: 1,
           priorStateSnapshot,
           nextStateSnapshot,
-        });
-        await appendLifecycleEvent({
+        },
+        trx
+      );
+      await appendLifecycleEvent(
+        {
           schemaVersion: 1,
           eventId: randomUUID(),
           operationId,
@@ -385,19 +522,22 @@ export async function orchestratePluginLifecycleMutation(
           timestamp: finishedAt,
           previousState: priorStateSnapshot,
           nextState: nextStateSnapshot,
-        });
-      });
+        },
+        trx
+      );
+    });
 
-      return {
-        operationId,
-        status: 'succeeded',
-        replayed: false,
-      };
-    } catch (error) {
-      const finishedAt = new Date().toISOString();
-      const mappedError = mapUnknownLifecycleError(error);
-      await db.transaction(async (trx) => {
-        await recordLifecycleOperation({
+    return {
+      operationId,
+      status: 'succeeded',
+      replayed: false,
+    };
+  } catch (error) {
+    const finishedAt = new Date().toISOString();
+    const mappedError = mapUnknownLifecycleError(error);
+    await db.transaction(async (trx) => {
+      await recordLifecycleOperation(
+        {
           schemaVersion: 1,
           operationId,
           pluginId: input.pluginId,
@@ -423,8 +563,11 @@ export async function orchestratePluginLifecycleMutation(
             retryable: mappedError.retryable,
             recoveryClassification: mappedError.recoveryClassification,
           },
-        });
-        await appendLifecycleEvent({
+        },
+        trx
+      );
+      await appendLifecycleEvent(
+        {
           schemaVersion: 1,
           eventId: randomUUID(),
           operationId,
@@ -442,110 +585,9 @@ export async function orchestratePluginLifecycleMutation(
             retryable: mappedError.retryable,
             recoveryClassification: mappedError.recoveryClassification,
           },
-        });
-      });
-      throw mappedError;
-    }
-  }
-
-  try {
-    await disablePlugin(input.pluginId, input.initiatedBy);
-    const finishedAt = new Date().toISOString();
-    const nextStateSnapshot = await snapshotPluginState(input.pluginId);
-
-    await db.transaction(async (trx) => {
-      await recordLifecycleOperation({
-        schemaVersion: 1,
-        operationId,
-        pluginId: input.pluginId,
-        action: input.action,
-        idempotencyKey,
-        status: 'succeeded',
-        actor: input.initiatedBy,
-        leaseOwner: process.env.HOSTNAME || 'devholm-local',
-        leaseExpiresAt,
-        expectedLifecycleState: input.expectedLifecycleState,
-        authorizationContext: input.authorizationContext as Record<string, unknown> | undefined,
-        mutationAuthorityVersion: MUTATION_AUTHORITY_VERSION,
-        correlationId,
-        currentPhase: 'completed',
-        startedAt,
-        updatedAt: finishedAt,
-        finishedAt,
-        attemptCount: 1,
-        priorStateSnapshot,
-        nextStateSnapshot,
-      });
-      await appendLifecycleEvent({
-        schemaVersion: 1,
-        eventId: randomUUID(),
-        operationId,
-        pluginId: input.pluginId,
-        transition: input.action,
-        result: 'succeeded',
-        actor: input.initiatedBy,
-        correlationId,
-        timestamp: finishedAt,
-        previousState: priorStateSnapshot,
-        nextState: nextStateSnapshot,
-      });
-    });
-
-    return {
-      operationId,
-      status: 'succeeded',
-      replayed: false,
-    };
-  } catch (error) {
-    const finishedAt = new Date().toISOString();
-    const mappedError = mapUnknownLifecycleError(error);
-    await db.transaction(async (trx) => {
-      await recordLifecycleOperation({
-        schemaVersion: 1,
-        operationId,
-        pluginId: input.pluginId,
-        action: input.action,
-        idempotencyKey,
-        status: 'failed',
-        actor: input.initiatedBy,
-        leaseOwner: process.env.HOSTNAME || 'devholm-local',
-        leaseExpiresAt,
-        expectedLifecycleState: input.expectedLifecycleState,
-        authorizationContext: input.authorizationContext as Record<string, unknown> | undefined,
-        mutationAuthorityVersion: MUTATION_AUTHORITY_VERSION,
-        correlationId,
-        currentPhase: 'completed',
-        startedAt,
-        updatedAt: finishedAt,
-        finishedAt,
-        attemptCount: 1,
-        priorStateSnapshot,
-        error: {
-          code: mappedError.code,
-          message: mappedError.publicMessage,
-          retryable: mappedError.retryable,
-          recoveryClassification: mappedError.recoveryClassification,
         },
-      });
-      await appendLifecycleEvent({
-        schemaVersion: 1,
-        eventId: randomUUID(),
-        operationId,
-        pluginId: input.pluginId,
-        transition: input.action,
-        result: 'failed',
-        actor: input.initiatedBy,
-        correlationId,
-        timestamp: finishedAt,
-        previousState: priorStateSnapshot,
-        nextState: priorStateSnapshot,
-        error: {
-          code: mappedError.code,
-          message: mappedError.publicMessage,
-          retryable: mappedError.retryable,
-          recoveryClassification: mappedError.recoveryClassification,
-        },
-      });
+        trx
+      );
     });
     throw mappedError;
   }
