@@ -65,7 +65,6 @@ export async function PATCH(request: NextRequest) {
       initiatedBy,
       idempotencyKey,
       correlationId,
-      expectedLifecycleState: parsed.data.isEnabled ? 'disabled' : 'installed',
       authorizationContext: {
         isAdmin: true,
         principal: initiatedBy,

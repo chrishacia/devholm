@@ -4,6 +4,7 @@ import { getPluginState } from '@core/db/plugins';
 import { getPluginDefinitions } from '@core/lib/plugins';
 import { disablePlugin, enablePlugin, installPlugin } from '@core/lib/plugin-lifecycle.server';
 import {
+  getInstalledPlugin,
   findActivePluginLifecycleOperation,
   findPluginLifecycleOperationByIdempotencyKey,
   readLatestPluginLifecycleOperationRecord,
@@ -11,11 +12,13 @@ import {
   type PluginLifecycleOperationRecord,
   type PluginLifecycleStateSnapshot,
   type PluginLifecycleTransitionEventRecord,
+  upsertPluginLedgerRecord,
   writePluginLifecycleOperationRecord,
   writePluginLifecycleTransitionEvent,
 } from '@core/db/plugin-lifecycle';
 import { mapUnknownLifecycleError, PluginLifecycleError } from '@core/lib/plugin-lifecycle-errors';
 import { reconcilePluginLifecycleState } from '@core/lib/plugin-lifecycle-reconciler.server';
+import { getBundledPluginManifests } from '@core/lib/plugin-registry.server';
 
 export type PluginLifecycleMutationAction = Extract<
   DurablePluginLifecycleMutationAction,
@@ -153,6 +156,30 @@ function isLeaseExpired(leaseExpiresAt?: string): boolean {
   return expiresAtMs <= Date.now();
 }
 
+async function ensureLifecycleLedgerRecord(pluginId: string): Promise<void> {
+  const existingRecord = await getInstalledPlugin(pluginId);
+  if (existingRecord) {
+    return;
+  }
+
+  const manifest = getBundledPluginManifests().find((entry) => entry.id === pluginId);
+  if (!manifest) {
+    return;
+  }
+
+  await upsertPluginLedgerRecord({
+    manifest,
+    state: 'bundled',
+    operationStatus: 'idle',
+    enabled: false,
+    installedVersion: null,
+    installedAt: null,
+    upgradedAt: null,
+    disabledAt: null,
+    lastError: null,
+  });
+}
+
 export async function orchestratePluginLifecycleMutation(
   input: PluginLifecycleMutationInput
 ): Promise<PluginLifecycleMutationResult> {
@@ -169,11 +196,18 @@ export async function orchestratePluginLifecycleMutation(
   const currentState = await getPluginState(input.pluginId);
   assertTransitionAllowed(input, currentState);
 
+  await ensureLifecycleLedgerRecord(input.pluginId);
+
   const db = getDb();
+
+  const isIdempotentNoopTransition =
+    (input.action === 'enable' && Boolean(currentState?.isEnabled)) ||
+    (input.action === 'disable' && Boolean(currentState?.installed) && !currentState?.isEnabled);
 
   if (
     input.expectedLifecycleState &&
-    currentState?.lifecycleState !== input.expectedLifecycleState
+    currentState?.lifecycleState !== input.expectedLifecycleState &&
+    !isIdempotentNoopTransition
   ) {
     throw new PluginLifecycleError({
       code: 'LIFECYCLE_STALE_OPERATION',

@@ -92,6 +92,13 @@ async function applyPluginMigrationsForEntry(
 
     let batchOrder = 0;
     const operationId = options?.operationId ?? randomUUID();
+    const checkpointOperation = options?.operationId
+      ? await trx('devholm_plugin_lifecycle_operations')
+          .select('operation_id')
+          .where({ operation_id: options.operationId })
+          .first()
+      : null;
+    const canPersistCheckpoints = Boolean(options?.operationId && checkpointOperation);
     for (const migration of pending) {
       const startedAt = Date.now();
       const sourceVersion =
@@ -107,26 +114,27 @@ async function applyPluginMigrationsForEntry(
         sourceVersion: sourceVersion ?? '0.0.0',
         targetVersion,
       });
-      const previousAttempts = await readCompletedPluginMigrationCheckpoints(
-        migration.pluginId,
-        trx
-      );
-      const attemptCount =
-        previousAttempts.filter((entry) => entry.migrationId === migration.migrationId).length + 1;
+      const attemptCount = canPersistCheckpoints
+        ? (await readCompletedPluginMigrationCheckpoints(migration.pluginId, trx)).filter(
+            (entry) => entry.migrationId === migration.migrationId
+          ).length + 1
+        : 1;
 
-      const checkpoint = await startPluginMigrationCheckpoint(
-        {
-          operationId,
-          pluginId: migration.pluginId,
-          pluginVersion: migration.pluginVersion,
-          migrationId: migration.migrationId,
-          direction: 'up',
-          attemptCount,
-          irreversible: isIrreversibleMigration(manifest, migration.migrationId),
-          checksum: migration.checksum,
-        },
-        trx
-      );
+      const checkpoint = canPersistCheckpoints
+        ? await startPluginMigrationCheckpoint(
+            {
+              operationId,
+              pluginId: migration.pluginId,
+              pluginVersion: migration.pluginVersion,
+              migrationId: migration.migrationId,
+              direction: 'up',
+              attemptCount,
+              irreversible: isIrreversibleMigration(manifest, migration.migrationId),
+              checksum: migration.checksum,
+            },
+            trx
+          )
+        : null;
 
       try {
         const execution = await executePluginMigrationWithGate({
@@ -151,26 +159,30 @@ async function applyPluginMigrationsForEntry(
             }).then(() => undefined),
         });
         if (execution.state !== 'succeeded') {
-          await markPluginMigrationCheckpointFailed(
-            {
-              checkpointId: checkpoint.checkpointId,
-              status: execution.state === 'blocked' ? 'blocked' : 'failed',
-              errorCode:
-                execution.state === 'blocked'
-                  ? 'LIFECYCLE_MIGRATION_BLOCKED'
-                  : 'LIFECYCLE_MIGRATION_FAILED',
-              publicMessage: execution.detail ?? execution.state,
-              internalDiagnostic: execution.detail ?? execution.state,
-            },
-            trx
-          );
+          if (checkpoint) {
+            await markPluginMigrationCheckpointFailed(
+              {
+                checkpointId: checkpoint.checkpointId,
+                status: execution.state === 'blocked' ? 'blocked' : 'failed',
+                errorCode:
+                  execution.state === 'blocked'
+                    ? 'LIFECYCLE_MIGRATION_BLOCKED'
+                    : 'LIFECYCLE_MIGRATION_FAILED',
+                publicMessage: execution.detail ?? execution.state,
+                internalDiagnostic: execution.detail ?? execution.state,
+              },
+              trx
+            );
+          }
 
           throw new Error(
             `Plugin migration execution failed for ${migration.migrationId}: ${execution.detail ?? execution.state}`
           );
         }
 
-        await markPluginMigrationCheckpointCompleted(checkpoint.checkpointId, trx);
+        if (checkpoint) {
+          await markPluginMigrationCheckpointCompleted(checkpoint.checkpointId, trx);
+        }
 
         batchOrder += 1;
 
@@ -195,17 +207,19 @@ async function applyPluginMigrationsForEntry(
           db: trx,
         });
       } catch (error) {
-        await markPluginMigrationCheckpointFailed(
-          {
-            checkpointId: checkpoint.checkpointId,
-            status: 'failed',
-            errorCode: 'LIFECYCLE_MIGRATION_FAILED',
-            publicMessage: error instanceof Error ? error.message : String(error),
-            internalDiagnostic:
-              error instanceof Error ? error.stack ?? error.message : String(error),
-          },
-          trx
-        );
+        if (checkpoint) {
+          await markPluginMigrationCheckpointFailed(
+            {
+              checkpointId: checkpoint.checkpointId,
+              status: 'failed',
+              errorCode: 'LIFECYCLE_MIGRATION_FAILED',
+              publicMessage: error instanceof Error ? error.message : String(error),
+              internalDiagnostic:
+                error instanceof Error ? error.stack ?? error.message : String(error),
+            },
+            trx
+          );
+        }
         throw error;
       }
 
@@ -298,6 +312,13 @@ export async function applyPluginMigrationDowns(
     }
 
     const operationId = options?.operationId ?? randomUUID();
+    const checkpointOperation = options?.operationId
+      ? await trx('devholm_plugin_lifecycle_operations')
+          .select('operation_id')
+          .where({ operation_id: options.operationId })
+          .first()
+      : null;
+    const canPersistCheckpoints = Boolean(options?.operationId && checkpointOperation);
     for (const migration of [...discovered].reverse()) {
       const rollbackTarget = await trx('devholm_plugin_migrations')
         .select('execution_id')
@@ -320,26 +341,27 @@ export async function applyPluginMigrationDowns(
         sourceVersion: migration.pluginVersion,
         targetVersion: '0.0.0',
       });
-      const previousAttempts = await readCompletedPluginMigrationCheckpoints(
-        migration.pluginId,
-        trx
-      );
-      const attemptCount =
-        previousAttempts.filter((entry) => entry.migrationId === migration.migrationId).length + 1;
+      const attemptCount = canPersistCheckpoints
+        ? (await readCompletedPluginMigrationCheckpoints(migration.pluginId, trx)).filter(
+            (entry) => entry.migrationId === migration.migrationId
+          ).length + 1
+        : 1;
 
-      const checkpoint = await startPluginMigrationCheckpoint(
-        {
-          operationId,
-          pluginId: migration.pluginId,
-          pluginVersion: migration.pluginVersion,
-          migrationId: migration.migrationId,
-          direction: 'down',
-          attemptCount,
-          irreversible: false,
-          checksum: migration.checksum,
-        },
-        trx
-      );
+      const checkpoint = canPersistCheckpoints
+        ? await startPluginMigrationCheckpoint(
+            {
+              operationId,
+              pluginId: migration.pluginId,
+              pluginVersion: migration.pluginVersion,
+              migrationId: migration.migrationId,
+              direction: 'down',
+              attemptCount,
+              irreversible: false,
+              checksum: migration.checksum,
+            },
+            trx
+          )
+        : null;
 
       let execution;
       try {
@@ -365,40 +387,46 @@ export async function applyPluginMigrationDowns(
             }).then(() => undefined),
         });
       } catch (error) {
-        await markPluginMigrationCheckpointFailed(
-          {
-            checkpointId: checkpoint.checkpointId,
-            status: 'failed',
-            errorCode: 'LIFECYCLE_MIGRATION_FAILED',
-            publicMessage: error instanceof Error ? error.message : String(error),
-            internalDiagnostic:
-              error instanceof Error ? error.stack ?? error.message : String(error),
-          },
-          trx
-        );
+        if (checkpoint) {
+          await markPluginMigrationCheckpointFailed(
+            {
+              checkpointId: checkpoint.checkpointId,
+              status: 'failed',
+              errorCode: 'LIFECYCLE_MIGRATION_FAILED',
+              publicMessage: error instanceof Error ? error.message : String(error),
+              internalDiagnostic:
+                error instanceof Error ? error.stack ?? error.message : String(error),
+            },
+            trx
+          );
+        }
         throw error;
       }
 
       if (execution.state !== 'succeeded') {
-        await markPluginMigrationCheckpointFailed(
-          {
-            checkpointId: checkpoint.checkpointId,
-            status: execution.state === 'blocked' ? 'blocked' : 'failed',
-            errorCode:
-              execution.state === 'blocked'
-                ? 'LIFECYCLE_MIGRATION_BLOCKED'
-                : 'LIFECYCLE_MIGRATION_FAILED',
-            publicMessage: execution.detail ?? execution.state,
-            internalDiagnostic: execution.detail ?? execution.state,
-          },
-          trx
-        );
+        if (checkpoint) {
+          await markPluginMigrationCheckpointFailed(
+            {
+              checkpointId: checkpoint.checkpointId,
+              status: execution.state === 'blocked' ? 'blocked' : 'failed',
+              errorCode:
+                execution.state === 'blocked'
+                  ? 'LIFECYCLE_MIGRATION_BLOCKED'
+                  : 'LIFECYCLE_MIGRATION_FAILED',
+              publicMessage: execution.detail ?? execution.state,
+              internalDiagnostic: execution.detail ?? execution.state,
+            },
+            trx
+          );
+        }
         throw new Error(
           `Plugin migration rollback failed for ${migration.migrationId}: ${execution.detail ?? execution.state}`
         );
       }
 
-      await markPluginMigrationCheckpointCompleted(checkpoint.checkpointId, trx);
+      if (checkpoint) {
+        await markPluginMigrationCheckpointCompleted(checkpoint.checkpointId, trx);
+      }
 
       await insertPluginMigrationLedger({
         pluginId: migration.pluginId,

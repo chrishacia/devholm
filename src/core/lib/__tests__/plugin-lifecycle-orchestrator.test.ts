@@ -7,10 +7,13 @@ const enablePlugin = vi.hoisted(() => vi.fn());
 const disablePlugin = vi.hoisted(() => vi.fn());
 const findActivePluginLifecycleOperation = vi.hoisted(() => vi.fn());
 const findPluginLifecycleOperationByIdempotencyKey = vi.hoisted(() => vi.fn());
+const getInstalledPlugin = vi.hoisted(() => vi.fn());
+const upsertPluginLedgerRecord = vi.hoisted(() => vi.fn());
 const writePluginLifecycleOperationRecord = vi.hoisted(() => vi.fn());
 const writePluginLifecycleTransitionEvent = vi.hoisted(() => vi.fn());
 const readLatestPluginLifecycleOperationRecord = vi.hoisted(() => vi.fn());
 const reconcilePluginLifecycleState = vi.hoisted(() => vi.fn());
+const getBundledPluginManifests = vi.hoisted(() => vi.fn());
 
 vi.mock('@/db', () => ({
   getDb,
@@ -29,9 +32,15 @@ vi.mock('@core/lib/plugin-lifecycle.server', () => ({
 vi.mock('@core/db/plugin-lifecycle', () => ({
   findActivePluginLifecycleOperation,
   findPluginLifecycleOperationByIdempotencyKey,
+  getInstalledPlugin,
+  upsertPluginLedgerRecord,
   writePluginLifecycleOperationRecord,
   writePluginLifecycleTransitionEvent,
   readLatestPluginLifecycleOperationRecord,
+}));
+
+vi.mock('@core/lib/plugin-registry.server', () => ({
+  getBundledPluginManifests,
 }));
 
 vi.mock('@core/lib/plugin-lifecycle-reconciler.server', () => ({
@@ -50,6 +59,28 @@ function createDbMock() {
 describe('plugin lifecycle orchestration facade', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getInstalledPlugin.mockResolvedValue({
+      pluginId: 'url-shortener',
+      bundledVersion: '1.0.0',
+      installedVersion: '1.0.0',
+      enabled: false,
+      lifecycleState: 'installed',
+      operationStatus: 'idle',
+      installedAt: null,
+      upgradedAt: null,
+      disabledAt: null,
+      updatedAt: null,
+      lastError: null,
+      manifestChecksum: null,
+    });
+    upsertPluginLedgerRecord.mockResolvedValue(undefined);
+    getBundledPluginManifests.mockReturnValue([
+      {
+        id: 'url-shortener',
+        name: 'URL Shortener',
+        version: '1.0.0',
+      },
+    ]);
     reconcilePluginLifecycleState.mockResolvedValue({
       action: 'none',
       reason: 'default test reconciliation',

@@ -7,6 +7,17 @@ import { evaluateMarketplacePublisherTrustPolicy } from '@core/lib/plugin-market
 import { loadTrustedMarketplaceKeysFromEnv } from '@core/lib/plugin-marketplace-trusted-keys.server';
 import { deriveCanonicalMarketplaceLifecycleView } from '@core/lib/plugin-lifecycle-state-view.server';
 import { readLatestPluginLifecycleOperation } from '@core/lib/plugin-lifecycle-orchestrator.server';
+import { readLatestPluginLifecycleTransitionEventRecord } from '@core/db/plugin-lifecycle';
+import {
+  determinePluginRollbackCompatibility,
+  readCompletedPluginMigrationCheckpoints,
+  readInterruptedPluginMigrationCheckpoint,
+} from '@core/db/plugin-migration-checkpoints';
+import { reconcilePluginLifecycleState } from '@core/lib/plugin-lifecycle-reconciler.server';
+import {
+  derivePluginLifecycleActionAuthority,
+  type PluginLifecycleActionAuthority,
+} from '@core/lib/plugin-lifecycle-action-authority.server';
 import type {
   CanonicalEnvironment,
   CanonicalSourceDescriptor,
@@ -159,99 +170,60 @@ async function readOperation(pluginId: string) {
   }
 }
 
-function mapActionability(params: {
-  plugin: PluginAdminRecord;
-  catalogEntry: MarketplaceCatalogEntry;
-  signature: MarketplaceArtifactTrustVerification;
-  trustPolicy: ReturnType<typeof evaluateMarketplacePublisherTrustPolicy> | null;
-  hasActiveOperation: boolean;
-  hasRollbackCandidate: boolean;
-}) {
-  const { plugin, catalogEntry, signature, trustPolicy, hasActiveOperation, hasRollbackCandidate } =
-    params;
+function mapRecoveryClassification(
+  action: string
+): 'none' | 'retryable' | 'recovery-required' | 'manual-intervention-required' {
+  if (action === 'manual-intervention-required') {
+    return 'manual-intervention-required';
+  }
 
-  const blockedByRuntime = !catalogEntry.runtimeInstallSupported;
-  const blockedBySignature = signature.trustDecision !== 'trusted';
-  const blockedByTrust = Boolean(trustPolicy && trustPolicy.outcome !== 'allow');
-  const blockedByOperation = hasActiveOperation;
+  if (action === 'take-over-expired-lease' || action === 'resume-safe-retry') {
+    return 'retryable';
+  }
 
-  const installBlocked =
-    blockedByRuntime ||
-    blockedBySignature ||
-    blockedByTrust ||
-    blockedByOperation ||
-    plugin.installed;
+  if (action === 'require-recovery' || action === 'schedule-rollback') {
+    return 'recovery-required';
+  }
 
-  const installReasonCode = blockedByOperation
-    ? 'operation-in-progress'
-    : blockedByRuntime
-      ? 'runtime-install-unsupported'
-      : blockedBySignature
-        ? signature.verificationStatus
-        : blockedByTrust
-          ? trustPolicy?.reasonCode ?? 'publisher-policy-denied'
-          : plugin.installed
-            ? 'already-installed'
-            : null;
+  return 'none';
+}
 
-  return {
-    install: {
-      allowed: !installBlocked,
-      reasonCode: installReasonCode,
-      remediation:
-        installReasonCode === 'operation-in-progress'
-          ? 'Wait for the active operation to complete, then retry.'
-          : installReasonCode === 'runtime-install-unsupported'
-            ? 'Runtime install for this plugin is not available in the current release line.'
-            : installReasonCode === 'already-installed'
-              ? 'Use update, enable, disable, or uninstall actions instead.'
-              : 'Review signature and publisher trust requirements before retrying.',
-    },
-    update: {
-      allowed: false,
-      reasonCode: 'update-not-yet-supported',
-      remediation: 'Update flow is not yet exposed for marketplace-admin runtime operations.',
-    },
-    rollback: {
-      allowed: false,
-      reasonCode: hasRollbackCandidate
-        ? 'rollback-contract-not-yet-supported'
-        : 'no-eligible-rollback-candidate',
-      remediation: hasRollbackCandidate
-        ? 'Rollback candidate exists in history, but marketplace rollback runtime contract is not yet exposed.'
-        : 'No rollback candidate is currently eligible for this plugin.',
-    },
-    enable: {
-      allowed: plugin.installed && !plugin.isEnabled && !hasActiveOperation,
-      reasonCode:
-        plugin.installed && !plugin.isEnabled && !hasActiveOperation
-          ? null
-          : hasActiveOperation
-            ? 'operation-in-progress'
-            : plugin.isEnabled
-              ? 'already-enabled'
-              : 'not-installed',
-      remediation:
-        plugin.installed && !plugin.isEnabled && !hasActiveOperation
-          ? 'Enable can proceed.'
-          : 'Install and complete active operations before enabling.',
-    },
-    disable: {
-      allowed: plugin.installed && plugin.isEnabled && !hasActiveOperation,
-      reasonCode:
-        plugin.installed && plugin.isEnabled && !hasActiveOperation
-          ? null
-          : hasActiveOperation
-            ? 'operation-in-progress'
-            : !plugin.installed
-              ? 'not-installed'
-              : 'already-disabled',
-      remediation:
-        plugin.installed && plugin.isEnabled && !hasActiveOperation
-          ? 'Disable can proceed.'
-          : 'Only installed and enabled plugins can be disabled.',
-    },
-  };
+function mapSafeOperatorMessage(action: string): string {
+  switch (action) {
+    case 'resume-safe-retry':
+      return 'A lifecycle operation is actively running and should be allowed to finish.';
+    case 'take-over-expired-lease':
+      return 'The previous lifecycle lease expired; takeover can be executed safely.';
+    case 'finalize-proven-success':
+      return 'An expired operation has durable success evidence and can be finalized.';
+    case 'schedule-rollback':
+      return 'Rollback should be scheduled before additional lifecycle mutations.';
+    case 'require-recovery':
+      return 'Recovery is required before further lifecycle changes can proceed.';
+    case 'manual-intervention-required':
+      return 'Manual intervention is required before lifecycle operations can continue.';
+    default:
+      return 'Lifecycle state is healthy for standard orchestrated operations.';
+  }
+}
+
+function mapRemediation(action: string): string {
+  switch (action) {
+    case 'resume-safe-retry':
+      return 'Monitor operation progress and wait for durable completion.';
+    case 'take-over-expired-lease':
+      return 'Use the takeover action to reconcile the expired operation lease.';
+    case 'finalize-proven-success':
+      return 'Finalize the operation and refresh operator state projections.';
+    case 'schedule-rollback':
+      return 'Run rollback through canonical orchestrator APIs and verify migration compatibility.';
+    case 'require-recovery':
+      return 'Open recovery flow and reconcile interrupted or ambiguous lifecycle phases.';
+    case 'manual-intervention-required':
+      return 'Follow manual intervention runbook and acknowledge completion.';
+    default:
+      return 'Proceed with canonical server-provided lifecycle actions.';
+  }
 }
 
 export interface MarketplaceAdminPluginView {
@@ -276,7 +248,40 @@ export interface MarketplaceAdminPluginView {
     stage: string | null;
     operationId: string | null;
     updatedAt: string | null;
+    leaseOwner: string | null;
+    leaseExpiresAt: string | null;
+    leaseExpired: boolean;
     recoveryRequired: boolean;
+  };
+  desiredLifecycleState: string;
+  observedLifecycleState: string;
+  reconciliation: {
+    action: string;
+    recoveryClassification:
+      | 'none'
+      | 'retryable'
+      | 'recovery-required'
+      | 'manual-intervention-required';
+    message: string;
+    remediation: string;
+  };
+  rollback: {
+    eligible: boolean;
+    reasonCode: string;
+  };
+  latestTransition: {
+    eventId: string | null;
+    transition: string | null;
+    result: 'succeeded' | 'failed' | null;
+    timestamp: string | null;
+    errorCode: string | null;
+  };
+  migrationCheckpoint: {
+    interrupted: boolean;
+    interruptedMigrationId: string | null;
+    interruptedDirection: 'up' | 'down' | null;
+    completedCount: number;
+    latestCompletedMigrationId: string | null;
   };
   sourceResolution: {
     configuredSourceKind: CanonicalSourceDescriptor['sourceKind'];
@@ -301,7 +306,14 @@ export interface MarketplaceAdminPluginView {
     summaryState: CanonicalPluginSummaryState;
     validationErrors: readonly string[];
   };
-  actions: ReturnType<typeof mapActionability>;
+  actionAuthority: PluginLifecycleActionAuthority;
+  actions: {
+    install: { allowed: boolean; reasonCode: string | null; remediation: string };
+    update: { allowed: boolean; reasonCode: string | null; remediation: string };
+    rollback: { allowed: boolean; reasonCode: string | null; remediation: string };
+    enable: { allowed: boolean; reasonCode: string | null; remediation: string };
+    disable: { allowed: boolean; reasonCode: string | null; remediation: string };
+  };
 }
 
 function resolveMarketplaceEnvironment(): CanonicalEnvironment {
@@ -341,9 +353,19 @@ export async function listMarketplaceAdminPlugins(): Promise<MarketplaceAdminPlu
       const { signature, trustPolicy } = evaluateSignatureAndTrust(catalogEntry);
       const operation = await readOperation(plugin.id);
       const lifecycleOperation = await readLatestPluginLifecycleOperation(plugin.id);
+      const latestTransition = await readLatestPluginLifecycleTransitionEventRecord(plugin.id);
+      const interruptedCheckpoint = await readInterruptedPluginMigrationCheckpoint(plugin.id);
+      const completedCheckpoints = await readCompletedPluginMigrationCheckpoints(plugin.id);
+      const rollbackCompatibility = await determinePluginRollbackCompatibility(plugin.id);
+      const reconciliation = await reconcilePluginLifecycleState(plugin.id);
       const history = await getPluginUpdateHistory(plugin.id);
       const hasActiveOperation =
         operation?.status === 'in_progress' || lifecycleOperation?.status === 'running';
+      const leaseExpiresAt = lifecycleOperation?.leaseExpiresAt ?? null;
+      const leaseExpired =
+        Boolean(leaseExpiresAt) &&
+        Number.isFinite(Date.parse(String(leaseExpiresAt))) &&
+        Date.parse(String(leaseExpiresAt)) <= Date.now();
       const nowMs = Date.now();
       const hasRollbackCandidate = history.some((item) => {
         if (!item.rollbackAvailableUntil) {
@@ -353,6 +375,96 @@ export async function listMarketplaceAdminPlugins(): Promise<MarketplaceAdminPlu
         return Number.isFinite(until) && until > nowMs && item.status === 'success';
       });
       const sourceStatus = sourceStatusByPluginId.get(plugin.id);
+      const lifecycleState = deriveCanonicalMarketplaceLifecycleView({
+        installed: plugin.installed,
+        enabled: plugin.isEnabled,
+        operation: {
+          hasActive: Boolean(hasActiveOperation),
+          status: operation?.status ?? null,
+          stage: operation?.stage ?? null,
+          recoveryRequired: operation?.status === 'failed' || operation?.status === 'interrupted',
+        },
+        signature: {
+          decision: signature.trustDecision,
+          status: signature.verificationStatus,
+        },
+        trustPolicy: trustPolicy
+          ? {
+              outcome: trustPolicy.outcome,
+              reasonCode: trustPolicy.reasonCode,
+            }
+          : {
+              outcome: 'unknown',
+              reasonCode: 'signature-missing-or-key-unknown',
+            },
+        sourceResolutionHasErrors: sourceDiagnostics.hasErrors,
+        history,
+        nowMs,
+      });
+
+      const rollbackEligible =
+        hasRollbackCandidate &&
+        rollbackCompatibility.rollbackCompatible &&
+        interruptedCheckpoint === null &&
+        reconciliation.action !== 'require-recovery' &&
+        reconciliation.action !== 'manual-intervention-required';
+
+      const rollbackReasonCode = !hasRollbackCandidate
+        ? 'no-eligible-rollback-candidate'
+        : !rollbackCompatibility.rollbackCompatible
+          ? rollbackCompatibility.reason
+          : interruptedCheckpoint
+            ? 'interrupted-migration-present'
+            : reconciliation.action === 'require-recovery' ||
+                reconciliation.action === 'manual-intervention-required'
+              ? 'recovery-required'
+              : 'compatible';
+
+      const actionAuthority = derivePluginLifecycleActionAuthority({
+        installed: plugin.installed,
+        enabled: plugin.isEnabled,
+        hasActiveOperation: Boolean(hasActiveOperation),
+        leaseExpired,
+        trustAllowed: signature.trustDecision === 'trusted' && trustPolicy?.outcome !== 'deny',
+        runtimeInstallSupported: catalogEntry.runtimeInstallSupported,
+        sourceResolutionHasErrors: sourceDiagnostics.hasErrors,
+        rollbackEligible,
+        rollbackReason: rollbackReasonCode,
+        reconciliationAction: reconciliation.action,
+        canonical: {
+          axes: lifecycleState.axes,
+          summaryState: lifecycleState.summaryState,
+        },
+        canMutate: true,
+      });
+
+      const mappedActions = {
+        install: {
+          allowed: actionAuthority.byId.install.enabled,
+          reasonCode: actionAuthority.byId.install.reasonCode,
+          remediation: actionAuthority.byId.install.safeExplanation,
+        },
+        update: {
+          allowed: actionAuthority.byId.update.enabled,
+          reasonCode: actionAuthority.byId.update.reasonCode,
+          remediation: actionAuthority.byId.update.safeExplanation,
+        },
+        rollback: {
+          allowed: actionAuthority.byId.rollback.enabled,
+          reasonCode: actionAuthority.byId.rollback.reasonCode,
+          remediation: actionAuthority.byId.rollback.safeExplanation,
+        },
+        enable: {
+          allowed: actionAuthority.byId.enable.enabled,
+          reasonCode: actionAuthority.byId.enable.reasonCode,
+          remediation: actionAuthority.byId.enable.safeExplanation,
+        },
+        disable: {
+          allowed: actionAuthority.byId.disable.enabled,
+          reasonCode: actionAuthority.byId.disable.reasonCode,
+          remediation: actionAuthority.byId.disable.safeExplanation,
+        },
+      };
 
       return {
         plugin,
@@ -395,16 +507,54 @@ export async function listMarketplaceAdminPlugins(): Promise<MarketplaceAdminPlu
                 : null),
           operationId: operation?.operationId ?? null,
           updatedAt: operation?.updatedAt ?? lifecycleOperation?.updatedAt ?? null,
+          leaseOwner: lifecycleOperation?.leaseOwner ?? null,
+          leaseExpiresAt,
+          leaseExpired,
           recoveryRequired:
             operation?.status === 'failed' ||
             operation?.status === 'interrupted' ||
-            lifecycleOperation?.status === 'failed',
+            lifecycleOperation?.status === 'failed' ||
+            interruptedCheckpoint !== null ||
+            reconciliation.action === 'require-recovery' ||
+            reconciliation.action === 'manual-intervention-required',
+        },
+        desiredLifecycleState: lifecycleState.axes.desired,
+        observedLifecycleState: lifecycleState.summaryState,
+        reconciliation: {
+          action: reconciliation.action,
+          recoveryClassification: mapRecoveryClassification(reconciliation.action),
+          message: mapSafeOperatorMessage(reconciliation.action),
+          remediation: mapRemediation(reconciliation.action),
+        },
+        rollback: {
+          eligible: rollbackEligible,
+          reasonCode: rollbackReasonCode,
+        },
+        latestTransition: {
+          eventId: latestTransition?.eventId ?? null,
+          transition: latestTransition?.transition ?? null,
+          result: latestTransition?.result ?? null,
+          timestamp: latestTransition?.timestamp ?? null,
+          errorCode: latestTransition?.error?.code ?? null,
+        },
+        migrationCheckpoint: {
+          interrupted: interruptedCheckpoint !== null,
+          interruptedMigrationId: interruptedCheckpoint?.migrationId ?? null,
+          interruptedDirection: interruptedCheckpoint?.direction ?? null,
+          completedCount: completedCheckpoints.length,
+          latestCompletedMigrationId:
+            completedCheckpoints.length > 0
+              ? completedCheckpoints[completedCheckpoints.length - 1]?.migrationId ?? null
+              : null,
         },
         sourceResolution: {
           configuredSourceKind: sourceStatus?.configuredSourceKind ?? 'bundled-fallback-artifact',
           resolvedSourceKind: sourceStatus?.resolvedSourceKind ?? null,
           localOverrideEnabled: sourceStatus?.localOverrideEnabled ?? false,
-          localOverrideFilesystemPath: sourceStatus?.localOverrideFilesystemPath ?? null,
+          localOverrideFilesystemPath:
+            sourceStatus?.localOverrideEnabled && sourceStatus?.localOverrideFilesystemPath
+              ? '[redacted-local-override-path]'
+              : null,
           resolverFailureCodes: sourceStatus?.resolverFailureCodes ?? [],
           diagnostics: sourceDiagnostics,
         },
@@ -415,40 +565,9 @@ export async function listMarketplaceAdminPlugins(): Promise<MarketplaceAdminPlu
           appliedAt: item.appliedAt,
           rollbackAvailableUntil: item.rollbackAvailableUntil,
         })),
-        lifecycleState: deriveCanonicalMarketplaceLifecycleView({
-          installed: plugin.installed,
-          enabled: plugin.isEnabled,
-          operation: {
-            hasActive: Boolean(hasActiveOperation),
-            status: operation?.status ?? null,
-            stage: operation?.stage ?? null,
-            recoveryRequired: operation?.status === 'failed' || operation?.status === 'interrupted',
-          },
-          signature: {
-            decision: signature.trustDecision,
-            status: signature.verificationStatus,
-          },
-          trustPolicy: trustPolicy
-            ? {
-                outcome: trustPolicy.outcome,
-                reasonCode: trustPolicy.reasonCode,
-              }
-            : {
-                outcome: 'unknown',
-                reasonCode: 'signature-missing-or-key-unknown',
-              },
-          sourceResolutionHasErrors: sourceDiagnostics.hasErrors,
-          history,
-          nowMs,
-        }),
-        actions: mapActionability({
-          plugin,
-          catalogEntry,
-          signature,
-          trustPolicy,
-          hasActiveOperation: Boolean(hasActiveOperation),
-          hasRollbackCandidate,
-        }),
+        lifecycleState,
+        actionAuthority,
+        actions: mappedActions,
       };
     })
   );

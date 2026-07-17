@@ -190,6 +190,14 @@ function lifecycleEventsTable(db: Knex) {
   return db('devholm_plugin_lifecycle_events');
 }
 
+function parseJsonColumn<T>(value: unknown): T {
+  if (typeof value === 'string') {
+    return JSON.parse(value) as T;
+  }
+
+  return value as T;
+}
+
 export async function writePluginLifecycleOperationRecord(
   record: PluginLifecycleOperationRecord,
   db: Knex = getDb()
@@ -296,7 +304,7 @@ export async function readLatestPluginLifecycleOperationRecord(
       ? String(row.expected_lifecycle_state)
       : undefined,
     authorizationContext: row.authorization_context
-      ? (JSON.parse(String(row.authorization_context)) as Record<string, unknown>)
+      ? parseJsonColumn<Record<string, unknown>>(row.authorization_context)
       : undefined,
     mutationAuthorityVersion: row.mutation_authority_version
       ? String(row.mutation_authority_version)
@@ -308,10 +316,10 @@ export async function readLatestPluginLifecycleOperationRecord(
     finishedAt: row.finished_at ? String(row.finished_at) : undefined,
     attemptCount: Number(row.attempt_count ?? 1),
     priorStateSnapshot: row.prior_state_snapshot
-      ? JSON.parse(String(row.prior_state_snapshot))
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.prior_state_snapshot)
       : null,
     nextStateSnapshot: row.next_state_snapshot
-      ? JSON.parse(String(row.next_state_snapshot))
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.next_state_snapshot)
       : undefined,
     error:
       row.error_code || row.public_message || row.recovery_classification
@@ -355,7 +363,7 @@ export async function findPluginLifecycleOperationByIdempotencyKey(
       ? String(row.expected_lifecycle_state)
       : undefined,
     authorizationContext: row.authorization_context
-      ? (JSON.parse(String(row.authorization_context)) as Record<string, unknown>)
+      ? parseJsonColumn<Record<string, unknown>>(row.authorization_context)
       : undefined,
     mutationAuthorityVersion: row.mutation_authority_version
       ? String(row.mutation_authority_version)
@@ -367,10 +375,10 @@ export async function findPluginLifecycleOperationByIdempotencyKey(
     finishedAt: row.finished_at ? String(row.finished_at) : undefined,
     attemptCount: Number(row.attempt_count ?? 1),
     priorStateSnapshot: row.prior_state_snapshot
-      ? JSON.parse(String(row.prior_state_snapshot))
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.prior_state_snapshot)
       : null,
     nextStateSnapshot: row.next_state_snapshot
-      ? JSON.parse(String(row.next_state_snapshot))
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.next_state_snapshot)
       : undefined,
     error:
       row.error_code || row.public_message || row.recovery_classification
@@ -414,7 +422,7 @@ export async function findActivePluginLifecycleOperation(
       ? String(row.expected_lifecycle_state)
       : undefined,
     authorizationContext: row.authorization_context
-      ? (JSON.parse(String(row.authorization_context)) as Record<string, unknown>)
+      ? parseJsonColumn<Record<string, unknown>>(row.authorization_context)
       : undefined,
     mutationAuthorityVersion: row.mutation_authority_version
       ? String(row.mutation_authority_version)
@@ -426,10 +434,10 @@ export async function findActivePluginLifecycleOperation(
     finishedAt: row.finished_at ? String(row.finished_at) : undefined,
     attemptCount: Number(row.attempt_count ?? 1),
     priorStateSnapshot: row.prior_state_snapshot
-      ? JSON.parse(String(row.prior_state_snapshot))
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.prior_state_snapshot)
       : null,
     nextStateSnapshot: row.next_state_snapshot
-      ? JSON.parse(String(row.next_state_snapshot))
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.next_state_snapshot)
       : undefined,
     error:
       row.error_code || row.public_message || row.recovery_classification
@@ -468,12 +476,18 @@ export async function readLatestPluginLifecycleTransitionEventRecord(
     actor: row.actor ?? undefined,
     correlationId: String(row.correlation_id),
     timestamp: String(row.timestamp),
-    previousState: row.previous_state ? JSON.parse(String(row.previous_state)) : null,
-    nextState: row.next_state ? JSON.parse(String(row.next_state)) : null,
+    previousState: row.previous_state
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.previous_state)
+      : null,
+    nextState: row.next_state
+      ? parseJsonColumn<PluginLifecycleStateSnapshot>(row.next_state)
+      : null,
     desiredState: row.desired_state ? String(row.desired_state) : null,
-    buildReference: row.build_reference ? JSON.parse(String(row.build_reference)) : null,
+    buildReference: row.build_reference
+      ? parseJsonColumn<Record<string, unknown>>(row.build_reference)
+      : null,
     deploymentReference: row.deployment_reference
-      ? JSON.parse(String(row.deployment_reference))
+      ? parseJsonColumn<Record<string, unknown>>(row.deployment_reference)
       : null,
     pluginVersion: row.plugin_version ? String(row.plugin_version) : null,
     artifactDigest: row.artifact_digest ? String(row.artifact_digest) : null,
