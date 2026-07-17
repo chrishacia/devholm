@@ -347,4 +347,85 @@ describe('plugin lifecycle orchestration facade', () => {
     expect(writePluginLifecycleOperationRecord).not.toHaveBeenCalled();
     expect(writePluginLifecycleTransitionEvent).not.toHaveBeenCalled();
   });
+
+  it('reconciles expired active operation lease before taking ownership', async () => {
+    const dbMock = createDbMock();
+    getDb.mockReturnValue(dbMock);
+    findPluginLifecycleOperationByIdempotencyKey.mockResolvedValue(null);
+    findActivePluginLifecycleOperation
+      .mockResolvedValueOnce({
+        schemaVersion: 1,
+        operationId: 'op-expired',
+        pluginId: 'url-shortener',
+        action: 'disable',
+        status: 'running',
+        actor: 'admin@example.com',
+        leaseOwner: 'worker-1',
+        leaseExpiresAt: '2000-01-01T00:00:00.000Z',
+        correlationId: 'corr-expired',
+        currentPhase: 'executing',
+        startedAt: '2026-07-16T00:00:00.000Z',
+        updatedAt: '2026-07-16T00:00:01.000Z',
+        attemptCount: 1,
+        priorStateSnapshot: null,
+      })
+      .mockResolvedValueOnce(null);
+    writePluginLifecycleOperationRecord.mockResolvedValue(undefined);
+    writePluginLifecycleTransitionEvent.mockResolvedValue(undefined);
+    getPluginState
+      .mockResolvedValueOnce({
+        installed: true,
+        isEnabled: false,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '1.0.0',
+        bundledVersion: '1.0.0',
+        updatedAt: new Date('2026-07-16T00:00:00.000Z'),
+      })
+      .mockResolvedValueOnce({
+        installed: true,
+        isEnabled: false,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '1.0.0',
+        bundledVersion: '1.0.0',
+        updatedAt: new Date('2026-07-16T00:00:00.000Z'),
+      })
+      .mockResolvedValueOnce({
+        installed: true,
+        isEnabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '1.0.0',
+        bundledVersion: '1.0.0',
+        updatedAt: new Date('2026-07-16T00:00:02.000Z'),
+      });
+    enablePlugin.mockResolvedValue(undefined);
+
+    const result = await orchestratePluginLifecycleMutation({
+      action: 'enable',
+      pluginId: 'url-shortener',
+      initiatedBy: 'admin@example.com',
+      idempotencyKey: 'idem-takeover-1',
+    });
+
+    expect(result.status).toBe('succeeded');
+    expect(result.replayed).toBe(false);
+    expect(enablePlugin).toHaveBeenCalledTimes(1);
+    expect(writePluginLifecycleOperationRecord).toHaveBeenCalledTimes(3);
+    expect(writePluginLifecycleTransitionEvent).toHaveBeenCalledTimes(2);
+
+    const reconciledOperation = writePluginLifecycleOperationRecord.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(reconciledOperation).toMatchObject({
+      operationId: 'op-expired',
+      status: 'interrupted',
+      currentPhase: 'completed',
+      error: {
+        code: 'LIFECYCLE_STALE_OPERATION',
+      },
+    });
+  });
 });

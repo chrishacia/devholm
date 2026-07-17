@@ -139,6 +139,19 @@ function assertTransitionAllowed(
   }
 }
 
+function isLeaseExpired(leaseExpiresAt?: string): boolean {
+  if (!leaseExpiresAt) {
+    return false;
+  }
+
+  const expiresAtMs = Date.parse(leaseExpiresAt);
+  if (!Number.isFinite(expiresAtMs)) {
+    return false;
+  }
+
+  return expiresAtMs <= Date.now();
+}
+
 export async function orchestratePluginLifecycleMutation(
   input: PluginLifecycleMutationInput
 ): Promise<PluginLifecycleMutationResult> {
@@ -199,9 +212,62 @@ export async function orchestratePluginLifecycleMutation(
 
   const activeOperation = await findActivePluginLifecycleOperation(input.pluginId, db);
   if (activeOperation) {
+    if (isLeaseExpired(activeOperation.leaseExpiresAt)) {
+      const reconciledAt = new Date().toISOString();
+      await db.transaction(async (trx) => {
+        await recordLifecycleOperation(
+          {
+            ...activeOperation,
+            status: 'interrupted',
+            currentPhase: 'completed',
+            updatedAt: reconciledAt,
+            finishedAt: reconciledAt,
+            error: {
+              code: 'LIFECYCLE_STALE_OPERATION',
+              message: 'Lifecycle lease expired before operation completion.',
+              retryable: true,
+              recoveryClassification: 'reconcile-on-restart',
+            },
+          },
+          trx
+        );
+
+        await appendLifecycleEvent(
+          {
+            schemaVersion: 1,
+            eventId: randomUUID(),
+            operationId: activeOperation.operationId,
+            pluginId: activeOperation.pluginId,
+            transition: activeOperation.action,
+            result: 'failed',
+            actor: activeOperation.actor,
+            correlationId: activeOperation.correlationId,
+            timestamp: reconciledAt,
+            previousState: activeOperation.priorStateSnapshot,
+            nextState: activeOperation.priorStateSnapshot,
+            error: {
+              code: 'LIFECYCLE_STALE_OPERATION',
+              message: 'Lifecycle lease expired before operation completion.',
+              retryable: true,
+              recoveryClassification: 'reconcile-on-restart',
+            },
+          },
+          trx
+        );
+      });
+    } else {
+      throw new PluginLifecycleError({
+        code: 'LIFECYCLE_OPERATION_CONFLICT',
+        internalDiagnostic: `active lifecycle operation ${activeOperation.operationId} prevents ${input.action}:${input.pluginId}`,
+      });
+    }
+  }
+
+  const activeOperationAfterReconciliation = await findActivePluginLifecycleOperation(input.pluginId, db);
+  if (activeOperationAfterReconciliation) {
     throw new PluginLifecycleError({
       code: 'LIFECYCLE_OPERATION_CONFLICT',
-      internalDiagnostic: `active lifecycle operation ${activeOperation.operationId} prevents ${input.action}:${input.pluginId}`,
+      internalDiagnostic: `active lifecycle operation ${activeOperationAfterReconciliation.operationId} prevents ${input.action}:${input.pluginId}`,
     });
   }
 
