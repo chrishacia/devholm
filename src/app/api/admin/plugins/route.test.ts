@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { PluginLifecycleError } from '@core/lib/plugin-lifecycle-errors';
 
 const verifyAdmin = vi.hoisted(() => vi.fn());
 const listPluginStates = vi.hoisted(() => vi.fn());
@@ -137,5 +138,26 @@ describe('admin plugins PATCH route', () => {
 
     expect(response.status).toBe(409);
     expect(body.error).toContain('not installed');
+  });
+
+  it('maps stable lifecycle error metadata to response status and message', async () => {
+    orchestratePluginLifecycleMutation.mockRejectedValue(
+      new PluginLifecycleError({
+        code: 'LIFECYCLE_INFRASTRUCTURE_UNAVAILABLE',
+        internalDiagnostic: 'database unavailable',
+      })
+    );
+
+    const request = new NextRequest('http://localhost:3000/api/admin/plugins', {
+      method: 'PATCH',
+      body: JSON.stringify({ pluginId: 'url-shortener', isEnabled: true }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await PATCH(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.error).toBe('Lifecycle infrastructure is temporarily unavailable.');
   });
 });

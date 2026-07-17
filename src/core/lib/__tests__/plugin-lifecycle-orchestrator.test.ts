@@ -34,6 +34,7 @@ vi.mock('@core/db/plugin-lifecycle', () => ({
 }));
 
 import { orchestratePluginLifecycleMutation } from '@core/lib/plugin-lifecycle-orchestrator.server';
+import { PluginLifecycleError } from '@core/lib/plugin-lifecycle-errors';
 
 function createDbMock() {
   return {
@@ -206,5 +207,144 @@ describe('plugin lifecycle orchestration facade', () => {
         code: 'LIFECYCLE_INVALID_TRANSITION',
       },
     });
+  });
+
+  it('rejects stale expected lifecycle state before mutation', async () => {
+    const dbMock = createDbMock();
+    getDb.mockReturnValue(dbMock);
+    getPluginState
+      .mockResolvedValueOnce({
+        installed: true,
+        isEnabled: false,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '1.0.0',
+        bundledVersion: '1.0.0',
+        updatedAt: new Date('2026-07-16T00:00:00.000Z'),
+      })
+      .mockResolvedValueOnce({
+        installed: true,
+        isEnabled: false,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '1.0.0',
+        bundledVersion: '1.0.0',
+        updatedAt: new Date('2026-07-16T00:00:00.000Z'),
+      });
+
+    await expect(
+      orchestratePluginLifecycleMutation({
+        action: 'enable',
+        pluginId: 'url-shortener',
+        expectedLifecycleState: 'disabled',
+      })
+    ).rejects.toMatchObject({ code: 'LIFECYCLE_STALE_OPERATION' } as PluginLifecycleError);
+
+    expect(enablePlugin).not.toHaveBeenCalled();
+    expect(writePluginLifecycleOperationRecord).not.toHaveBeenCalled();
+    expect(writePluginLifecycleTransitionEvent).not.toHaveBeenCalled();
+  });
+
+  it('replays succeeded operation for repeated idempotency key', async () => {
+    const dbMock = createDbMock();
+    getDb.mockReturnValue(dbMock);
+    findPluginLifecycleOperationByIdempotencyKey.mockResolvedValue({
+      schemaVersion: 1,
+      operationId: 'op-existing',
+      pluginId: 'url-shortener',
+      action: 'enable',
+      idempotencyKey: 'idem-1',
+      status: 'succeeded',
+      correlationId: 'corr-existing',
+      currentPhase: 'completed',
+      startedAt: '2026-07-16T00:00:00.000Z',
+      updatedAt: '2026-07-16T00:00:01.000Z',
+      attemptCount: 1,
+      priorStateSnapshot: null,
+    });
+    getPluginState
+      .mockResolvedValueOnce({
+        installed: true,
+        isEnabled: false,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '1.0.0',
+        bundledVersion: '1.0.0',
+        updatedAt: new Date('2026-07-16T00:00:00.000Z'),
+      })
+      .mockResolvedValueOnce({
+        installed: true,
+        isEnabled: false,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '1.0.0',
+        bundledVersion: '1.0.0',
+        updatedAt: new Date('2026-07-16T00:00:00.000Z'),
+      });
+
+    const result = await orchestratePluginLifecycleMutation({
+      action: 'enable',
+      pluginId: 'url-shortener',
+      idempotencyKey: 'idem-1',
+    });
+
+    expect(result).toEqual({
+      operationId: 'op-existing',
+      status: 'succeeded',
+      replayed: true,
+    });
+    expect(enablePlugin).not.toHaveBeenCalled();
+    expect(writePluginLifecycleOperationRecord).not.toHaveBeenCalled();
+    expect(writePluginLifecycleTransitionEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects operation when another active operation exists', async () => {
+    const dbMock = createDbMock();
+    getDb.mockReturnValue(dbMock);
+    findPluginLifecycleOperationByIdempotencyKey.mockResolvedValue(null);
+    findActivePluginLifecycleOperation.mockResolvedValue({
+      schemaVersion: 1,
+      operationId: 'op-running',
+      pluginId: 'url-shortener',
+      action: 'disable',
+      status: 'running',
+      correlationId: 'corr-running',
+      currentPhase: 'executing',
+      startedAt: '2026-07-16T00:00:00.000Z',
+      updatedAt: '2026-07-16T00:00:01.000Z',
+      attemptCount: 1,
+      priorStateSnapshot: null,
+    });
+    getPluginState
+      .mockResolvedValueOnce({
+        installed: true,
+        isEnabled: false,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '1.0.0',
+        bundledVersion: '1.0.0',
+        updatedAt: new Date('2026-07-16T00:00:00.000Z'),
+      })
+      .mockResolvedValueOnce({
+        installed: true,
+        isEnabled: false,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '1.0.0',
+        bundledVersion: '1.0.0',
+        updatedAt: new Date('2026-07-16T00:00:00.000Z'),
+      });
+
+    await expect(
+      orchestratePluginLifecycleMutation({
+        action: 'enable',
+        pluginId: 'url-shortener',
+        idempotencyKey: 'idem-2',
+      })
+    ).rejects.toMatchObject({ code: 'LIFECYCLE_OPERATION_CONFLICT' } as PluginLifecycleError);
+
+    expect(enablePlugin).not.toHaveBeenCalled();
+    expect(writePluginLifecycleOperationRecord).not.toHaveBeenCalled();
+    expect(writePluginLifecycleTransitionEvent).not.toHaveBeenCalled();
   });
 });
