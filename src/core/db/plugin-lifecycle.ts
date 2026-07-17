@@ -40,8 +40,14 @@ export interface PluginLifecycleOperationRecord {
   operationId: string;
   pluginId: string;
   action: PluginLifecycleMutationAction;
+  idempotencyKey?: string;
   status: PluginLifecycleMutationStatus;
   actor?: string;
+  leaseOwner?: string;
+  leaseExpiresAt?: string;
+  expectedLifecycleState?: string;
+  authorizationContext?: Record<string, unknown>;
+  mutationAuthorityVersion?: string;
   correlationId: string;
   currentPhase: PluginLifecycleMutationPhase;
   startedAt: string;
@@ -193,8 +199,16 @@ export async function writePluginLifecycleOperationRecord(
     operation_id: record.operationId,
     plugin_id: record.pluginId,
     action: record.action,
+    idempotency_key: record.idempotencyKey ?? null,
     status: record.status,
     actor: record.actor ?? null,
+    lease_owner: record.leaseOwner ?? null,
+    lease_expires_at: record.leaseExpiresAt ?? null,
+    expected_lifecycle_state: record.expectedLifecycleState ?? null,
+    authorization_context: record.authorizationContext
+      ? JSON.stringify(record.authorizationContext)
+      : null,
+    mutation_authority_version: record.mutationAuthorityVersion ?? 'v1',
     correlation_id: record.correlationId,
     current_phase: record.currentPhase,
     started_at: record.startedAt,
@@ -273,8 +287,138 @@ export async function readLatestPluginLifecycleOperationRecord(
     operationId: String(row.operation_id),
     pluginId: String(row.plugin_id),
     action: row.action as PluginLifecycleMutationAction,
+    idempotencyKey: row.idempotency_key ? String(row.idempotency_key) : undefined,
     status: row.status as PluginLifecycleMutationStatus,
     actor: row.actor ?? undefined,
+    leaseOwner: row.lease_owner ? String(row.lease_owner) : undefined,
+    leaseExpiresAt: row.lease_expires_at ? String(row.lease_expires_at) : undefined,
+    expectedLifecycleState: row.expected_lifecycle_state
+      ? String(row.expected_lifecycle_state)
+      : undefined,
+    authorizationContext: row.authorization_context
+      ? (JSON.parse(String(row.authorization_context)) as Record<string, unknown>)
+      : undefined,
+    mutationAuthorityVersion: row.mutation_authority_version
+      ? String(row.mutation_authority_version)
+      : 'v1',
+    correlationId: String(row.correlation_id),
+    currentPhase: row.current_phase as PluginLifecycleMutationPhase,
+    startedAt: String(row.started_at),
+    updatedAt: String(row.updated_at),
+    finishedAt: row.finished_at ? String(row.finished_at) : undefined,
+    attemptCount: Number(row.attempt_count ?? 1),
+    priorStateSnapshot: row.prior_state_snapshot
+      ? JSON.parse(String(row.prior_state_snapshot))
+      : null,
+    nextStateSnapshot: row.next_state_snapshot
+      ? JSON.parse(String(row.next_state_snapshot))
+      : undefined,
+    error:
+      row.error_code || row.public_message || row.recovery_classification
+        ? {
+            code: row.error_code ?? undefined,
+            message: String(
+              row.public_message ?? row.internal_diagnostic ?? 'Unknown lifecycle error'
+            ),
+            retryable: Boolean(row.retryable),
+            recoveryClassification: row.recovery_classification ?? undefined,
+          }
+        : undefined,
+  };
+}
+
+export async function findPluginLifecycleOperationByIdempotencyKey(
+  pluginId: string,
+  idempotencyKey: string,
+  db: Knex = getDb()
+): Promise<PluginLifecycleOperationRecord | null> {
+  const row = await lifecycleOperationsTable(db)
+    .where({ plugin_id: pluginId, idempotency_key: idempotencyKey })
+    .orderBy('updated_at', 'desc')
+    .first();
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    schemaVersion: Number(row.schema_version ?? 1) as 1,
+    operationId: String(row.operation_id),
+    pluginId: String(row.plugin_id),
+    action: row.action as PluginLifecycleMutationAction,
+    idempotencyKey: row.idempotency_key ? String(row.idempotency_key) : undefined,
+    status: row.status as PluginLifecycleMutationStatus,
+    actor: row.actor ?? undefined,
+    leaseOwner: row.lease_owner ? String(row.lease_owner) : undefined,
+    leaseExpiresAt: row.lease_expires_at ? String(row.lease_expires_at) : undefined,
+    expectedLifecycleState: row.expected_lifecycle_state
+      ? String(row.expected_lifecycle_state)
+      : undefined,
+    authorizationContext: row.authorization_context
+      ? (JSON.parse(String(row.authorization_context)) as Record<string, unknown>)
+      : undefined,
+    mutationAuthorityVersion: row.mutation_authority_version
+      ? String(row.mutation_authority_version)
+      : 'v1',
+    correlationId: String(row.correlation_id),
+    currentPhase: row.current_phase as PluginLifecycleMutationPhase,
+    startedAt: String(row.started_at),
+    updatedAt: String(row.updated_at),
+    finishedAt: row.finished_at ? String(row.finished_at) : undefined,
+    attemptCount: Number(row.attempt_count ?? 1),
+    priorStateSnapshot: row.prior_state_snapshot
+      ? JSON.parse(String(row.prior_state_snapshot))
+      : null,
+    nextStateSnapshot: row.next_state_snapshot
+      ? JSON.parse(String(row.next_state_snapshot))
+      : undefined,
+    error:
+      row.error_code || row.public_message || row.recovery_classification
+        ? {
+            code: row.error_code ?? undefined,
+            message: String(
+              row.public_message ?? row.internal_diagnostic ?? 'Unknown lifecycle error'
+            ),
+            retryable: Boolean(row.retryable),
+            recoveryClassification: row.recovery_classification ?? undefined,
+          }
+        : undefined,
+  };
+}
+
+export async function findActivePluginLifecycleOperation(
+  pluginId: string,
+  db: Knex = getDb()
+): Promise<PluginLifecycleOperationRecord | null> {
+  const row = await lifecycleOperationsTable(db)
+    .where({ plugin_id: pluginId })
+    .whereIn('status', ['requested', 'running'])
+    .orderBy('updated_at', 'desc')
+    .first();
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    schemaVersion: Number(row.schema_version ?? 1) as 1,
+    operationId: String(row.operation_id),
+    pluginId: String(row.plugin_id),
+    action: row.action as PluginLifecycleMutationAction,
+    idempotencyKey: row.idempotency_key ? String(row.idempotency_key) : undefined,
+    status: row.status as PluginLifecycleMutationStatus,
+    actor: row.actor ?? undefined,
+    leaseOwner: row.lease_owner ? String(row.lease_owner) : undefined,
+    leaseExpiresAt: row.lease_expires_at ? String(row.lease_expires_at) : undefined,
+    expectedLifecycleState: row.expected_lifecycle_state
+      ? String(row.expected_lifecycle_state)
+      : undefined,
+    authorizationContext: row.authorization_context
+      ? (JSON.parse(String(row.authorization_context)) as Record<string, unknown>)
+      : undefined,
+    mutationAuthorityVersion: row.mutation_authority_version
+      ? String(row.mutation_authority_version)
+      : 'v1',
     correlationId: String(row.correlation_id),
     currentPhase: row.current_phase as PluginLifecycleMutationPhase,
     startedAt: String(row.started_at),

@@ -40,11 +40,13 @@ describe('admin plugins PATCH route', () => {
 
     const response = await PATCH(request);
     expect(response.status).toBe(200);
-    expect(orchestratePluginLifecycleMutation).toHaveBeenCalledWith({
-      action: 'enable',
-      pluginId: 'url-shortener',
-      initiatedBy: 'admin@example.com',
-    });
+    expect(orchestratePluginLifecycleMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'enable',
+        pluginId: 'url-shortener',
+        initiatedBy: 'admin@example.com',
+      })
+    );
   });
 
   it('delegates disable requests to disablePlugin with initiator identity', async () => {
@@ -56,11 +58,13 @@ describe('admin plugins PATCH route', () => {
 
     const response = await PATCH(request);
     expect(response.status).toBe(200);
-    expect(orchestratePluginLifecycleMutation).toHaveBeenCalledWith({
-      action: 'disable',
-      pluginId: 'url-shortener',
-      initiatedBy: 'admin@example.com',
-    });
+    expect(orchestratePluginLifecycleMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'disable',
+        pluginId: 'url-shortener',
+        initiatedBy: 'admin@example.com',
+      })
+    );
   });
 
   it('returns conflict response for uninstalled-enable failures', async () => {
@@ -108,11 +112,13 @@ describe('admin plugins PATCH route', () => {
 
     const response = await POST(request);
     expect(response.status).toBe(200);
-    expect(orchestratePluginLifecycleMutation).toHaveBeenCalledWith({
-      action: 'install',
-      pluginId: 'url-shortener',
-      initiatedBy: 'admin@example.com',
-    });
+    expect(orchestratePluginLifecycleMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'install',
+        pluginId: 'url-shortener',
+        initiatedBy: 'admin@example.com',
+      })
+    );
   });
 
   it('returns conflict response for install dependency rejection', async () => {
