@@ -15,6 +15,7 @@ import {
   writePluginLifecycleTransitionEvent,
 } from '@core/db/plugin-lifecycle';
 import { mapUnknownLifecycleError, PluginLifecycleError } from '@core/lib/plugin-lifecycle-errors';
+import { reconcilePluginLifecycleState } from '@core/lib/plugin-lifecycle-reconciler.server';
 
 export type PluginLifecycleMutationAction = Extract<
   DurablePluginLifecycleMutationAction,
@@ -212,7 +213,44 @@ export async function orchestratePluginLifecycleMutation(
 
   const activeOperation = await findActivePluginLifecycleOperation(input.pluginId, db);
   if (activeOperation) {
-    if (isLeaseExpired(activeOperation.leaseExpiresAt)) {
+    const reconciliation = await reconcilePluginLifecycleState(input.pluginId);
+
+    if (reconciliation.action === 'resume-safe-retry') {
+      throw new PluginLifecycleError({
+        code: 'LIFECYCLE_OPERATION_CONFLICT',
+        internalDiagnostic: `active lifecycle operation ${activeOperation.operationId} prevents ${input.action}:${input.pluginId}`,
+      });
+    }
+
+    if (
+      reconciliation.action === 'require-recovery' ||
+      reconciliation.action === 'manual-intervention-required' ||
+      reconciliation.action === 'schedule-rollback'
+    ) {
+      throw new PluginLifecycleError({
+        code: 'LIFECYCLE_RECOVERY_REQUIRED',
+        internalDiagnostic: reconciliation.reason,
+      });
+    }
+
+    if (reconciliation.action === 'finalize-proven-success') {
+      const reconciledAt = new Date().toISOString();
+      await db.transaction(async (trx) => {
+        await recordLifecycleOperation(
+          {
+            ...activeOperation,
+            status: 'succeeded',
+            currentPhase: 'completed',
+            updatedAt: reconciledAt,
+            finishedAt: reconciledAt,
+          },
+          trx
+        );
+      });
+    } else if (
+      reconciliation.action === 'take-over-expired-lease' ||
+      isLeaseExpired(activeOperation.leaseExpiresAt)
+    ) {
       const reconciledAt = new Date().toISOString();
       await db.transaction(async (trx) => {
         await recordLifecycleOperation(
@@ -257,13 +295,16 @@ export async function orchestratePluginLifecycleMutation(
       });
     } else {
       throw new PluginLifecycleError({
-        code: 'LIFECYCLE_OPERATION_CONFLICT',
-        internalDiagnostic: `active lifecycle operation ${activeOperation.operationId} prevents ${input.action}:${input.pluginId}`,
+        code: 'LIFECYCLE_RECOVERY_REQUIRED',
+        internalDiagnostic: `Unable to reconcile active operation ${activeOperation.operationId}: ${reconciliation.reason}`,
       });
     }
   }
 
-  const activeOperationAfterReconciliation = await findActivePluginLifecycleOperation(input.pluginId, db);
+  const activeOperationAfterReconciliation = await findActivePluginLifecycleOperation(
+    input.pluginId,
+    db
+  );
   if (activeOperationAfterReconciliation) {
     throw new PluginLifecycleError({
       code: 'LIFECYCLE_OPERATION_CONFLICT',

@@ -5,6 +5,7 @@ const ACTIVE_OPERATION_INDEX = 'devholm_plugin_lifecycle_operations_plugin_id_ac
 
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.alterTable('devholm_plugin_lifecycle_operations', (table) => {
+    table.integer('schema_version').notNullable().defaultTo(1);
     table.string('idempotency_key', 255).nullable();
     table.string('lease_owner', 255).nullable();
     table.timestamp('lease_expires_at').nullable();
@@ -31,6 +32,7 @@ export async function down(knex: Knex): Promise<void> {
   await knex.raw(`DROP INDEX IF EXISTS ${IDEMPOTENCY_INDEX}`);
 
   await knex.schema.alterTable('devholm_plugin_lifecycle_operations', (table) => {
+    table.dropColumn('schema_version');
     table.dropColumn('idempotency_key');
     table.dropColumn('lease_owner');
     table.dropColumn('lease_expires_at');

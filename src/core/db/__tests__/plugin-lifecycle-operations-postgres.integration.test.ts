@@ -51,6 +51,24 @@ async function migrateCoreSchemas(db: Knex): Promise<void> {
 async function resetLifecycleTables(db: Knex): Promise<void> {
   await db('devholm_plugin_lifecycle_events').del();
   await db('devholm_plugin_lifecycle_operations').del();
+  await db('devholm_plugins').where({ plugin_id: 'url-shortener' }).del();
+}
+
+async function seedPluginLedgerRow(db: Knex): Promise<void> {
+  await db('devholm_plugins').insert({
+    plugin_id: 'url-shortener',
+    bundled_version: '1.0.0',
+    installed_version: '1.0.0',
+    enabled: false,
+    lifecycle_state: 'installed',
+    operation_status: 'idle',
+    installed_at: new Date(),
+    upgraded_at: null,
+    disabled_at: null,
+    last_error: null,
+    manifest_checksum: null,
+    updated_at: new Date(),
+  });
 }
 
 function sampleState(overrides: Partial<Record<string, unknown>> = {}) {
@@ -145,6 +163,7 @@ postgresDescribe('plugin lifecycle operations PostgreSQL integration', () => {
 
   beforeEach(async () => {
     await resetLifecycleTables(integrationDb);
+    await seedPluginLedgerRow(integrationDb);
   });
 
   it('enforces unique idempotency key per plugin', async () => {

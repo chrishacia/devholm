@@ -445,6 +445,52 @@ export async function findActivePluginLifecycleOperation(
   };
 }
 
+export async function readLatestPluginLifecycleTransitionEventRecord(
+  pluginId: string,
+  db: Knex = getDb()
+): Promise<PluginLifecycleTransitionEventRecord | null> {
+  const row = await lifecycleEventsTable(db)
+    .where({ plugin_id: pluginId })
+    .orderBy('timestamp', 'desc')
+    .first();
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    schemaVersion: Number(row.schema_version ?? 1) as 1,
+    eventId: String(row.event_id),
+    operationId: String(row.operation_id),
+    pluginId: String(row.plugin_id),
+    transition: row.transition as PluginLifecycleMutationAction,
+    result: row.result as 'succeeded' | 'failed',
+    actor: row.actor ?? undefined,
+    correlationId: String(row.correlation_id),
+    timestamp: String(row.timestamp),
+    previousState: row.previous_state ? JSON.parse(String(row.previous_state)) : null,
+    nextState: row.next_state ? JSON.parse(String(row.next_state)) : null,
+    desiredState: row.desired_state ? String(row.desired_state) : null,
+    buildReference: row.build_reference ? JSON.parse(String(row.build_reference)) : null,
+    deploymentReference: row.deployment_reference
+      ? JSON.parse(String(row.deployment_reference))
+      : null,
+    pluginVersion: row.plugin_version ? String(row.plugin_version) : null,
+    artifactDigest: row.artifact_digest ? String(row.artifact_digest) : null,
+    error:
+      row.error_code || row.public_message || row.recovery_classification
+        ? {
+            code: row.error_code ?? undefined,
+            message: String(
+              row.public_message ?? row.internal_diagnostic ?? 'Unknown lifecycle error'
+            ),
+            retryable: Boolean(row.retryable),
+            recoveryClassification: row.recovery_classification ?? undefined,
+          }
+        : undefined,
+  };
+}
+
 export async function listInstalledPlugins(): Promise<InstalledPluginRecord[]> {
   const db = getDb();
   const rows = await db('devholm_plugins').select('*').orderBy('plugin_id', 'asc');

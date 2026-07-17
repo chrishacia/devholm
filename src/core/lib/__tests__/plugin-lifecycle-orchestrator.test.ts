@@ -10,6 +10,7 @@ const findPluginLifecycleOperationByIdempotencyKey = vi.hoisted(() => vi.fn());
 const writePluginLifecycleOperationRecord = vi.hoisted(() => vi.fn());
 const writePluginLifecycleTransitionEvent = vi.hoisted(() => vi.fn());
 const readLatestPluginLifecycleOperationRecord = vi.hoisted(() => vi.fn());
+const reconcilePluginLifecycleState = vi.hoisted(() => vi.fn());
 
 vi.mock('@/db', () => ({
   getDb,
@@ -33,6 +34,10 @@ vi.mock('@core/db/plugin-lifecycle', () => ({
   readLatestPluginLifecycleOperationRecord,
 }));
 
+vi.mock('@core/lib/plugin-lifecycle-reconciler.server', () => ({
+  reconcilePluginLifecycleState,
+}));
+
 import { orchestratePluginLifecycleMutation } from '@core/lib/plugin-lifecycle-orchestrator.server';
 import { PluginLifecycleError } from '@core/lib/plugin-lifecycle-errors';
 
@@ -45,6 +50,11 @@ function createDbMock() {
 describe('plugin lifecycle orchestration facade', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    reconcilePluginLifecycleState.mockResolvedValue({
+      action: 'none',
+      reason: 'default test reconciliation',
+      operationId: null,
+    });
   });
 
   it('records durable operation state and an audit event on success', async () => {
@@ -315,6 +325,11 @@ describe('plugin lifecycle orchestration facade', () => {
       attemptCount: 1,
       priorStateSnapshot: null,
     });
+    reconcilePluginLifecycleState.mockResolvedValue({
+      action: 'resume-safe-retry',
+      reason: 'lease active',
+      operationId: 'op-running',
+    });
     getPluginState
       .mockResolvedValueOnce({
         installed: true,
@@ -370,6 +385,11 @@ describe('plugin lifecycle orchestration facade', () => {
         priorStateSnapshot: null,
       })
       .mockResolvedValueOnce(null);
+    reconcilePluginLifecycleState.mockResolvedValue({
+      action: 'take-over-expired-lease',
+      reason: 'expired lease',
+      operationId: 'op-expired',
+    });
     writePluginLifecycleOperationRecord.mockResolvedValue(undefined);
     writePluginLifecycleTransitionEvent.mockResolvedValue(undefined);
     getPluginState
