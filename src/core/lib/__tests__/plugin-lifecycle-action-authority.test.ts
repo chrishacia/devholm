@@ -63,6 +63,13 @@ describe('derivePluginLifecycleActionAuthority', () => {
     expect(authority.byId.retry.enabled).toBe(false);
   });
 
+  it('blocks install when trust policy is not explicitly allowed', () => {
+    const authority = derivePluginLifecycleActionAuthority(buildInput({ trustAllowed: false }));
+
+    expect(authority.byId.install.enabled).toBe(false);
+    expect(authority.byId.install.reasonCode).toBe('trust-blocked');
+  });
+
   it('enables recover and blocks enable when reconciliation requires recovery', () => {
     const authority = derivePluginLifecycleActionAuthority(
       buildInput({ installed: true, reconciliationAction: 'require-recovery' })

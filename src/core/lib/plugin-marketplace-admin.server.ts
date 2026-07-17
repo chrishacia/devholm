@@ -425,7 +425,7 @@ export async function listMarketplaceAdminPlugins(): Promise<MarketplaceAdminPlu
         enabled: plugin.isEnabled,
         hasActiveOperation: Boolean(hasActiveOperation),
         leaseExpired,
-        trustAllowed: signature.trustDecision === 'trusted' && trustPolicy?.outcome !== 'deny',
+        trustAllowed: signature.trustDecision === 'trusted' && trustPolicy?.outcome === 'allow',
         runtimeInstallSupported: catalogEntry.runtimeInstallSupported,
         sourceResolutionHasErrors: sourceDiagnostics.hasErrors,
         rollbackEligible,

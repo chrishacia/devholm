@@ -15,7 +15,6 @@ import {
 import {
   markPluginMigrationCheckpointCompleted,
   markPluginMigrationCheckpointFailed,
-  readCompletedPluginMigrationCheckpoints,
   startPluginMigrationCheckpoint,
 } from '@core/db/plugin-migration-checkpoints';
 import { getBundledPluginManifests } from '@core/lib/plugin-registry.server';
@@ -114,10 +113,22 @@ async function applyPluginMigrationsForEntry(
         sourceVersion: sourceVersion ?? '0.0.0',
         targetVersion,
       });
+      const checkpointAttemptRow = canPersistCheckpoints
+        ? await trx('devholm_plugin_migration_checkpoints')
+            .where({
+              operation_id: operationId,
+              plugin_id: migration.pluginId,
+              migration_id: migration.migrationId,
+              direction: 'up',
+            })
+            .max<{ max_attempt?: number | string }>({ max_attempt: 'attempt_count' })
+            .first()
+        : null;
+      const latestAttempt = Number(checkpointAttemptRow?.max_attempt ?? 0);
       const attemptCount = canPersistCheckpoints
-        ? (await readCompletedPluginMigrationCheckpoints(migration.pluginId, trx)).filter(
-            (entry) => entry.migrationId === migration.migrationId
-          ).length + 1
+        ? Number.isFinite(latestAttempt)
+          ? latestAttempt + 1
+          : 1
         : 1;
 
       const checkpoint = canPersistCheckpoints
@@ -341,10 +352,22 @@ export async function applyPluginMigrationDowns(
         sourceVersion: migration.pluginVersion,
         targetVersion: '0.0.0',
       });
+      const checkpointAttemptRow = canPersistCheckpoints
+        ? await trx('devholm_plugin_migration_checkpoints')
+            .where({
+              operation_id: operationId,
+              plugin_id: migration.pluginId,
+              migration_id: migration.migrationId,
+              direction: 'down',
+            })
+            .max<{ max_attempt?: number | string }>({ max_attempt: 'attempt_count' })
+            .first()
+        : null;
+      const latestAttempt = Number(checkpointAttemptRow?.max_attempt ?? 0);
       const attemptCount = canPersistCheckpoints
-        ? (await readCompletedPluginMigrationCheckpoints(migration.pluginId, trx)).filter(
-            (entry) => entry.migrationId === migration.migrationId
-          ).length + 1
+        ? Number.isFinite(latestAttempt)
+          ? latestAttempt + 1
+          : 1
         : 1;
 
       const checkpoint = canPersistCheckpoints
