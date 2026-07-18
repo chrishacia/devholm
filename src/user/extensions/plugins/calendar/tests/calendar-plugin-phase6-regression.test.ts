@@ -49,7 +49,11 @@ describe('calendar phase 6 regression coverage', () => {
     ]);
     expect(registry.plugins.map((plugin) => plugin.version)).toEqual(['0.1.0', '0.1.0', '0.1.0']);
     expect(registry.plugins.find((plugin) => plugin.id === CALENDAR_PLUGIN_ID)?.migrations).toEqual(
-      []
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'calendar:20260718010000_calendar_canonical_authority',
+        }),
+      ])
     );
   });
 

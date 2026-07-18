@@ -1,40 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server';
-import {
-  getCalendarCollectionBySlug,
-  listCalendarBlocks,
-  listCalendarEventTypes,
-} from '@/db/calendar';
-import { isPluginEnabled } from '@/db/plugins';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
+import { runApiExtension } from '@core/lib/extensions.server';
 
 interface RouteParams {
   params: Promise<{ slug: string }>;
 }
 
-export async function GET(_request: NextRequest, { params }: RouteParams) {
-  if (!(await isPluginEnabled('calendar').catch(() => false))) {
-    return NextResponse.json({ error: 'Calendar plugin is disabled' }, { status: 404 });
-  }
-
+export async function GET(request: NextRequest, { params }: RouteParams) {
   const { slug } = await params;
 
-  try {
-    const calendar = await getCalendarCollectionBySlug(slug, false);
-    if (!calendar) {
-      return NextResponse.json({ error: 'Calendar not found' }, { status: 404 });
-    }
-
-    const [blocks, eventTypes] = await Promise.all([
-      listCalendarBlocks(calendar.id, { includePrivate: false }),
-      listCalendarEventTypes(calendar.id, true),
-    ]);
-
-    return NextResponse.json({
-      calendar,
-      blocks,
-      eventTypes,
-    });
-  } catch (error) {
-    console.error('Failed to fetch public calendar:', error);
-    return NextResponse.json({ error: 'Failed to fetch calendar' }, { status: 500 });
+  const response = await runApiExtension('GET', request, ['calendar', slug]);
+  if (response) {
+    return response;
   }
+
+  return NextResponse.json({ error: 'Calendar plugin is disabled' }, { status: 404 });
 }

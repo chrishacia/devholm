@@ -7,6 +7,7 @@ import {
   CALENDAR_CAPABILITY_PUBLIC_VIEWING,
   CALENDAR_ENABLEMENT_KEY,
   CALENDAR_LIFECYCLE_DATA_RETENTION_POLICY,
+  CALENDAR_PACKAGE_NAME,
   CALENDAR_PERMISSION_ADMIN_MANAGE,
   CALENDAR_PERMISSION_EMBED_VIEW,
   CALENDAR_PERMISSION_PUBLIC_BOOK,
@@ -34,6 +35,11 @@ export const calendarPluginManifest: DevholmPluginManifest = {
     plugins: {},
     packages: {},
   },
+  packageSource: {
+    type: 'bundled',
+    bundleId: CALENDAR_PACKAGE_NAME,
+  },
+  releaseChannel: 'stable',
   permissions: [
     {
       key: CALENDAR_PERMISSION_ADMIN_MANAGE,
@@ -41,21 +47,21 @@ export const calendarPluginManifest: DevholmPluginManifest = {
       scope: 'admin',
       description:
         'Manage Calendar collections, scheduling blocks, and event types via admin APIs.',
-      runtimeOwner: 'core-filesystem',
+      runtimeOwner: 'plugin-extension',
     },
     {
       key: CALENDAR_PERMISSION_PUBLIC_VIEW,
       capability: CALENDAR_CAPABILITY_PUBLIC_VIEWING,
       scope: 'public',
       description: 'View public Calendar collection and event-type availability surfaces.',
-      runtimeOwner: 'core-filesystem',
+      runtimeOwner: 'plugin-extension',
     },
     {
       key: CALENDAR_PERMISSION_PUBLIC_BOOK,
       capability: CALENDAR_CAPABILITY_PUBLIC_BOOKING,
-      scope: 'policy-scoped',
+      scope: 'public',
       description: 'Create public booking requests for booking-enabled Calendar collections.',
-      runtimeOwner: 'core-filesystem',
+      runtimeOwner: 'plugin-extension',
     },
     {
       key: CALENDAR_PERMISSION_EMBED_VIEW,
@@ -93,7 +99,14 @@ export const calendarPluginManifest: DevholmPluginManifest = {
   },
   adminPageHrefs: [CALENDAR_ADMIN_PAGE_HREF],
   publicRouteExtensionIds: [CALENDAR_PUBLIC_ROUTE_EXTENSION_ID],
-  migrations: [],
+  migrations: [
+    {
+      id: 'calendar:20260718010000_calendar_canonical_authority',
+      file: 'db/migrations/20260718010000_calendar_canonical_authority.ts',
+      reversibility: 'reversible',
+      description: 'Adopt canonical package migration authority for existing Calendar baseline.',
+    },
+  ],
   seeds: [],
   lifecycle: {
     afterInstall: calendarAfterInstall,

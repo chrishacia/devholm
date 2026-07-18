@@ -39,7 +39,7 @@ describe('calendar phase 7 direct core registration cleanup', () => {
       },
       capabilities: {
         admin: true,
-        api: false,
+        api: true,
         publicRoutes: true,
         navigation: true,
       },
@@ -123,7 +123,11 @@ describe('calendar phase 7 direct core registration cleanup', () => {
       'url-shortener',
     ]);
     expect(registry.plugins.find((plugin) => plugin.id === CALENDAR_PLUGIN_ID)?.migrations).toEqual(
-      []
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'calendar:20260718010000_calendar_canonical_authority',
+        }),
+      ])
     );
   });
 

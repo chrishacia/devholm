@@ -15,7 +15,7 @@ export const pluginDefinitions: DevHolmPluginDefinition[] = bundledPlugins.map((
     : undefined,
   capabilities: {
     admin: Boolean(plugin.adminPageExtensions?.length),
-    api: false,
+    api: Boolean(plugin.apiExtensions?.length),
     publicRoutes: Boolean(plugin.publicRouteExtensions?.length),
     navigation: Boolean(plugin.adminPageExtensions?.length),
     sitemap: false,
