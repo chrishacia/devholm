@@ -173,6 +173,7 @@ These are valid strategic directions but should remain in the idea inbox until p
 - Twilio integration plugin placeholder for future messaging, telephony, notification, and verification use cases
 - Shared image editing and derivative-management capability available anywhere DevHolm accepts image media
 - Pre-1.0 release/versioning realignment with a durable update-order mechanism independent of visible product SemVer
+- Automatic update and release safety direction with signed release metadata, deterministic preflight, deployment gating, rollback policy, and scheduler or deployment adapters
 
 ### Stock marketplace plugin boundary
 
@@ -219,6 +220,8 @@ The current `3.x` line may be realigned to an intentional pre-1.0 line, or repla
 Because normal SemVer comparison treats `0.x` and `1.x` as older than `3.x`, update ordering must use a separate monotonic release identity such as a release epoch plus release sequence. The migration should include a final bridge release on the old line, a signed release manifest, explicit supersedence metadata, staged upgrade support for installations that missed the bridge, rollback and compatibility rules, and immutable image-digest binding. Framework, plugin, schema/migration, API-contract, and marketplace version domains must remain distinct so a product-version realignment does not reset or corrupt unrelated compatibility histories.
 
 This work should be promoted into a dedicated implementation issue after the active #92–#104 plugin-convergence sequence, but before public marketplace distribution, broad automated-update adoption, or any declaration of DevHolm `1.0.0` readiness.
+
+The future automatic-update safety direction is tracked separately in [`automatic-update-and-release-safety.md`](./automatic-update-and-release-safety.md). That work must consume the release-epoch and release-sequence lineage rather than reinterpreting automatic updates from visible product SemVer alone.
 
 The detailed intake records are preserved in [issue #16](https://github.com/chrishacia/devholm/issues/16).
 

@@ -2,6 +2,8 @@
 
 This document outlines a future path to trigger framework updates from an admin UI while preserving the build-time deployment model used by DevHolm.
 
+The broader automatic-update policy, signed release metadata, deployment gating, backup, rollback, and scheduler-portability direction is tracked separately in [`docs/roadmap/automatic-update-and-release-safety.md`](./roadmap/automatic-update-and-release-safety.md).
+
 ## Constraint
 
 DevHolm is not a runtime PHP-like app. Updates require source control operations, CI build, image publish, and deployment.

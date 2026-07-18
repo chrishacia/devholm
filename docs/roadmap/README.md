@@ -10,6 +10,7 @@ GitHub issues carry actionable work. The documents here preserve the long-lived 
 - Idea inbox: [#16](https://github.com/chrishacia/devholm/issues/16)
 - Roadmap governance implementation: [#13](https://github.com/chrishacia/devholm/issues/13)
 - Active workstreams: [`WORKSTREAMS.md`](./WORKSTREAMS.md)
+- Automatic update and release safety direction: [`automatic-update-and-release-safety.md`](./automatic-update-and-release-safety.md)
 - Privacy-first analytics enhancement direction: [`analytics-enhancement-direction.md`](./analytics-enhancement-direction.md)
 - Process and completion rules: [`GOVERNANCE.md`](./GOVERNANCE.md)
 - Architectural decisions: [`decisions/`](./decisions/)
@@ -59,6 +60,7 @@ URL Shortener functional product: not completed.
 - Expand first-party analytics into a privacy-first product with journey reconstruction, funnels, goals, cohorts, return-visitor measurement, performance/error correlation, and typed custom-event instrumentation for content authors, site-owned code, and plugins.
 - Define and implement a coherent pre-1.0 release/versioning strategy before public marketplace distribution, broad automatic updates, or declaring DevHolm stable.
 - Realign the inflated historical `3.x` product line without rewriting tags, artifacts, migrations, or deployment history, using a separate monotonic release epoch/sequence so lower visible product versions can still be authoritative upgrades.
+- Define a signed release-manifest and automatic-update safety model where administrator-selected scope only grants consideration and never overrides authoritative deployment gates.
 - Establish explicit `1.0.0` readiness gates covering feature depth, robustness, stability, migration confidence, documentation, accessibility, security, operational recovery, and substantially improved UI/UX.
 
 The detailed ideas remain in the long-lived [idea inbox](https://github.com/chrishacia/devholm/issues/16) until they are mature enough for dedicated implementation issues. See [`WORKSTREAMS.md`](./WORKSTREAMS.md) for sequencing and architectural boundaries.
