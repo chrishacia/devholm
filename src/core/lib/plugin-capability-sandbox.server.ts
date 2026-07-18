@@ -57,7 +57,7 @@ const CAPABILITY_REGISTRY = new Map<string, PluginSandboxCapabilityDefinition>([
       riskLevel: 'medium',
       requiresExplicitApproval: false,
       allowedSurfaces: ['public-route', 'api-route'],
-      allowedRuntimeOwners: ['core-filesystem'],
+      allowedRuntimeOwners: ['core-filesystem', 'plugin-extension'],
       allowedOperations: ['db-read'],
       deniedOperations: [
         'db-write',
@@ -75,9 +75,9 @@ const CAPABILITY_REGISTRY = new Map<string, PluginSandboxCapabilityDefinition>([
       id: 'calendar.public-booking',
       description: 'Calendar booking operations gated by explicit policy approval.',
       riskLevel: 'high',
-      requiresExplicitApproval: true,
+      requiresExplicitApproval: false,
       allowedSurfaces: ['api-route'],
-      allowedRuntimeOwners: ['core-filesystem'],
+      allowedRuntimeOwners: ['core-filesystem', 'plugin-extension'],
       allowedOperations: ['db-read', 'db-write'],
       deniedOperations: [
         'filesystem-arbitrary',

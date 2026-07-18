@@ -62,7 +62,7 @@ describe('gallery phase 1/2 ownership conversion', () => {
       },
       capabilities: {
         admin: true,
-        api: false,
+        api: true,
         publicRoutes: true,
         navigation: true,
       },

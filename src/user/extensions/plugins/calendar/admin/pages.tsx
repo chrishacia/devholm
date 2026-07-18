@@ -15,9 +15,8 @@ function createCalendarAdminPageExtension(): AdminPageExtension {
       scope: 'admin',
       capability: CALENDAR_CAPABILITY_ADMIN_MANAGEMENT,
       permissionKeys: [CALENDAR_PERMISSION_ADMIN_MANAGE],
-      runtimeOwner: 'core-filesystem',
-      notes:
-        'Runtime ownership remains in existing filesystem admin route and verifyAdmin checks in Phase 4.',
+      runtimeOwner: 'plugin-extension',
+      notes: 'Calendar admin surface ownership is declared through plugin extension metadata.',
     },
     loadPage: async () => import('@/app/admin/calendar/page'),
     getMetadata: async (): Promise<Metadata> => ({

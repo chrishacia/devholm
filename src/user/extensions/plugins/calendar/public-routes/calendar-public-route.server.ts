@@ -16,9 +16,9 @@ export const calendarPublicRouteExtension: PublicRouteExtension<never> = {
     scope: 'public',
     capability: CALENDAR_CAPABILITY_PUBLIC_VIEWING,
     permissionKeys: [CALENDAR_PERMISSION_PUBLIC_VIEW],
-    runtimeOwner: 'core-filesystem',
+    runtimeOwner: 'plugin-extension',
     notes:
-      'Metadata-only in Phase 4; this adapter intentionally does not claim runtime paths until Phase 7.',
+      'Metadata-owned by plugin extension; this adapter remains intentionally non-claiming while /calendar filesystem routes are retired safely.',
   },
   match: async () => null,
   handle: async () => new Response(null, { status: 404 }),

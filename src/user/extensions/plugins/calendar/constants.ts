@@ -1,4 +1,7 @@
 export const CALENDAR_PLUGIN_ID = 'calendar';
+export const CALENDAR_PACKAGE_NAME = '@devholm/plugin-calendar';
+export const CALENDAR_PUBLISHER_ID = 'devholm-first-party';
+export const CALENDAR_ARTIFACT_IDENTITY = 'bundled:calendar';
 
 export const CALENDAR_ENABLEMENT_KEY = 'plugin:calendar:enabled';
 

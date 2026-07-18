@@ -76,7 +76,7 @@ describe('plugin capability sandbox enforcement', () => {
     expect(decision.deniedPermissionKeys).toEqual(['plugin:url-shortener:not-declared']);
   });
 
-  it('denies policy-scoped capability without explicit approval', async () => {
+  it('denies legacy policy-scoped calendar booking metadata', async () => {
     const decision = await evaluatePluginSandboxAccess({
       pluginId: 'calendar',
       surface: 'api-route',
@@ -91,6 +91,7 @@ describe('plugin capability sandbox enforcement', () => {
     });
 
     expect(decision.allowed).toBe(false);
-    expect(decision.reason).toContain('explicit approval missing');
+    expect(decision.reason).toContain('permission declarations do not authorize');
+    expect(decision.deniedPermissionKeys).toEqual(['plugin:calendar:public.book']);
   });
 });

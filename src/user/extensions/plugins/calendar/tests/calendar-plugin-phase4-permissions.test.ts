@@ -41,19 +41,19 @@ describe('calendar phase 4 permission metadata alignment', () => {
           key: CALENDAR_PERMISSION_ADMIN_MANAGE,
           capability: CALENDAR_CAPABILITY_ADMIN_MANAGEMENT,
           scope: 'admin',
-          runtimeOwner: 'core-filesystem',
+          runtimeOwner: 'plugin-extension',
         }),
         expect.objectContaining({
           key: CALENDAR_PERMISSION_PUBLIC_VIEW,
           capability: CALENDAR_CAPABILITY_PUBLIC_VIEWING,
           scope: 'public',
-          runtimeOwner: 'core-filesystem',
+          runtimeOwner: 'plugin-extension',
         }),
         expect.objectContaining({
           key: CALENDAR_PERMISSION_PUBLIC_BOOK,
           capability: CALENDAR_CAPABILITY_PUBLIC_BOOKING,
-          scope: 'policy-scoped',
-          runtimeOwner: 'core-filesystem',
+          scope: 'public',
+          runtimeOwner: 'plugin-extension',
         }),
         expect.objectContaining({
           key: CALENDAR_PERMISSION_EMBED_VIEW,
@@ -77,14 +77,14 @@ describe('calendar phase 4 permission metadata alignment', () => {
       scope: 'admin',
       capability: CALENDAR_CAPABILITY_ADMIN_MANAGEMENT,
       permissionKeys: [CALENDAR_PERMISSION_ADMIN_MANAGE],
-      runtimeOwner: 'core-filesystem',
+      runtimeOwner: 'plugin-extension',
     });
 
     expect(adminApi?.accessPolicy).toMatchObject({
       scope: 'admin',
       capability: CALENDAR_CAPABILITY_ADMIN_MANAGEMENT,
       permissionKeys: [CALENDAR_PERMISSION_ADMIN_MANAGE],
-      runtimeOwner: 'core-filesystem',
+      runtimeOwner: 'plugin-extension',
     });
   });
 
@@ -92,10 +92,10 @@ describe('calendar phase 4 permission metadata alignment', () => {
     const publicApi = calendarApiExtensions.find((item) => item.path === CALENDAR_API_BASE_PATH);
 
     expect(publicApi?.accessPolicy).toMatchObject({
-      scope: 'policy-scoped',
+      scope: 'public',
       capability: CALENDAR_CAPABILITY_PUBLIC_BOOKING,
       permissionKeys: [CALENDAR_PERMISSION_PUBLIC_VIEW, CALENDAR_PERMISSION_PUBLIC_BOOK],
-      runtimeOwner: 'core-filesystem',
+      runtimeOwner: 'plugin-extension',
     });
 
     expect(calendarPublicRouteExtension).toMatchObject({
@@ -105,7 +105,7 @@ describe('calendar phase 4 permission metadata alignment', () => {
         scope: 'public',
         capability: CALENDAR_CAPABILITY_PUBLIC_VIEWING,
         permissionKeys: [CALENDAR_PERMISSION_PUBLIC_VIEW],
-        runtimeOwner: 'core-filesystem',
+        runtimeOwner: 'plugin-extension',
       },
     });
   });
@@ -162,7 +162,13 @@ describe('calendar phase 4 permission metadata alignment', () => {
     ]);
     expect(
       generatedRegistry.plugins.find((plugin) => plugin.id === 'calendar')?.migrations
-    ).toEqual([]);
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'calendar:20260718010000_calendar_canonical_authority',
+        }),
+      ])
+    );
 
     expect(bundledPlugins.map((plugin) => plugin.manifest.id)).toEqual([
       CALENDAR_PLUGIN_ID,
