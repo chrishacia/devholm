@@ -21,7 +21,7 @@ describe('gallery phase 4 admin page/nav metadata bridge', () => {
 
     expect(galleryPage).toBeDefined();
     expect(galleryPage?.href).toBe(GALLERY_ADMIN_PAGE_HREF);
-    expect(galleryPage?.accessPolicy?.runtimeOwner).toBe('core-filesystem');
+    expect(galleryPage?.accessPolicy?.runtimeOwner).toBe('plugin-extension');
   });
 
   it('derives gallery admin nav discoverability from plugin metadata (not hardcoded core nav)', () => {

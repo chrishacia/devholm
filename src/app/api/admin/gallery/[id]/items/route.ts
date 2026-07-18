@@ -1,5 +1,6 @@
-import { NextRequest } from 'next/server';
-import { handleGalleryAdminCollectionItems } from '@user/extensions/plugins/gallery/api/handlers';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
+import { runApiExtension } from '@core/lib/extensions.server';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -7,10 +8,20 @@ interface RouteParams {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
-  return handleGalleryAdminCollectionItems('GET', request, id);
+  const response = await runApiExtension('GET', request, ['admin', 'gallery', id, 'items']);
+  if (response) {
+    return response;
+  }
+
+  return NextResponse.json({ error: 'Not found' }, { status: 404 });
 }
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
-  return handleGalleryAdminCollectionItems('POST', request, id);
+  const response = await runApiExtension('POST', request, ['admin', 'gallery', id, 'items']);
+  if (response) {
+    return response;
+  }
+
+  return NextResponse.json({ error: 'Not found' }, { status: 404 });
 }

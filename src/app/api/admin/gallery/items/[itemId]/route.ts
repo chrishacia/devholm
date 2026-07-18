@@ -1,5 +1,6 @@
-import { NextRequest } from 'next/server';
-import { handleGalleryAdminItemById } from '@user/extensions/plugins/gallery/api/handlers';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
+import { runApiExtension } from '@core/lib/extensions.server';
 
 interface RouteParams {
   params: Promise<{ itemId: string }>;
@@ -7,10 +8,20 @@ interface RouteParams {
 
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   const { itemId } = await params;
-  return handleGalleryAdminItemById('PUT', request, itemId);
+  const response = await runApiExtension('PUT', request, ['admin', 'gallery', 'items', itemId]);
+  if (response) {
+    return response;
+  }
+
+  return NextResponse.json({ error: 'Not found' }, { status: 404 });
 }
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   const { itemId } = await params;
-  return handleGalleryAdminItemById('DELETE', request, itemId);
+  const response = await runApiExtension('DELETE', request, ['admin', 'gallery', 'items', itemId]);
+  if (response) {
+    return response;
+  }
+
+  return NextResponse.json({ error: 'Not found' }, { status: 404 });
 }

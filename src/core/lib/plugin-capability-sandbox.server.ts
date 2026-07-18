@@ -115,7 +115,7 @@ const CAPABILITY_REGISTRY = new Map<string, PluginSandboxCapabilityDefinition>([
       riskLevel: 'medium',
       requiresExplicitApproval: false,
       allowedSurfaces: ['public-route', 'api-route'],
-      allowedRuntimeOwners: ['core-filesystem'],
+      allowedRuntimeOwners: ['core-filesystem', 'plugin-extension'],
       allowedOperations: ['db-read'],
       deniedOperations: [
         'db-write',

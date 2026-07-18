@@ -5,6 +5,7 @@ import {
   GALLERY_CAPABILITY_PUBLIC_VIEWING,
   GALLERY_ENABLEMENT_KEY,
   GALLERY_LIFECYCLE_DATA_RETENTION_POLICY,
+  GALLERY_PACKAGE_NAME,
   GALLERY_PERMISSION_ADMIN_MANAGE,
   GALLERY_PERMISSION_PUBLIC_VIEW,
   GALLERY_PLUGIN_ID,
@@ -30,20 +31,25 @@ export const galleryPluginManifest: DevholmPluginManifest = {
     plugins: {},
     packages: {},
   },
+  packageSource: {
+    type: 'bundled',
+    bundleId: GALLERY_PACKAGE_NAME,
+  },
+  releaseChannel: 'stable',
   permissions: [
     {
       key: GALLERY_PERMISSION_ADMIN_MANAGE,
       capability: GALLERY_CAPABILITY_ADMIN_MANAGEMENT,
       scope: 'admin',
       description: 'Manage Gallery collections, items, and ordering via admin APIs.',
-      runtimeOwner: 'core-filesystem',
+      runtimeOwner: 'plugin-extension',
     },
     {
       key: GALLERY_PERMISSION_PUBLIC_VIEW,
       capability: GALLERY_CAPABILITY_PUBLIC_VIEWING,
       scope: 'public',
       description: 'View public Gallery collection pages and related API responses.',
-      runtimeOwner: 'core-filesystem',
+      runtimeOwner: 'plugin-extension',
     },
   ],
   lifecycleAuthorization: {
@@ -61,8 +67,7 @@ export const galleryPluginManifest: DevholmPluginManifest = {
     disablePolicy: 'non-destructive',
     uninstallPolicy: 'non-destructive',
     dataRetention: GALLERY_LIFECYCLE_DATA_RETENTION_POLICY,
-    routeOwnershipLimitation:
-      'Existing filesystem Gallery routes remain runtime owners during Phase 1/2 ownership transition.',
+    routeOwnershipLimitation: 'Filesystem Gallery routes delegate to plugin extension runtime.',
     purge: {
       requiresConfirmPluginId: true,
       destructiveDataWipe: 'blocked',
@@ -73,7 +78,14 @@ export const galleryPluginManifest: DevholmPluginManifest = {
   },
   adminPageHrefs: [GALLERY_ADMIN_PAGE_HREF],
   publicRouteExtensionIds: [GALLERY_PUBLIC_ROUTE_EXTENSION_ID],
-  migrations: [],
+  migrations: [
+    {
+      id: 'gallery:20260718020000_gallery_canonical_authority',
+      file: 'db/migrations/20260718020000_gallery_canonical_authority.ts',
+      reversibility: 'reversible',
+      description: 'Adopt canonical package migration authority for existing Gallery baseline.',
+    },
+  ],
   seeds: [],
   lifecycle: {
     afterInstall: galleryAfterInstall,
