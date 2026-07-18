@@ -157,7 +157,7 @@ describe('gallery phase 5 lifecycle hardening', () => {
     expect(afterPublicRoute).toBeNull();
     expect(adminApiExtension?.handlers.GET).toBe(adminHandlerBefore);
     expect(adminPageExtension?.href).toBe('/admin/gallery');
-    expect(adminPageExtension?.accessPolicy?.runtimeOwner).toBe('core-filesystem');
+    expect(adminPageExtension?.accessPolicy?.runtimeOwner).toBe('plugin-extension');
     expect(mocks.dropTable).not.toHaveBeenCalled();
     expect(mocks.dropTableIfExists).not.toHaveBeenCalled();
     expect(mocks.del).not.toHaveBeenCalled();
@@ -185,9 +185,9 @@ describe('gallery phase 5 lifecycle hardening', () => {
     expect(mocks.del).not.toHaveBeenCalled();
     expect(mocks.deleteRows).not.toHaveBeenCalled();
     expect(mocks.truncate).not.toHaveBeenCalled();
-    expect(galleryPluginManifest.migrations ?? []).toEqual([]);
+    expect(galleryPluginManifest.migrations ?? []).toHaveLength(1);
     expect(galleryPluginManifest.lifecyclePolicy?.routeOwnershipLimitation).toContain(
-      'filesystem Gallery routes'
+      'delegate to plugin extension runtime'
     );
     expect(galleryPluginManifest.lifecyclePolicy?.baselineAdoptionNote).toContain('20260629010000');
   });
@@ -228,7 +228,7 @@ describe('gallery phase 5 lifecycle hardening', () => {
   it('adopts the shared baseline and keeps generated registry ordering deterministic', async () => {
     const { galleryPluginManifest } = await import('@user/extensions/plugins/gallery/manifest');
 
-    expect(galleryPluginManifest.migrations ?? []).toEqual([]);
+    expect(galleryPluginManifest.migrations ?? []).toHaveLength(1);
     expect(galleryPluginManifest.settings?.map((item) => item.key)).toEqual(
       expect.arrayContaining(['plugin:gallery:baseline-schema-version'])
     );
@@ -256,7 +256,7 @@ describe('gallery phase 5 lifecycle hardening', () => {
       'url-shortener',
     ]);
     expect(registry.plugins.map((plugin) => plugin.version)).toEqual(['0.1.0', '0.1.0', '0.1.0']);
-    expect(registry.plugins.find((plugin) => plugin.id === 'gallery')?.migrations).toEqual([]);
+    expect(registry.plugins.find((plugin) => plugin.id === 'gallery')?.migrations).toHaveLength(1);
   });
 
   it('keeps calendar lifecycle metadata and url shortener behavior unaffected', async () => {

@@ -38,7 +38,7 @@ describe('gallery phase 7 readiness boundaries', () => {
     );
 
     expect(galleryPublicMatch).toBeNull();
-    expect(galleryPublicRouteExtension.accessPolicy?.runtimeOwner).toBe('core-filesystem');
+    expect(galleryPublicRouteExtension.accessPolicy?.runtimeOwner).toBe('plugin-extension');
 
     // Embed bridge remains deferred: registry still uses direct core embeds with no plugin embed bridge entries.
     expect(embedExtensions.some((item) => item.id === 'gallery-embed')).toBe(true);
@@ -83,13 +83,13 @@ describe('gallery phase 7 readiness boundaries', () => {
     const adminApi = galleryApiExtensions.find((ext) => ext.path === '/api/admin/gallery');
     const publicApi = galleryApiExtensions.find((ext) => ext.path === '/api/gallery');
 
-    expect(adminApi?.accessPolicy?.runtimeOwner).toBe('core-filesystem');
-    expect(publicApi?.accessPolicy?.runtimeOwner).toBe('core-filesystem');
+    expect(adminApi?.accessPolicy?.runtimeOwner).toBe('plugin-extension');
+    expect(publicApi?.accessPolicy?.runtimeOwner).toBe('plugin-extension');
     expect(adminApi?.handlers.GET).toBeTypeOf('function');
     expect(adminApi?.handlers.POST).toBeTypeOf('function');
     expect(adminApi?.handlers.PUT).toBeTypeOf('function');
     expect(adminApi?.handlers.DELETE).toBeTypeOf('function');
-    expect(publicApi?.handlers).toEqual({});
+    expect(publicApi?.handlers.GET).toBeTypeOf('function');
 
     const reserved = getReservedRoutes();
     expect(reserved.has('/gallery')).toBe(true);
@@ -122,7 +122,7 @@ describe('gallery phase 7 readiness boundaries', () => {
     expect(lifecycle?.disablePolicy).toBe('non-destructive');
     expect(lifecycle?.uninstallPolicy).toBe('non-destructive');
     expect(lifecycle?.purge?.blockedWhenDataPresent).toBe(true);
-    expect(galleryPluginManifest.migrations ?? []).toEqual([]);
+    expect(galleryPluginManifest.migrations ?? []).toHaveLength(1);
   });
 
   it('keeps registry ownership and ordering deterministic', () => {
@@ -154,6 +154,6 @@ describe('gallery phase 7 readiness boundaries', () => {
       'gallery',
       'url-shortener',
     ]);
-    expect(registry.plugins.find((plugin) => plugin.id === 'gallery')?.migrations).toEqual([]);
+    expect(registry.plugins.find((plugin) => plugin.id === 'gallery')?.migrations).toHaveLength(1);
   });
 });

@@ -11,6 +11,12 @@ import { calendarPluginManifest } from '@user/extensions/plugins/calendar/manife
 import { urlShortenerPluginManifest } from '@user/extensions/plugins/url-shortener/manifest';
 import { urlShortenerPublicRouteExtension } from '@user/extensions/plugins/url-shortener/public-routes/url-shortener-public-route.server';
 
+const runApiExtension = vi.hoisted(() => vi.fn());
+
+vi.mock('@core/lib/extensions.server', () => ({
+  runApiExtension,
+}));
+
 function mockRequest(pathname: string) {
   return {
     method: 'GET',
@@ -36,7 +42,7 @@ describe('gallery phase 3 admin api metadata bridge', () => {
     expect(adminExtension).toBeDefined();
     expect(adminExtension?.accessPolicy).toMatchObject({
       scope: 'admin',
-      runtimeOwner: 'core-filesystem',
+      runtimeOwner: 'plugin-extension',
     });
     expect(typeof adminExtension?.handlers.GET).toBe('function');
     expect(typeof adminExtension?.handlers.POST).toBe('function');
@@ -73,19 +79,8 @@ describe('gallery phase 3 admin api metadata bridge', () => {
     }
   });
 
-  it('delegates filesystem route handlers to shared admin API handlers', async () => {
-    const rootGet = vi.fn(async () => Response.json({ ok: 'root-get' }));
-    const rootPost = vi.fn(async () => Response.json({ ok: 'root-post' }));
-    const byId = vi.fn(async () => Response.json({ ok: 'by-id' }));
-    const items = vi.fn(async () => Response.json({ ok: 'items' }));
-    const itemById = vi.fn(async () => Response.json({ ok: 'item-by-id' }));
-
-    vi.doMock('@user/extensions/plugins/gallery/api/handlers', () => ({
-      handleGalleryAdminCollectionRoot: rootGet,
-      handleGalleryAdminCollectionById: byId,
-      handleGalleryAdminCollectionItems: items,
-      handleGalleryAdminItemById: itemById,
-    }));
+  it('delegates filesystem route handlers to runApiExtension using canonical paths', async () => {
+    runApiExtension.mockImplementation(async () => Response.json({ ok: true }));
 
     const rootModule = await import('@/app/api/admin/gallery/route');
     const byIdModule = await import('@/app/api/admin/gallery/[id]/route');
@@ -116,17 +111,63 @@ describe('gallery phase 3 admin api metadata bridge', () => {
       params: Promise.resolve({ itemId: 'xyz' }),
     });
 
-    expect(rootGet).toHaveBeenCalledWith('GET', expect.any(Object));
-    expect(rootGet).toHaveBeenCalledWith('POST', expect.any(Object));
-    expect(byId).toHaveBeenCalledWith('GET', expect.any(Object), 'abc');
-    expect(byId).toHaveBeenCalledWith('PUT', expect.any(Object), 'abc');
-    expect(byId).toHaveBeenCalledWith('DELETE', expect.any(Object), 'abc');
-    expect(items).toHaveBeenCalledWith('GET', expect.any(Object), 'abc');
-    expect(items).toHaveBeenCalledWith('POST', expect.any(Object), 'abc');
-    expect(itemById).toHaveBeenCalledWith('PUT', expect.any(Object), 'xyz');
-    expect(itemById).toHaveBeenCalledWith('DELETE', expect.any(Object), 'xyz');
+    expect(runApiExtension).toHaveBeenNthCalledWith(1, 'GET', expect.any(Object), [
+      'admin',
+      'gallery',
+    ]);
+    expect(runApiExtension).toHaveBeenNthCalledWith(2, 'POST', expect.any(Object), [
+      'admin',
+      'gallery',
+    ]);
+    expect(runApiExtension).toHaveBeenNthCalledWith(3, 'GET', expect.any(Object), [
+      'admin',
+      'gallery',
+      'abc',
+    ]);
+    expect(runApiExtension).toHaveBeenNthCalledWith(4, 'PUT', expect.any(Object), [
+      'admin',
+      'gallery',
+      'abc',
+    ]);
+    expect(runApiExtension).toHaveBeenNthCalledWith(5, 'DELETE', expect.any(Object), [
+      'admin',
+      'gallery',
+      'abc',
+    ]);
+    expect(runApiExtension).toHaveBeenNthCalledWith(6, 'GET', expect.any(Object), [
+      'admin',
+      'gallery',
+      'abc',
+      'items',
+    ]);
+    expect(runApiExtension).toHaveBeenNthCalledWith(7, 'POST', expect.any(Object), [
+      'admin',
+      'gallery',
+      'abc',
+      'items',
+    ]);
+    expect(runApiExtension).toHaveBeenNthCalledWith(8, 'PUT', expect.any(Object), [
+      'admin',
+      'gallery',
+      'items',
+      'xyz',
+    ]);
+    expect(runApiExtension).toHaveBeenNthCalledWith(9, 'DELETE', expect.any(Object), [
+      'admin',
+      'gallery',
+      'items',
+      'xyz',
+    ]);
+  });
 
-    expect(rootPost).not.toHaveBeenCalled();
+  it('returns 404 when delegated admin route has no extension match', async () => {
+    runApiExtension.mockResolvedValueOnce(null);
+
+    const rootModule = await import('@/app/api/admin/gallery/route');
+    const response = await rootModule.GET(mockRequest('/api/admin/gallery'));
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: 'Not found' });
   });
 
   it('preserves verifyAdmin unauthorized guard behavior in shared handlers and extension bridge', async () => {

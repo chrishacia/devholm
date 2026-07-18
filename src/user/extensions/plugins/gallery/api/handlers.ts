@@ -6,6 +6,7 @@ import {
   deleteGalleryCollection,
   deleteGalleryItem,
   getGalleryCollectionById,
+  getGalleryCollectionBySlug,
   listGalleryCollections,
   listGalleryItems,
   reorderGalleryItems,
@@ -80,6 +81,31 @@ async function requireAdmin(
   }
 
   return null;
+}
+
+export async function handleGalleryPublicApi(
+  method: 'GET',
+  _request: NextRequest,
+  segments: string[]
+): Promise<Response> {
+  const [slug] = segments;
+
+  if (method !== 'GET' || !slug || segments.length !== 1) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  try {
+    const gallery = await getGalleryCollectionBySlug(slug, false);
+    if (!gallery) {
+      return NextResponse.json({ error: 'Gallery not found' }, { status: 404 });
+    }
+
+    const items = await listGalleryItems(gallery.id, true);
+    return NextResponse.json({ gallery, items });
+  } catch (error) {
+    console.error('Failed to fetch public gallery:', error);
+    return NextResponse.json({ error: 'Failed to fetch gallery' }, { status: 500 });
+  }
 }
 
 export async function handleGalleryAdminCollectionRoot(

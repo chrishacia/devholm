@@ -1,10 +1,21 @@
-import { NextRequest } from 'next/server';
-import { handleGalleryAdminCollectionRoot } from '@user/extensions/plugins/gallery/api/handlers';
+import type { NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
+import { runApiExtension } from '@core/lib/extensions.server';
 
 export async function GET(request: NextRequest) {
-  return handleGalleryAdminCollectionRoot('GET', request);
+  const response = await runApiExtension('GET', request, ['admin', 'gallery']);
+  if (response) {
+    return response;
+  }
+
+  return NextResponse.json({ error: 'Not found' }, { status: 404 });
 }
 
 export async function POST(request: NextRequest) {
-  return handleGalleryAdminCollectionRoot('POST', request);
+  const response = await runApiExtension('POST', request, ['admin', 'gallery']);
+  if (response) {
+    return response;
+  }
+
+  return NextResponse.json({ error: 'Not found' }, { status: 404 });
 }

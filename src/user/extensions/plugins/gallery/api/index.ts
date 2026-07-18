@@ -13,6 +13,7 @@ import {
   handleGalleryAdminCollectionItems,
   handleGalleryAdminCollectionRoot,
   handleGalleryAdminItemById,
+  handleGalleryPublicApi,
 } from '@user/extensions/plugins/gallery/api/handlers';
 
 function unknownEndpoint() {
@@ -27,8 +28,6 @@ function galleryAdminPathSegments(path: string[]) {
   return path.slice(2);
 }
 
-// Phase 1/2 metadata-only registration for existing filesystem-owned Gallery APIs.
-// Handlers are intentionally empty until Gallery API ownership moves off core routes.
 export const galleryApiExtensions: readonly ApiExtension[] = [
   {
     pluginId: GALLERY_PLUGIN_ID,
@@ -37,11 +36,14 @@ export const galleryApiExtensions: readonly ApiExtension[] = [
       scope: 'public',
       capability: GALLERY_CAPABILITY_PUBLIC_VIEWING,
       permissionKeys: [GALLERY_PERMISSION_PUBLIC_VIEW],
-      runtimeOwner: 'core-filesystem',
-      notes:
-        'Runtime ownership remains in existing filesystem routes for public gallery responses in Phase 1/2.',
+      runtimeOwner: 'plugin-extension',
+      notes: 'Public Gallery API runtime executes in plugin extension module context.',
     },
-    handlers: {},
+    handlers: {
+      GET: async (request, context) => {
+        return handleGalleryPublicApi('GET', request, context.params.path.slice(1));
+      },
+    },
   },
   {
     pluginId: GALLERY_PLUGIN_ID,
@@ -50,9 +52,8 @@ export const galleryApiExtensions: readonly ApiExtension[] = [
       scope: 'admin',
       capability: GALLERY_CAPABILITY_ADMIN_MANAGEMENT,
       permissionKeys: [GALLERY_PERMISSION_ADMIN_MANAGE],
-      runtimeOwner: 'core-filesystem',
-      notes:
-        'Runtime admin enforcement remains verifyAdmin in existing filesystem routes during Phase 3 bridge.',
+      runtimeOwner: 'plugin-extension',
+      notes: 'Gallery admin API runtime executes in plugin extension module context.',
     },
     handlers: {
       GET: async (request, context) => {

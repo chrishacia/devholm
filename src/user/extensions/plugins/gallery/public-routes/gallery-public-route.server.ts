@@ -6,9 +6,8 @@ import {
   GALLERY_PUBLIC_ROUTE_EXTENSION_ID,
 } from '@user/extensions/plugins/gallery/constants';
 
-// Phase 1/2 metadata-only declaration.
-// Gallery public route ownership remains filesystem + reserved-route based for now.
-// This extension intentionally does not claim any route until future route ownership changes.
+// Public route adapter remains non-claiming while filesystem page routes exist,
+// but sandbox/runtime ownership is now attributed to plugin extension metadata.
 export const galleryPublicRouteExtension: PublicRouteExtension<never> = {
   pluginId: GALLERY_PLUGIN_ID,
   id: GALLERY_PUBLIC_ROUTE_EXTENSION_ID,
@@ -16,9 +15,9 @@ export const galleryPublicRouteExtension: PublicRouteExtension<never> = {
     scope: 'public',
     capability: GALLERY_CAPABILITY_PUBLIC_VIEWING,
     permissionKeys: [GALLERY_PERMISSION_PUBLIC_VIEW],
-    runtimeOwner: 'core-filesystem',
+    runtimeOwner: 'plugin-extension',
     notes:
-      'Metadata-only in Phase 1/2; this adapter intentionally does not claim runtime paths while filesystem routes stay authoritative.',
+      'Public route adapter intentionally does not claim runtime paths while filesystem page routes stay authoritative.',
   },
   match: async () => null,
   handle: async () => new Response(null, { status: 404 }),

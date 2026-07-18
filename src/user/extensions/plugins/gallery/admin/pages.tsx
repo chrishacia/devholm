@@ -15,9 +15,8 @@ function createGalleryAdminPageExtension(): AdminPageExtension {
       scope: 'admin',
       capability: GALLERY_CAPABILITY_ADMIN_MANAGEMENT,
       permissionKeys: [GALLERY_PERMISSION_ADMIN_MANAGE],
-      runtimeOwner: 'core-filesystem',
-      notes:
-        'Runtime ownership remains in existing filesystem admin route and verifyAdmin checks in Phase 1/2.',
+      runtimeOwner: 'plugin-extension',
+      notes: 'Admin page runtime executes via plugin extension metadata authority.',
     },
     loadPage: async () => import('@/app/admin/gallery/page'),
     getMetadata: async (): Promise<Metadata> => ({

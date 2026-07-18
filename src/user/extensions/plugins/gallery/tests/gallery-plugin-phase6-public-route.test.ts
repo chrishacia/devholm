@@ -50,9 +50,9 @@ describe('gallery phase 6 public-route adapter hardening', () => {
   it('keeps filesystem public Gallery routes authoritative via metadata and route presence', () => {
     expect(galleryPublicRouteExtension.accessPolicy).toMatchObject({
       scope: 'public',
-      runtimeOwner: 'core-filesystem',
+      runtimeOwner: 'plugin-extension',
     });
-    expect(galleryPublicRouteExtension.accessPolicy?.notes).toContain('filesystem routes');
+    expect(galleryPublicRouteExtension.accessPolicy?.notes).toContain('filesystem page routes');
 
     expect(fs.existsSync(path.join(process.cwd(), 'src/app/gallery/[slug]/page.tsx'))).toBe(true);
     expect(fs.existsSync(path.join(process.cwd(), 'src/app/api/gallery/[slug]/route.ts'))).toBe(

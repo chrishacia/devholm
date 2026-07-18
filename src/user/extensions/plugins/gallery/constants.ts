@@ -1,4 +1,7 @@
 export const GALLERY_PLUGIN_ID = 'gallery';
+export const GALLERY_PACKAGE_NAME = '@devholm/plugin-gallery';
+export const GALLERY_PUBLISHER_ID = 'devholm-first-party';
+export const GALLERY_ARTIFACT_IDENTITY = 'bundled:gallery';
 
 export const GALLERY_ENABLEMENT_KEY = 'plugin:gallery:enabled';
 

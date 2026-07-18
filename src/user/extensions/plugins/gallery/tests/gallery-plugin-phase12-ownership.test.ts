@@ -176,9 +176,9 @@ describe('gallery phase 1/2 ownership conversion', () => {
       'url-shortener',
     ]);
     expect(registry.plugins.map((plugin) => plugin.version)).toEqual(['0.1.0', '0.1.0', '0.1.0']);
-    expect(registry.plugins.find((plugin) => plugin.id === GALLERY_PLUGIN_ID)?.migrations).toEqual(
-      []
-    );
+    expect(
+      registry.plugins.find((plugin) => plugin.id === GALLERY_PLUGIN_ID)?.migrations
+    ).toHaveLength(1);
   });
 
   it('keeps calendar and url shortener behavior unaffected', async () => {
