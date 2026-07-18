@@ -135,7 +135,7 @@ postgresIntegrationDescribe('gallery canonical preservation (postgres integratio
     await integrationDb('media_assets').del();
   });
 
-  it('keeps gallery/media rows and fixture hashes unchanged across authority reconciliation and lifecycle toggles', async () => {
+  it('keeps gallery/media rows and fixture hashes unchanged across authority reconciliation, re-enable, and upgrade hooks', async () => {
     const mediaId = randomUUID();
     const galleryId = randomUUID();
     const itemId = randomUUID();
@@ -200,11 +200,19 @@ postgresIntegrationDescribe('gallery canonical preservation (postgres integratio
     await reconcileUp(integrationDb);
     await reconcileUp(integrationDb);
 
-    const { galleryAfterInstall, galleryBeforeDisable, galleryBeforeUninstall, galleryPurge } =
-      await import('@user/extensions/plugins/gallery/lifecycle/hooks');
+    const {
+      galleryAfterInstall,
+      galleryAfterUpgrade,
+      galleryBeforeDisable,
+      galleryBeforeUninstall,
+      galleryPurge,
+    } = await import('@user/extensions/plugins/gallery/lifecycle/hooks');
 
     await galleryAfterInstall();
+    await galleryAfterInstall();
     await galleryBeforeDisable();
+    await galleryAfterInstall();
+    await galleryAfterUpgrade();
     await galleryBeforeUninstall();
 
     await expect(galleryPurge()).rejects.toThrow(
@@ -214,6 +222,7 @@ postgresIntegrationDescribe('gallery canonical preservation (postgres integratio
     const settingRows = await integrationDb('site_settings')
       .where({ key: 'plugin:gallery:baseline-schema-version' })
       .select('key', 'value');
+
     expect(settingRows).toHaveLength(1);
     expect(settingRows[0]?.value).toBe(
       'core:20260629010000_add_calendar_gallery_and_media_transforms'
