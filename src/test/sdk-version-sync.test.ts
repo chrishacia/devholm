@@ -66,6 +66,22 @@ const VALID_SDK = (version: string) =>
     2
   ) + '\n';
 
+function stripKnownCliNoise(stderr: string): string {
+  return stderr
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      return (
+        trimmed.length > 0 &&
+        !trimmed.includes('[DEP0205] DeprecationWarning: `module.register()` is deprecated') &&
+        !trimmed.includes(
+          'Use `node --trace-deprecation ...` to show where the warning was created'
+        )
+      );
+    })
+    .join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -218,7 +234,7 @@ describe('sync-sdk-version', () => {
       { encoding: 'utf8', cwd: repoRoot }
     );
     expect(result.status).toBe(0);
-    expect(result.stderr).toBe('');
+    expect(stripKnownCliNoise(result.stderr)).toBe('');
     const sdk = JSON.parse(readFileSync(fixture.sdkPath, 'utf8')) as { version: string };
     expect(sdk.version).toBe('5.0.0');
   });
@@ -302,7 +318,7 @@ describe('sync-sdk-version', () => {
     );
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('5.0.0');
-    expect(result.stderr).toBe('');
+    expect(stripKnownCliNoise(result.stderr)).toBe('');
   });
 
   it('importing the library module in a fresh child process performs no sync, writes no output', () => {
@@ -325,7 +341,7 @@ describe('sync-sdk-version', () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe('');
-    expect(result.stderr.trim()).toBe('');
+    expect(stripKnownCliNoise(result.stderr).trim()).toBe('');
     // Files must be unchanged
     expect(readFileSync(fixture.rootPath, 'utf8')).toBe(rootBefore);
     expect(readFileSync(fixture.sdkPath, 'utf8')).toBe(sdkBefore);

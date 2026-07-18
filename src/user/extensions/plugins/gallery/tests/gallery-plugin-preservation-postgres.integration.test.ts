@@ -225,6 +225,20 @@ postgresIntegrationDescribe('gallery canonical preservation (postgres integratio
       .first();
     const itemAfter = await integrationDb('gallery_items').where({ id: itemId }).first();
 
+    const collectionCounts = (await integrationDb('gallery_collections').count(
+      '* as count'
+    )) as Array<{ count: string }>;
+    const itemCounts = (await integrationDb('gallery_items').count('* as count')) as Array<{
+      count: string;
+    }>;
+    const mediaCounts = (await integrationDb('media_assets').count('* as count')) as Array<{
+      count: string;
+    }>;
+
+    expect(Number(collectionCounts[0]?.count ?? 0)).toBe(1);
+    expect(Number(itemCounts[0]?.count ?? 0)).toBe(1);
+    expect(Number(mediaCounts[0]?.count ?? 0)).toBe(1);
+
     expect(mediaAfter).toMatchObject({
       id: mediaBefore.id,
       filename: mediaBefore.filename,
