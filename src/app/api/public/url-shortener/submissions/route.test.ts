@@ -1,0 +1,92 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
+
+const isPluginEnabledForRequest = vi.hoisted(() => vi.fn());
+const getUrlShortenerSettings = vi.hoisted(() => vi.fn());
+const createUrlShortenerPublicSubmission = vi.hoisted(() => vi.fn());
+
+vi.mock('@/db/plugins-enabled', () => ({
+  isPluginEnabledForRequest,
+}));
+
+vi.mock('@user/extensions/plugins/url-shortener/services/url-shortener-store', () => ({
+  getUrlShortenerSettings,
+  createUrlShortenerPublicSubmission,
+}));
+
+import { POST } from './route';
+
+describe('public URL shortener submissions route', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isPluginEnabledForRequest.mockResolvedValue(true);
+    getUrlShortenerSettings.mockResolvedValue({
+      routePrefix: '/s',
+      publicCreationMode: 'public-with-approval',
+      legacyPrefixEnabled: false,
+    });
+    createUrlShortenerPublicSubmission.mockResolvedValue({
+      id: 'submission-1',
+      status: 'pending',
+    });
+  });
+
+  it('returns managed disabled response when plugin is disabled', async () => {
+    isPluginEnabledForRequest.mockResolvedValue(false);
+
+    const request = new NextRequest('http://localhost:3000/api/public/url-shortener/submissions', {
+      method: 'POST',
+      body: JSON.stringify({ destinationUrl: 'https://example.com' }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'PLUGIN_DISABLED',
+    });
+  });
+
+  it('blocks submissions when mode is admin-only', async () => {
+    getUrlShortenerSettings.mockResolvedValue({
+      routePrefix: '/s',
+      publicCreationMode: 'admin-only',
+      legacyPrefixEnabled: false,
+    });
+
+    const request = new NextRequest('http://localhost:3000/api/public/url-shortener/submissions', {
+      method: 'POST',
+      body: JSON.stringify({ destinationUrl: 'https://example.com' }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'PUBLIC_SUBMISSIONS_DISABLED',
+    });
+  });
+
+  it('accepts public submissions in public-with-approval mode', async () => {
+    const request = new NextRequest('http://localhost:3000/api/public/url-shortener/submissions', {
+      method: 'POST',
+      body: JSON.stringify({
+        destinationUrl: 'https://example.com/landing',
+        requestedCode: 'my-code',
+      }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(201);
+    expect(createUrlShortenerPublicSubmission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        destinationUrl: 'https://example.com/landing',
+        requestedCode: 'my-code',
+      })
+    );
+  });
+});

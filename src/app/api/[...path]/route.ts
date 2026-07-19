@@ -1,6 +1,7 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
-import { runApiExtension } from '@core/lib/extensions.server';
+import { resolveApiExtension, runApiExtension } from '@core/lib/extensions.server';
+import { isPluginEnabled } from '@/db/plugins';
 
 type RouteParams = {
   params: Promise<{ path: string[] }>;
@@ -17,6 +18,24 @@ async function dispatch(
     const response = await runApiExtension(method, request, path);
     if (response) {
       return response;
+    }
+
+    // Keep disabled plugin API paths explicit instead of returning opaque 404s.
+    const extension = resolveApiExtension(path);
+    if (extension?.pluginId) {
+      const enabled = await isPluginEnabled(extension.pluginId).catch(() => false);
+      if (!enabled) {
+        return NextResponse.json(
+          {
+            error: 'Plugin API is disabled',
+            code: 'PLUGIN_DISABLED',
+            pluginId: extension.pluginId,
+            path: `/api/${path.join('/')}`,
+            message: 'This API is unavailable until the plugin is re-enabled in Plugin Management.',
+          },
+          { status: 404 }
+        );
+      }
     }
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });

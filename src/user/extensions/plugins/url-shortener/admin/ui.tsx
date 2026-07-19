@@ -46,6 +46,20 @@ type UrlShortenerSettings = {
   legacyPrefixEnabled: boolean;
 };
 
+type UrlShortenerPublicSubmission = {
+  id: string;
+  requestedDestination: string;
+  requestedCode: string | null;
+  requesterType: string | null;
+  requesterLabel: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewNotes: string | null;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  resultLinkId: string | null;
+  createdAt: string;
+};
+
 const redirectStatusOptions = [301, 302, 307, 308] as const;
 
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
@@ -681,14 +695,109 @@ export function UrlShortenerSettingsPage() {
 }
 
 export function UrlShortenerPublicSubmissionsPage() {
+  const [submissions, setSubmissions] = useState<UrlShortenerPublicSubmission[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadSubmissions = async () => {
+    try {
+      const result = await jsonRequest<{ submissions: UrlShortenerPublicSubmission[] }>(
+        '/api/url-shortener/public-submissions'
+      );
+      setSubmissions(result.submissions);
+      setError(null);
+    } catch (submissionError) {
+      setError(
+        submissionError instanceof Error ? submissionError.message : 'Failed to load submissions'
+      );
+    }
+  };
+
+  useEffect(() => {
+    void loadSubmissions();
+  }, []);
+
+  const reviewSubmission = async (submissionId: string, decision: 'approved' | 'rejected') => {
+    try {
+      await jsonRequest('/api/url-shortener/public-submissions/' + submissionId, {
+        method: 'PATCH',
+        body: JSON.stringify({ decision }),
+      });
+      await loadSubmissions();
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : 'Failed to update submission');
+    }
+  };
+
   return (
     <PageShell
       title="URL Shortener Public Submissions"
-      description="Public submission workflows are intentionally deferred until after the admin-managed MVP."
+      description="Review public link requests and approve or reject them through plugin-owned moderation."
     >
-      <Alert severity="info">
-        This page remains a placeholder for the follow-on submission workflow.
-      </Alert>
+      {error ? <Alert severity="error">{error}</Alert> : null}
+      <Section
+        title="Submission queue"
+        description="Pending requests can be approved into active links or rejected with no data loss."
+      >
+        {submissions.length === 0 ? (
+          <Alert severity="info">No submissions are currently queued.</Alert>
+        ) : (
+          <Stack spacing={1.5}>
+            {submissions.map((submission) => (
+              <Card variant="outlined" key={submission.id}>
+                <CardContent>
+                  <Stack spacing={1}>
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                      <Typography fontWeight={700}>
+                        {submission.requestedCode || '(auto code)'}
+                      </Typography>
+                      <Chip
+                        size="small"
+                        color={
+                          submission.status === 'approved'
+                            ? 'success'
+                            : submission.status === 'rejected'
+                              ? 'default'
+                              : 'warning'
+                        }
+                        label={submission.status}
+                      />
+                    </Stack>
+                    <Typography variant="body2">{submission.requestedDestination}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Requested by{' '}
+                      {submission.requesterLabel || submission.requesterType || 'unknown'} at{' '}
+                      {new Date(submission.createdAt).toLocaleString()}
+                    </Typography>
+                    {submission.reviewNotes ? (
+                      <Typography variant="caption" color="text.secondary">
+                        Review note: {submission.reviewNotes}
+                      </Typography>
+                    ) : null}
+                    {submission.status === 'pending' ? (
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          variant="contained"
+                          size="small"
+                          onClick={() => void reviewSubmission(submission.id, 'approved')}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => void reviewSubmission(submission.id, 'rejected')}
+                        >
+                          Reject
+                        </Button>
+                      </Stack>
+                    ) : null}
+                  </Stack>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Section>
     </PageShell>
   );
 }

@@ -3,12 +3,15 @@ import type { NextRequest } from 'next/server';
 import type { ExtensionHelpers } from '@core/types/extensions.server';
 import { urlShortenerApiExtensions } from '@user/extensions/plugins/url-shortener/api';
 import {
+  createUrlShortenerPublicSubmission,
   createUrlShortenerLink,
   deleteUrlShortenerLink,
   getUrlShortenerLinkByCode,
   getUrlShortenerOverview,
   getUrlShortenerSettings,
+  listUrlShortenerPublicSubmissions,
   listUrlShortenerLinks,
+  reviewUrlShortenerPublicSubmission,
   updateUrlShortenerLink,
   updateUrlShortenerSettings,
 } from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
@@ -19,13 +22,16 @@ vi.mock('@/lib/auth-helpers', () => ({
 }));
 
 vi.mock('@user/extensions/plugins/url-shortener/services/url-shortener-store', () => ({
+  createUrlShortenerPublicSubmission: vi.fn(),
   createUrlShortenerLink: vi.fn(),
   deleteUrlShortenerLink: vi.fn(),
   disableUrlShortenerLink: vi.fn(),
   getUrlShortenerLinkByCode: vi.fn(),
   getUrlShortenerOverview: vi.fn(),
   getUrlShortenerSettings: vi.fn(),
+  listUrlShortenerPublicSubmissions: vi.fn(),
   listUrlShortenerLinks: vi.fn(),
+  reviewUrlShortenerPublicSubmission: vi.fn(),
   updateUrlShortenerLink: vi.fn(),
   updateUrlShortenerSettings: vi.fn(),
 }));
@@ -54,14 +60,142 @@ function mockHelpers(): ExtensionHelpers {
 describe('url shortener api extension', () => {
   beforeEach(() => {
     vi.mocked(verifyPermission).mockResolvedValue({ sub: 'admin' } as never);
+    vi.mocked(createUrlShortenerPublicSubmission).mockReset();
     vi.mocked(createUrlShortenerLink).mockReset();
     vi.mocked(deleteUrlShortenerLink).mockReset();
     vi.mocked(getUrlShortenerLinkByCode).mockReset();
     vi.mocked(getUrlShortenerOverview).mockReset();
     vi.mocked(getUrlShortenerSettings).mockReset();
+    vi.mocked(listUrlShortenerPublicSubmissions).mockReset();
     vi.mocked(listUrlShortenerLinks).mockReset();
+    vi.mocked(reviewUrlShortenerPublicSubmission).mockReset();
     vi.mocked(updateUrlShortenerLink).mockReset();
     vi.mocked(updateUrlShortenerSettings).mockReset();
+  });
+
+  it('lists public submissions from the plugin namespace', async () => {
+    vi.mocked(listUrlShortenerPublicSubmissions).mockResolvedValue([
+      {
+        id: 'submission-1',
+        requestedDestination: 'https://example.com/submitted',
+        requestedCode: 'submit-code',
+        requesterType: 'public',
+        requesterId: null,
+        requesterLabel: 'anonymous',
+        status: 'pending',
+        reviewNotes: null,
+        approvedAt: null,
+        rejectedAt: null,
+        resultLinkId: null,
+        createdAt: '2026-07-07T00:00:00.000Z',
+        updatedAt: '2026-07-07T00:00:00.000Z',
+      },
+    ]);
+
+    const response = await urlShortenerApiExtensions[0].handlers.GET!(mockRequest('GET'), {
+      params: { path: ['url-shortener', 'public-submissions'] },
+      helpers: mockHelpers(),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      submissions: [
+        {
+          id: 'submission-1',
+          status: 'pending',
+        },
+      ],
+    });
+  });
+
+  it('creates a public submission through admin namespace', async () => {
+    vi.mocked(createUrlShortenerPublicSubmission).mockResolvedValue({
+      id: 'submission-2',
+      requestedDestination: 'https://example.com/request',
+      requestedCode: 'request-code',
+      requesterType: 'admin',
+      requesterId: 'admin-1',
+      requesterLabel: 'Admin',
+      status: 'pending',
+      reviewNotes: null,
+      approvedAt: null,
+      rejectedAt: null,
+      resultLinkId: null,
+      createdAt: '2026-07-07T00:00:00.000Z',
+      updatedAt: '2026-07-07T00:00:00.000Z',
+    });
+
+    const response = await urlShortenerApiExtensions[0].handlers.POST!(
+      mockRequest('POST', {
+        destinationUrl: 'https://example.com/request',
+        requestedCode: 'request-code',
+        requesterId: 'admin-1',
+        requesterLabel: 'Admin',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(201);
+    expect(createUrlShortenerPublicSubmission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        destinationUrl: 'https://example.com/request',
+        requestedCode: 'request-code',
+      })
+    );
+  });
+
+  it('reviews a pending public submission through admin namespace', async () => {
+    vi.mocked(reviewUrlShortenerPublicSubmission).mockResolvedValue({
+      submission: {
+        id: 'submission-2',
+        requestedDestination: 'https://example.com/request',
+        requestedCode: 'request-code',
+        requesterType: 'public',
+        requesterId: null,
+        requesterLabel: null,
+        status: 'approved',
+        reviewNotes: null,
+        approvedAt: '2026-07-07T00:00:00.000Z',
+        rejectedAt: null,
+        resultLinkId: 'link-22',
+        createdAt: '2026-07-07T00:00:00.000Z',
+        updatedAt: '2026-07-07T00:00:00.000Z',
+      },
+      link: {
+        id: 'link-22',
+        code: 'request-code',
+        destinationUrl: 'https://example.com/request',
+        title: null,
+        isActive: true,
+        expiresAt: null,
+        redirectStatusCode: 302,
+        cachedClickCount: 0,
+        createdAt: '2026-07-07T00:00:00.000Z',
+        updatedAt: '2026-07-07T00:00:00.000Z',
+        deletedAt: null,
+      },
+    });
+
+    const response = await urlShortenerApiExtensions[0].handlers.PATCH!(
+      mockRequest('PATCH', {
+        decision: 'approved',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions', 'submission-2'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(reviewUrlShortenerPublicSubmission).toHaveBeenCalledWith(
+      'submission-2',
+      expect.objectContaining({
+        decision: 'approved',
+      })
+    );
   });
 
   it('serves overview data from the plugin namespace', async () => {

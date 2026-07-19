@@ -119,6 +119,10 @@ describe('url shortener public route handler', () => {
     const response = await handleUrlShortenerRedirect('abc123', mockRequest('/s/abc123'));
 
     expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'URL Shortener plugin is disabled',
+      code: 'PLUGIN_DISABLED',
+    });
     expect(vi.mocked(getUrlShortenerLinkByCode)).not.toHaveBeenCalled();
     expect(vi.mocked(recordUrlShortenerClick)).not.toHaveBeenCalled();
   });
