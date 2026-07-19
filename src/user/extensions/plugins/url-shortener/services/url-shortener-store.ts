@@ -13,6 +13,7 @@ import {
   publicCreationModeSchema,
   shortCodeSchema,
 } from '@user/extensions/plugins/url-shortener/validation/schemas';
+import { UrlShortenerInvalidTransitionError } from '@user/extensions/plugins/url-shortener/errors';
 
 const LINKS = 'u_url_shortener_links';
 const CLICKS = 'u_url_shortener_click_events';
@@ -670,10 +671,9 @@ export async function reviewUrlShortenerPublicSubmission(
     }
 
     if (existing.status !== 'pending') {
-      return {
-        submission: serializeSubmission(existing),
-        link: null,
-      };
+      throw new UrlShortenerInvalidTransitionError(
+        `Submission ${submissionId} has already been reviewed with status ${existing.status}`
+      );
     }
 
     if (input.decision === 'rejected') {

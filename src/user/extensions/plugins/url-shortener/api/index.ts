@@ -21,6 +21,10 @@ import {
   updateUrlShortenerSettings,
 } from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
 import {
+  mapPublicSubmissionCreateError,
+  mapPublicSubmissionReviewError,
+} from '@user/extensions/plugins/url-shortener/errors';
+import {
   createShortLinkInputSchema,
   publicCreationModeSchema,
   shortCodeSchema,
@@ -89,14 +93,6 @@ function parseDateOrNull(value: unknown): string | Date | null | undefined {
 
 function responseForNotFound(message: string): Response {
   return json({ error: message }, { status: 404 });
-}
-
-function isUniqueViolationError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-
-  return (error as { code?: string }).code === '23505';
 }
 
 async function requireManageAccess(request: NextRequest) {
@@ -255,37 +251,38 @@ async function handlePublicSubmissionsGET(): Promise<Response> {
   return json({ submissions: await listUrlShortenerPublicSubmissions() });
 }
 
-async function handlePublicSubmissionsPOST(request: Request): Promise<Response> {
+async function handlePublicSubmissionCreateWithMapping(request: Request): Promise<Response> {
   const body = await parseBody(request);
   if (typeof body.destinationUrl !== 'string') {
     return json(
       {
         error: 'Invalid public submission payload',
+        code: 'INVALID_SUBMISSION',
         details: { destinationUrl: ['Destination URL is required'] },
       },
       { status: 400 }
     );
   }
 
-  let submission;
   try {
-    submission = await createUrlShortenerPublicSubmission({
+    const submission = await createUrlShortenerPublicSubmission({
       destinationUrl: body.destinationUrl,
       requestedCode: typeof body.requestedCode === 'string' ? body.requestedCode : undefined,
       requesterType: typeof body.requesterType === 'string' ? body.requesterType : 'admin',
       requesterId: typeof body.requesterId === 'string' ? body.requesterId : null,
       requesterLabel: typeof body.requesterLabel === 'string' ? body.requesterLabel : null,
     });
-  } catch {
-    return json(
-      {
-        error: 'Invalid public submission payload',
-      },
-      { status: 400 }
-    );
-  }
 
-  return json({ submission }, { status: 201 });
+    return json({ submission }, { status: 201 });
+  } catch (error) {
+    const mapped = mapPublicSubmissionCreateError(error);
+    if (mapped.status >= 500) {
+      console.error('[url-shortener] submission-create operational failure', {
+        errorName: error instanceof Error ? error.name : typeof error,
+      });
+    }
+    return json(mapped.body, { status: mapped.status });
+  }
 }
 
 async function handlePublicSubmissionReviewPATCH(
@@ -322,22 +319,13 @@ async function handlePublicSubmissionReviewPATCH(
       reviewerLabel: typeof body.reviewerLabel === 'string' ? body.reviewerLabel : null,
     });
   } catch (error) {
-    if (isUniqueViolationError(error)) {
-      return json(
-        {
-          error: 'Duplicate short code',
-          code: 'DUPLICATE_SHORT_CODE',
-        },
-        { status: 409 }
-      );
+    const mapped = mapPublicSubmissionReviewError(error);
+    if (mapped.status >= 500) {
+      console.error('[url-shortener] submission-review operational failure', {
+        errorName: error instanceof Error ? error.name : typeof error,
+      });
     }
-
-    return json(
-      {
-        error: 'Invalid submission review payload',
-      },
-      { status: 400 }
-    );
+    return json(mapped.body, { status: mapped.status });
   }
 
   if (!result) {
@@ -393,7 +381,7 @@ export const urlShortenerApiExtensions: readonly ApiExtension[] = [
         }
 
         if (segmentAt(path, 0) === 'public-submissions' && path.length === 1) {
-          return handlePublicSubmissionsPOST(request);
+          return handlePublicSubmissionCreateWithMapping(request);
         }
 
         return responseForNotFound('Unknown URL shortener API endpoint');
