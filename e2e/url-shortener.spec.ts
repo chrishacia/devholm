@@ -359,11 +359,31 @@ test.describe('URL Shortener MVP', () => {
     expect(disabledProjection?.actions.disable.reasonCode).toBe('already-disabled');
     expect(disabledProjection?.rollback.reasonCode).toBeTruthy();
 
-    const disabledResponse = await page.request.get(
+    const disabledExistingResponse = await page.request.get(
       `${shortUrlPath}?disabledCheck=${Date.now().toString(36)}`,
       { maxRedirects: 0 }
     );
-    expect(disabledResponse?.status()).toBe(404);
+    const disabledMissingPath = `/s/nonexistent-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const disabledMissingResponse = await page.request.get(
+      `${disabledMissingPath}?disabledCheck=${Date.now().toString(36)}`,
+      { maxRedirects: 0 }
+    );
+
+    expect(disabledExistingResponse.status()).toBe(404);
+    expect(disabledMissingResponse.status()).toBe(404);
+    expect(disabledExistingResponse.status()).not.toBe(503);
+    expect(disabledMissingResponse.status()).not.toBe(503);
+
+    const disabledExistingBody = await disabledExistingResponse.text();
+    const disabledMissingBody = await disabledMissingResponse.text();
+    expect(disabledExistingBody).toBe(disabledMissingBody);
+
+    const disabledExistingPayload = JSON.parse(disabledExistingBody) as {
+      code?: string;
+      error?: string;
+    };
+    expect(disabledExistingPayload.code).toBe('PLUGIN_DISABLED');
+    expect(disabledExistingPayload.error).toBe('URL Shortener plugin is disabled');
 
     const disabledApiResponse = await page.request.get('/api/url-shortener/overview');
     expect(disabledApiResponse.status()).toBe(404);
