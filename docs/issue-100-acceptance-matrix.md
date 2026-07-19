@@ -121,7 +121,8 @@ Gap:
 
 - Generic canonical contract/reject logic exists: `implemented+tested (generic)`
 - URL-Shortener-specific override success/failure matrix (valid path, invalid path, unknown plugin, CI/prod rejection, return-to-canonical without drift): `implemented+tested`
-- URL-Shortener-specific digest mismatch and compatibility mismatch assertions at resolver layer: `implemented+insufficient-tests`
+- URL-Shortener-specific digest mismatch and exact-version mismatch assertions at resolver layer: `implemented+tested`
+- URL-Shortener-specific compatibility mismatch assertion at resolver layer: `implemented+insufficient-tests`
 
 Evidence:
 
