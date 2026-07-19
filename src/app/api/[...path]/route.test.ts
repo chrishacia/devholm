@@ -58,7 +58,28 @@ describe('catch-all extension API route', () => {
       code: 'PLUGIN_DISABLED',
       pluginId: 'url-shortener',
       path: '/api/url-shortener/links',
+      message: 'This API is unavailable until the plugin is re-enabled in Plugin Management.',
     });
+  });
+
+  it('returns default not-found when extension exists and plugin is enabled', async () => {
+    runApiExtension.mockResolvedValue(null);
+    resolveApiExtension.mockReturnValue({
+      path: '/api/url-shortener',
+      pluginId: 'url-shortener',
+    });
+    isPluginEnabled.mockResolvedValue(true);
+
+    const request = new NextRequest('http://localhost:3000/api/url-shortener/links', {
+      method: 'GET',
+    });
+
+    const response = await GET(request, {
+      params: Promise.resolve({ path: ['url-shortener', 'links'] }),
+    });
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: 'Not found' });
   });
 
   it('returns default not-found when no extension matches', async () => {

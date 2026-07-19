@@ -18,7 +18,73 @@ vi.mock('@core/lib/plugin-lifecycle-orchestrator.server', () => ({
   orchestratePluginLifecycleMutation,
 }));
 
-import { PATCH, POST } from './route';
+import { GET, PATCH, POST } from './route';
+
+describe('admin plugins GET route', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    verifyAdmin.mockResolvedValue({
+      sub: 'admin-123',
+      email: 'admin@example.com',
+      roles: ['admin'],
+    });
+    listPluginStates.mockResolvedValue([
+      {
+        id: 'url-shortener',
+        name: 'URL Shortener',
+        source: 'bundled',
+        integrity: 'sha256-' + 'a'.repeat(64),
+        version: '0.1.0',
+        installed: true,
+        isEnabled: true,
+        lifecycleState: 'active',
+        operationStatus: 'idle',
+        desiredState: 'enabled',
+        observedState: 'enabled',
+        rollbackAvailable: true,
+        recoveryState: 'none',
+        blockedReasons: [],
+      },
+    ]);
+  });
+
+  it('denies non-admin requests', async () => {
+    verifyAdmin.mockResolvedValue(null);
+
+    const response = await GET(new NextRequest('http://localhost:3000/api/admin/plugins'));
+    expect(response.status).toBe(401);
+  });
+
+  it('returns plugin management state payload for admins', async () => {
+    const response = await GET(new NextRequest('http://localhost:3000/api/admin/plugins'));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(Array.isArray(body.plugins)).toBe(true);
+    expect(body.plugins[0]).toMatchObject({
+      id: 'url-shortener',
+      source: 'bundled',
+      version: '0.1.0',
+      integrity: expect.stringContaining('sha256-'),
+      desiredState: 'enabled',
+      observedState: 'enabled',
+      lifecycleState: 'active',
+      operationStatus: 'idle',
+      rollbackAvailable: true,
+      recoveryState: 'none',
+    });
+  });
+
+  it('returns stable error shape when plugin state query fails', async () => {
+    listPluginStates.mockRejectedValue(new Error('database unavailable'));
+
+    const response = await GET(new NextRequest('http://localhost:3000/api/admin/plugins'));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body).toEqual({ error: 'Failed to fetch plugins' });
+  });
+});
 
 describe('admin plugins PATCH route', () => {
   beforeEach(() => {

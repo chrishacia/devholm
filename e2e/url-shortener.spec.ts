@@ -119,6 +119,14 @@ test.describe('URL Shortener MVP', () => {
       .toLowerCase()
       .replace(/[^a-z0-9-]/g, '-')
       .slice(0, 64);
+    const approvedSubmissionCode = `subok-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-')
+      .slice(0, 64);
+    const rejectedSubmissionCode = `subno-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-')
+      .slice(0, 64);
 
     await page
       .getByLabel(/Custom code/i)
@@ -188,6 +196,94 @@ test.describe('URL Shortener MVP', () => {
       )
       .toBeGreaterThanOrEqual(1);
 
+    const setApprovalModeResponse = await page.request.patch('/api/url-shortener/settings', {
+      data: {
+        routePrefix: originalRoutePrefix,
+        publicCreationMode: 'public-with-approval',
+        legacyPrefixEnabled: originalLegacyPrefixEnabled,
+      },
+    });
+    expect(setApprovalModeResponse.ok()).toBeTruthy();
+
+    const approvedSubmissionResponse = await page.request.post(
+      '/api/public/url-shortener/submissions',
+      {
+        data: {
+          destinationUrl: DESTINATION_URL,
+          requestedCode: approvedSubmissionCode,
+          requesterLabel: 'Issue100 E2E Approved',
+        },
+      }
+    );
+    expect(approvedSubmissionResponse.ok()).toBeTruthy();
+
+    const approvedSubmissionPayload = (await approvedSubmissionResponse.json()) as {
+      submission?: { id?: string };
+    };
+    const approvedSubmissionId = approvedSubmissionPayload.submission?.id;
+    expect(approvedSubmissionId).toBeTruthy();
+
+    const rejectedSubmissionResponse = await page.request.post(
+      '/api/public/url-shortener/submissions',
+      {
+        data: {
+          destinationUrl: DESTINATION_URL,
+          requestedCode: rejectedSubmissionCode,
+          requesterLabel: 'Issue100 E2E Rejected',
+        },
+      }
+    );
+    expect(rejectedSubmissionResponse.ok()).toBeTruthy();
+
+    const rejectedSubmissionPayload = (await rejectedSubmissionResponse.json()) as {
+      submission?: { id?: string };
+    };
+    const rejectedSubmissionId = rejectedSubmissionPayload.submission?.id;
+    expect(rejectedSubmissionId).toBeTruthy();
+
+    const approveResponse = await page.request.patch(
+      `/api/url-shortener/public-submissions/${approvedSubmissionId}`,
+      {
+        data: {
+          decision: 'approved',
+          title: 'Issue100 Approved Submission',
+        },
+      }
+    );
+    expect(approveResponse.ok()).toBeTruthy();
+
+    const rejectResponse = await page.request.patch(
+      `/api/url-shortener/public-submissions/${rejectedSubmissionId}`,
+      {
+        data: {
+          decision: 'rejected',
+          reviewNotes: 'Rejected by Issue100 reference E2E',
+        },
+      }
+    );
+    expect(rejectResponse.ok()).toBeTruthy();
+
+    const approvedShortPath = `/s/${approvedSubmissionCode}`;
+    const approvedRedirectResponse = await page.request.get(approvedShortPath, {
+      maxRedirects: 0,
+    });
+    expect(approvedRedirectResponse.status()).toBe(302);
+    expect(approvedRedirectResponse.headers()['location']).toContain('/about');
+
+    const submissionsListResponse = await page.request.get('/api/url-shortener/public-submissions');
+    expect(submissionsListResponse.ok()).toBeTruthy();
+    const submissionsPayload = (await submissionsListResponse.json()) as {
+      submissions?: Array<{ id: string; status: string }>;
+    };
+    expect(
+      submissionsPayload.submissions?.find((submission) => submission.id === approvedSubmissionId)
+        ?.status
+    ).toBe('approved');
+    expect(
+      submissionsPayload.submissions?.find((submission) => submission.id === rejectedSubmissionId)
+        ?.status
+    ).toBe('rejected');
+
     await page.goto('/admin/url-shortener/overview');
     await expect
       .poll(
@@ -216,7 +312,38 @@ test.describe('URL Shortener MVP', () => {
     );
     expect(disabledResponse?.status()).toBe(404);
 
+    const disabledApiResponse = await page.request.get('/api/url-shortener/overview');
+    expect(disabledApiResponse.status()).toBe(404);
+    const disabledApiPayload = (await disabledApiResponse.json()) as {
+      code?: string;
+    };
+    expect(disabledApiPayload.code).toBe('PLUGIN_DISABLED');
+
+    const disabledSubmissionResponse = await page.request.post(
+      '/api/public/url-shortener/submissions',
+      {
+        data: {
+          destinationUrl: DESTINATION_URL,
+          requestedCode: `subdisabled-${Date.now().toString(36)}`,
+        },
+      }
+    );
+    expect(disabledSubmissionResponse.status()).toBe(404);
+    const disabledSubmissionPayload = (await disabledSubmissionResponse.json()) as {
+      code?: string;
+    };
+    expect(disabledSubmissionPayload.code).toBe('PLUGIN_DISABLED');
+
+    await page.goto('/admin/url-shortener/overview');
+    await expect(page.getByText('Plugin Page Disabled')).toBeVisible({ timeout: 20000 });
+
     await setPluginEnabledState(true);
+
+    const restoredRedirectResponse = await page.request.get(approvedShortPath, {
+      maxRedirects: 0,
+    });
+    expect(restoredRedirectResponse.status()).toBe(302);
+    expect(restoredRedirectResponse.headers()['location']).toContain('/about');
 
     await page.goto('/admin/url-shortener/links');
     await expect
@@ -237,6 +364,31 @@ test.describe('URL Shortener MVP', () => {
         { timeout: 20000 }
       )
       .toBe(createdCode);
+
+    await expect
+      .poll(
+        async () => {
+          const linksResponse = await page.request.get('/api/url-shortener/links');
+          if (!linksResponse.ok()) {
+            return false;
+          }
+
+          const linksPayload = (await linksResponse.json()) as {
+            links?: Array<{ code: string }>;
+          };
+
+          return (linksPayload.links ?? []).some((link) => link.code === approvedSubmissionCode);
+        },
+        { timeout: 20000 }
+      )
+      .toBe(true);
+
+    const retainedSettingsResponse = await page.request.get('/api/url-shortener/settings');
+    expect(retainedSettingsResponse.ok()).toBeTruthy();
+    const retainedSettingsPayload = (await retainedSettingsResponse.json()) as {
+      settings?: { publicCreationMode?: string };
+    };
+    expect(retainedSettingsPayload.settings?.publicCreationMode).toBe('public-with-approval');
 
     const restoreSettingsResponse = await page.request.patch('/api/url-shortener/settings', {
       data: {

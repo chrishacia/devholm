@@ -46,6 +46,7 @@ describe('public URL shortener submissions route', () => {
     await expect(response.json()).resolves.toMatchObject({
       code: 'PLUGIN_DISABLED',
     });
+    expect(createUrlShortenerPublicSubmission).not.toHaveBeenCalled();
   });
 
   it('blocks submissions when mode is admin-only', async () => {
@@ -67,6 +68,45 @@ describe('public URL shortener submissions route', () => {
     await expect(response.json()).resolves.toMatchObject({
       code: 'PUBLIC_SUBMISSIONS_DISABLED',
     });
+    expect(createUrlShortenerPublicSubmission).not.toHaveBeenCalled();
+  });
+
+  it('requires authentication when mode is authenticated', async () => {
+    getUrlShortenerSettings.mockResolvedValue({
+      routePrefix: '/s',
+      publicCreationMode: 'authenticated',
+      legacyPrefixEnabled: false,
+    });
+
+    const request = new NextRequest('http://localhost:3000/api/public/url-shortener/submissions', {
+      method: 'POST',
+      body: JSON.stringify({ destinationUrl: 'https://example.com' }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'AUTH_REQUIRED',
+    });
+    expect(createUrlShortenerPublicSubmission).not.toHaveBeenCalled();
+  });
+
+  it('validates destination URL before attempting creation', async () => {
+    const request = new NextRequest('http://localhost:3000/api/public/url-shortener/submissions', {
+      method: 'POST',
+      body: JSON.stringify({ requestedCode: 'missing-destination' }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Invalid public submission payload',
+    });
+    expect(createUrlShortenerPublicSubmission).not.toHaveBeenCalled();
   });
 
   it('accepts public submissions in public-with-approval mode', async () => {
