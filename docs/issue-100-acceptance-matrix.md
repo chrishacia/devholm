@@ -239,7 +239,7 @@ Evidence:
 
 ## 16) Required reference-plugin E2E coherence
 
-- Existing E2E covers create/redirect/analytics/submissions moderation/disable-reenable retention: `implemented+insufficient-tests`
+- Existing E2E covers create/redirect/analytics/submissions moderation/disable-reenable retention plus Plugin Management active/disabled truth API assertions: `implemented+insufficient-tests`
 - Missing end-to-end coverage for update+restart+rollback+recovery+plugin-management truth integration: `missing`
 
 Evidence:

@@ -96,6 +96,33 @@ test.describe('URL Shortener MVP', () => {
 
     await setPluginEnabledState(true);
 
+    const catalogActiveResponse = await page.request.get('/api/admin/plugins/marketplace/catalog');
+    expect(catalogActiveResponse.ok()).toBeTruthy();
+    const catalogActivePayload = (await catalogActiveResponse.json()) as {
+      plugins?: Array<{
+        plugin: {
+          id: string;
+          installed: boolean;
+          isEnabled: boolean;
+          installedVersion: string | null;
+        };
+        sourceResolution: { localOverrideEnabled: boolean; resolvedSourceKind: string | null };
+        lifecycleState: { summaryState: string };
+        actions: { disable: { allowed: boolean }; enable: { allowed: boolean } };
+      }>;
+    };
+    const activeProjection = (catalogActivePayload.plugins ?? []).find(
+      (entry) => entry.plugin.id === 'url-shortener'
+    );
+    expect(activeProjection?.plugin.installed).toBe(true);
+    expect(activeProjection?.plugin.isEnabled).toBe(true);
+    expect(activeProjection?.plugin.installedVersion).toBeTruthy();
+    expect(activeProjection?.sourceResolution.localOverrideEnabled).toBe(false);
+    expect(activeProjection?.sourceResolution.resolvedSourceKind).toBeTruthy();
+    expect(activeProjection?.lifecycleState.summaryState).toBeTruthy();
+    expect(activeProjection?.actions.disable.allowed).toBe(true);
+    expect(activeProjection?.actions.enable.allowed).toBe(false);
+
     await page.goto('/admin/url-shortener/links');
     await expect(page).toHaveURL(/\/admin\/url-shortener\/links/, { timeout: 20000 });
     await expect(page.getByRole('heading', { name: /URL Shortener Links/i })).toBeVisible({
@@ -305,6 +332,32 @@ test.describe('URL Shortener MVP', () => {
 
     await page.goto('/admin/plugins');
     await setPluginEnabledState(false);
+
+    const catalogDisabledResponse = await page.request.get(
+      '/api/admin/plugins/marketplace/catalog'
+    );
+    expect(catalogDisabledResponse.ok()).toBeTruthy();
+    const catalogDisabledPayload = (await catalogDisabledResponse.json()) as {
+      plugins?: Array<{
+        plugin: { id: string; installed: boolean; isEnabled: boolean };
+        lifecycleState: { axes: { runtime: string } };
+        actions: {
+          disable: { allowed: boolean; reasonCode: string | null };
+          enable: { allowed: boolean; reasonCode: string | null };
+        };
+        rollback: { reasonCode: string };
+      }>;
+    };
+    const disabledProjection = (catalogDisabledPayload.plugins ?? []).find(
+      (entry) => entry.plugin.id === 'url-shortener'
+    );
+    expect(disabledProjection?.plugin.installed).toBe(true);
+    expect(disabledProjection?.plugin.isEnabled).toBe(false);
+    expect(disabledProjection?.lifecycleState.axes.runtime).toBe('disabled');
+    expect(disabledProjection?.actions.enable.allowed).toBe(true);
+    expect(disabledProjection?.actions.disable.allowed).toBe(false);
+    expect(disabledProjection?.actions.disable.reasonCode).toBe('already-disabled');
+    expect(disabledProjection?.rollback.reasonCode).toBeTruthy();
 
     const disabledResponse = await page.request.get(
       `${shortUrlPath}?disabledCheck=${Date.now().toString(36)}`,
