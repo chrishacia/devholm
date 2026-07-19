@@ -10,12 +10,15 @@ import { bundledPlugins } from '@user/extensions/plugins/registry';
 import {
   createUrlShortenerPublicSubmission,
   createUrlShortenerLink,
+  deleteUrlShortenerLink,
   getUrlShortenerLinkByCode,
+  listUrlShortenerLinks,
   getUrlShortenerOverview,
   getUrlShortenerSettings,
   listUrlShortenerPublicSubmissions,
   recordUrlShortenerClick,
   reviewUrlShortenerPublicSubmission,
+  updateUrlShortenerLink,
   updateUrlShortenerSettings,
 } from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
 import {
@@ -266,6 +269,103 @@ describe('url shortener validation', () => {
     const resolution = await resolvePublicRouteExtension('/api/health', mockRequest('/api/health'));
 
     expect(resolution.type).toBe('no-match');
+  });
+
+  it('supports generated code, collision rejection, edit, disable, delete, and persistence', async () => {
+    const db = getDb();
+    const linksTableExists = await db.schema.hasTable('u_url_shortener_links');
+    let schemaBootstrappedByTest = false;
+
+    if (!linksTableExists) {
+      await setupUrlShortenerSchema(db);
+      schemaBootstrappedByTest = true;
+    }
+
+    const explicitCode = `fn-${Date.now().toString(36)}`;
+    let generatedCode: string | null = null;
+
+    try {
+      const generated = await createUrlShortenerLink(
+        {
+          destinationUrl: 'https://example.com/generated-target',
+          title: 'Generated Title',
+        },
+        db
+      );
+      generatedCode = generated.code;
+
+      expect(generated.code.length).toBeGreaterThan(4);
+      expect(generated.destinationUrl).toBe('https://example.com/generated-target');
+
+      const firstExplicit = await createUrlShortenerLink(
+        {
+          code: explicitCode,
+          destinationUrl: 'https://example.com/explicit-1',
+          title: 'Explicit Link',
+        },
+        db
+      );
+      expect(firstExplicit.code).toBe(explicitCode);
+
+      await expect(
+        createUrlShortenerLink(
+          {
+            code: explicitCode,
+            destinationUrl: 'https://example.com/explicit-2',
+          },
+          db
+        )
+      ).rejects.toBeTruthy();
+
+      const updated = await updateUrlShortenerLink(
+        explicitCode,
+        {
+          destinationUrl: 'https://example.com/updated',
+          title: 'Updated Title',
+          redirectStatusCode: 308,
+          isActive: false,
+        },
+        db
+      );
+
+      expect(updated?.destinationUrl).toBe('https://example.com/updated');
+      expect(updated?.title).toBe('Updated Title');
+      expect(updated?.redirectStatusCode).toBe(308);
+      expect(updated?.isActive).toBe(false);
+
+      const restored = await updateUrlShortenerLink(
+        explicitCode,
+        {
+          isActive: true,
+        },
+        db
+      );
+      expect(restored?.isActive).toBe(true);
+
+      const deleted = await deleteUrlShortenerLink(explicitCode, db);
+      expect(deleted?.isActive).toBe(false);
+      expect(deleted?.deletedAt).not.toBeNull();
+
+      const listed = await listUrlShortenerLinks(db);
+      expect(listed.some((link) => link.code === explicitCode)).toBe(false);
+
+      const fetchedDeleted = await getUrlShortenerLinkByCode(explicitCode, db);
+      expect(fetchedDeleted?.deletedAt).not.toBeNull();
+      expect(fetchedDeleted?.isActive).toBe(false);
+
+      const fetchedGenerated = await getUrlShortenerLinkByCode(generated.code, db);
+      expect(fetchedGenerated?.code).toBe(generated.code);
+      expect(fetchedGenerated?.destinationUrl).toBe('https://example.com/generated-target');
+    } finally {
+      if (generatedCode) {
+        await db('u_url_shortener_links').where({ code: generatedCode }).delete();
+      }
+      await db('u_url_shortener_links').where({ code: explicitCode }).delete();
+
+      if (schemaBootstrappedByTest) {
+        await teardownUrlShortenerSchema(db);
+      }
+    }
   });
 
   it('preserves URL shortener data through safe plugin update flow', async () => {

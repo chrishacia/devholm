@@ -46,7 +46,8 @@ Gap:
 
 ## 3) Functional link behavior
 
-- Create/custom slug/edit/enable-disable/expiration/redirect/status/deletion/reserved checks: `implemented+insufficient-tests`
+- Create/generated slug/custom slug/collision rejection/edit/enable-disable/redirect status/deletion checks: `implemented+tested`
+- Expiration/query-string preservation/reserved slug policy/persistence after restart: `implemented+insufficient-tests`
 
 Evidence:
 
@@ -58,7 +59,7 @@ Evidence:
 
 Gap:
 
-- Missing direct tests for collision rejection, reserved slug policy behavior, query-string preservation, and explicit removal policy assertions.
+- Restart persistence, reserved slug policy breadth, and explicit archival policy assertions still need broader deterministic coverage.
 
 ## 4) Analytics
 
