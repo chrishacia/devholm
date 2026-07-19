@@ -566,6 +566,80 @@ describe('AdminPluginsPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('renders update target history and blocked update reason in plugin detail view', async () => {
+    const plugin = createPlugin({
+      plugin: {
+        ...createPlugin().plugin,
+        installed: true,
+        installedVersion: '0.1.0',
+      },
+      catalogEntry: {
+        ...createPlugin().catalogEntry,
+        version: '0.2.0',
+        source: {
+          ...createPlugin().catalogEntry.source,
+          ref: 'v0.2.0',
+        },
+      },
+      operation: {
+        ...createPlugin().operation,
+        recoveryRequired: false,
+      },
+      actionAuthority: {
+        ...createPlugin().actionAuthority,
+        byId: {
+          ...createPlugin().actionAuthority.byId,
+          update: {
+            id: 'update',
+            enabled: false,
+            reasonCode: 'trust-blocked',
+            safeExplanation: 'Update is blocked until trust and compatibility checks pass.',
+            approvalRequired: true,
+            destructive: false,
+            recoveryClassification: 'none',
+          },
+        },
+        available: [],
+        blocked: [
+          {
+            id: 'update',
+            reasonCode: 'trust-blocked',
+            safeExplanation: 'Update is blocked until trust and compatibility checks pass.',
+          },
+        ],
+      },
+      actions: {
+        ...createPlugin().actions,
+        update: {
+          allowed: false,
+          reasonCode: 'trust-blocked',
+          remediation: 'Update is blocked until trust and compatibility checks pass.',
+        },
+      },
+      history: [
+        {
+          fromVersion: '0.1.0',
+          toVersion: '0.2.0',
+          status: 'failed',
+          appliedAt: '2026-07-18T00:00:00.000Z',
+        },
+      ],
+    });
+
+    await renderWithPlugin(plugin);
+    expect(screen.getByText('Available: 0.2.0')).toBeInTheDocument();
+    expect(screen.getByText('Installed: 0.1.0')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect URL Shortener' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Operation history')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/0.1.0 -> 0.2.0 \(failed\)/)).toBeInTheDocument();
+    expect(screen.getByText(/blocked=update:trust-blocked/)).toBeInTheDocument();
+  });
+
   it('renders blocked install and remediation for missing configuration state', async () => {
     const plugin = createPlugin({
       plugin: {

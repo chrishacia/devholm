@@ -206,6 +206,7 @@ Evidence:
 - URL-Shortener-specific projection truth-state proof from canonical marketplace source (active/local-override/disabled/pending/rollback/recovery): `implemented+tested`
 - URL-Shortener-specific Plugin Management API serialization proof for canonical fields, blocking reasons, and remediation: `implemented+tested`
 - URL-Shortener-specific Plugin Management UI rendering proof for active/local-override/disabled/update/rollback/recovery/missing-configuration states: `implemented+tested`
+- URL-Shortener-specific update-target visibility and blocked-update reason rendering in management detail view: `implemented+tested`
 - Global cross-plugin state derivation convergence, contradictory chip cleanup, action redesign, and remediation normalization: `deferred-to-issue-101`
 
 Evidence:

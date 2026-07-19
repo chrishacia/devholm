@@ -437,6 +437,84 @@ describe('admin marketplace catalog route', () => {
     expect(projected.actions.disable.reasonCode).toBe('operation-in-progress');
   });
 
+  it('serializes safe update-available state with explicit target metadata and allowed update action', async () => {
+    listMarketplaceAdminPlugins.mockResolvedValue([
+      createCatalogProjection({
+        plugin: {
+          ...createCatalogProjection().plugin,
+          installedVersion: '0.1.0',
+        },
+        catalogEntry: {
+          ...createCatalogProjection().catalogEntry,
+          version: '0.2.0',
+          source: {
+            ...createCatalogProjection().catalogEntry.source,
+            ref: 'v0.2.0',
+          },
+        },
+        lifecycleState: {
+          ...createCatalogProjection().lifecycleState,
+          summaryState: 'update-available',
+        },
+        actionAuthority: {
+          ...createCatalogProjection().actionAuthority,
+          byId: {
+            ...createCatalogProjection().actionAuthority.byId,
+            update: {
+              id: 'update',
+              enabled: true,
+              reasonCode: null,
+              safeExplanation: 'Update can proceed with canonical lifecycle orchestration.',
+              approvalRequired: true,
+              destructive: false,
+              recoveryClassification: 'none',
+            },
+          },
+          available: [
+            {
+              id: 'update',
+              safeExplanation: 'Update can proceed with canonical lifecycle orchestration.',
+            },
+          ],
+          blocked: [],
+        },
+        actions: {
+          ...createCatalogProjection().actions,
+          update: {
+            allowed: true,
+            reasonCode: null,
+            remediation: 'Update can proceed with canonical lifecycle orchestration.',
+          },
+        },
+        history: [
+          {
+            fromVersion: '0.1.0',
+            toVersion: '0.2.0',
+            status: 'success',
+            appliedAt: '2026-07-18T00:00:00.000Z',
+            rollbackAvailableUntil: '2026-08-18T00:00:00.000Z',
+          },
+        ],
+      }),
+    ]);
+
+    const response = await GET(
+      new NextRequest('http://localhost:3000/api/admin/plugins/marketplace/catalog')
+    );
+
+    const projected = (await response.json()).plugins[0];
+    expect(projected.plugin.installedVersion).toBe('0.1.0');
+    expect(projected.catalogEntry.version).toBe('0.2.0');
+    expect(projected.catalogEntry.source.ref).toBe('v0.2.0');
+    expect(projected.lifecycleState.summaryState).toBe('update-available');
+    expect(projected.actions.update.allowed).toBe(true);
+    expect(projected.actions.update.reasonCode).toBeNull();
+    expect(projected.history[0]).toMatchObject({
+      fromVersion: '0.1.0',
+      toVersion: '0.2.0',
+    });
+  });
+
   it('serializes rollback availability and irreversible-migration rollback block reasons', async () => {
     listMarketplaceAdminPlugins.mockResolvedValue([
       createCatalogProjection({
