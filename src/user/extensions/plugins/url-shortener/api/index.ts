@@ -22,6 +22,7 @@ import {
 } from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
 import {
   createShortLinkInputSchema,
+  publicCreationModeSchema,
   shortCodeSchema,
 } from '@user/extensions/plugins/url-shortener/validation/schemas';
 import { validateRoutePrefix } from '@user/extensions/plugins/url-shortener/validation/prefix-validation';
@@ -187,15 +188,43 @@ async function handleSettingsGET(): Promise<Response> {
 
 async function handleSettingsPATCH(request: Request): Promise<Response> {
   const body = await parseBody(request);
-  const routePrefix =
-    body.routePrefix === undefined ? undefined : validateRoutePrefix(String(body.routePrefix));
+  const routePrefixRaw = body.routePrefix;
+  const publicCreationModeRaw = body.publicCreationMode;
+
+  let routePrefix: string | undefined;
+  if (routePrefixRaw !== undefined) {
+    try {
+      routePrefix = validateRoutePrefix(String(routePrefixRaw));
+    } catch {
+      return json(
+        {
+          error: 'Invalid settings payload',
+          details: { routePrefix: ['Invalid route prefix'] },
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const publicCreationMode =
-    body.publicCreationMode === undefined ? undefined : String(body.publicCreationMode);
+    publicCreationModeRaw === undefined
+      ? undefined
+      : publicCreationModeSchema.safeParse(String(publicCreationModeRaw));
+  if (publicCreationMode && !publicCreationMode.success) {
+    return json(
+      {
+        error: 'Invalid settings payload',
+        details: { publicCreationMode: ['Invalid public creation mode'] },
+      },
+      { status: 400 }
+    );
+  }
+
   const legacyPrefixEnabled = parseBoolean(body.legacyPrefixEnabled);
 
   const settings = await updateUrlShortenerSettings({
     routePrefix,
-    publicCreationMode: publicCreationMode as
+    publicCreationMode: publicCreationMode?.data as
       | 'admin-only'
       | 'authenticated'
       | 'public-with-approval'
@@ -230,13 +259,23 @@ async function handlePublicSubmissionsPOST(request: Request): Promise<Response> 
     );
   }
 
-  const submission = await createUrlShortenerPublicSubmission({
-    destinationUrl: body.destinationUrl,
-    requestedCode: typeof body.requestedCode === 'string' ? body.requestedCode : undefined,
-    requesterType: typeof body.requesterType === 'string' ? body.requesterType : 'admin',
-    requesterId: typeof body.requesterId === 'string' ? body.requesterId : null,
-    requesterLabel: typeof body.requesterLabel === 'string' ? body.requesterLabel : null,
-  });
+  let submission;
+  try {
+    submission = await createUrlShortenerPublicSubmission({
+      destinationUrl: body.destinationUrl,
+      requestedCode: typeof body.requestedCode === 'string' ? body.requestedCode : undefined,
+      requesterType: typeof body.requesterType === 'string' ? body.requesterType : 'admin',
+      requesterId: typeof body.requesterId === 'string' ? body.requesterId : null,
+      requesterLabel: typeof body.requesterLabel === 'string' ? body.requesterLabel : null,
+    });
+  } catch {
+    return json(
+      {
+        error: 'Invalid public submission payload',
+      },
+      { status: 400 }
+    );
+  }
 
   return json({ submission }, { status: 201 });
 }

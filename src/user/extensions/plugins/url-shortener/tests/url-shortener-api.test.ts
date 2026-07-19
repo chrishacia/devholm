@@ -322,6 +322,50 @@ describe('url shortener api extension', () => {
     });
   });
 
+  it('rejects invalid settings mode payloads', async () => {
+    const response = await urlShortenerApiExtensions[0].handlers.PATCH!(
+      mockRequest('PATCH', {
+        routePrefix: '/go',
+        publicCreationMode: 'public-anonymous',
+        legacyPrefixEnabled: true,
+      }),
+      {
+        params: { path: ['url-shortener', 'settings'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Invalid settings payload',
+      details: {
+        publicCreationMode: ['Invalid public creation mode'],
+      },
+    });
+    expect(vi.mocked(updateUrlShortenerSettings)).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid route prefixes in settings payloads', async () => {
+    const response = await urlShortenerApiExtensions[0].handlers.PATCH!(
+      mockRequest('PATCH', {
+        routePrefix: '/api',
+      }),
+      {
+        params: { path: ['url-shortener', 'settings'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Invalid settings payload',
+      details: {
+        routePrefix: ['Invalid route prefix'],
+      },
+    });
+    expect(vi.mocked(updateUrlShortenerSettings)).not.toHaveBeenCalled();
+  });
+
   it('deletes a link through the item endpoint', async () => {
     vi.mocked(deleteUrlShortenerLink).mockResolvedValue({
       id: 'link-1',
@@ -370,6 +414,26 @@ describe('url shortener api extension', () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       error: 'Invalid short link payload',
+    });
+  });
+
+  it('rejects invalid public submission requestedCode payloads', async () => {
+    vi.mocked(createUrlShortenerPublicSubmission).mockRejectedValue(new Error('invalid-code'));
+
+    const response = await urlShortenerApiExtensions[0].handlers.POST!(
+      mockRequest('POST', {
+        destinationUrl: 'https://example.com/request',
+        requestedCode: 'bad/code',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Invalid public submission payload',
     });
   });
 });

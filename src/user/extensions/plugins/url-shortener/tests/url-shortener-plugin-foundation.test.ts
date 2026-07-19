@@ -680,4 +680,123 @@ describe('url shortener validation', () => {
       }
     }
   });
+
+  it('preserves links, analytics, submissions, and settings through disable and re-enable transitions', async () => {
+    const db = getDb();
+    const linksTableExists = await db.schema.hasTable('u_url_shortener_links');
+    let schemaBootstrappedByTest = false;
+    const existingPluginRow = await db('devholm_plugins')
+      .where({ plugin_id: URL_SHORTENER_PLUGIN_ID })
+      .first();
+    let pluginRowBootstrappedByTest = false;
+
+    if (!linksTableExists) {
+      await setupUrlShortenerSchema(db);
+      schemaBootstrappedByTest = true;
+    }
+
+    if (!existingPluginRow) {
+      await db('devholm_plugins').insert({
+        plugin_id: URL_SHORTENER_PLUGIN_ID,
+        bundled_version: urlShortenerPluginManifest.version,
+        installed_version: urlShortenerPluginManifest.version,
+        enabled: true,
+        lifecycle_state: 'installed',
+        operation_status: 'idle',
+        updated_at: new Date(),
+      });
+      pluginRowBootstrappedByTest = true;
+    }
+
+    const originalSettings = await getUrlShortenerSettings(db);
+    const code = `persist-${Date.now().toString(36)}`;
+    let linkId: string | null = null;
+    let submissionId: string | null = null;
+
+    try {
+      await updateUrlShortenerSettings(
+        {
+          routePrefix: '/s',
+          publicCreationMode: 'authenticated',
+          legacyPrefixEnabled: true,
+        },
+        db
+      );
+
+      const link = await createUrlShortenerLink(
+        {
+          code,
+          destinationUrl: 'https://example.com/persistence-proof',
+          title: 'Persistence Proof Link',
+        },
+        db
+      );
+      linkId = link.id;
+
+      await recordUrlShortenerClick(
+        link.id,
+        new Request(`http://localhost:3000/s/${code}`, {
+          headers: new Headers({
+            referer: 'https://x.com/devholm',
+            'user-agent': 'Mozilla/5.0 Firefox/126.0',
+          }),
+        }),
+        db
+      );
+
+      const submission = await createUrlShortenerPublicSubmission(
+        {
+          destinationUrl: 'https://example.com/persistence-submission',
+          requestedCode: `persist-sub-${Date.now().toString(36)}`,
+          requesterType: 'public',
+          requesterLabel: 'Persistence User',
+        },
+        db
+      );
+      submissionId = submission.id;
+
+      await db('devholm_plugins').where({ plugin_id: URL_SHORTENER_PLUGIN_ID }).update({
+        enabled: false,
+        lifecycle_state: 'disabled',
+        updated_at: new Date(),
+      });
+
+      await db('devholm_plugins').where({ plugin_id: URL_SHORTENER_PLUGIN_ID }).update({
+        enabled: true,
+        lifecycle_state: 'installed',
+        updated_at: new Date(),
+      });
+
+      const linkAfter = await getUrlShortenerLinkByCode(code, db);
+      const overviewAfter = await getUrlShortenerOverview(db);
+      const settingsAfter = await getUrlShortenerSettings(db);
+      const submissionsAfter = await listUrlShortenerPublicSubmissions(db);
+
+      expect(linkAfter).not.toBeNull();
+      expect(linkAfter?.destinationUrl).toBe('https://example.com/persistence-proof');
+      expect(linkAfter?.cachedClickCount).toBeGreaterThanOrEqual(1);
+      expect(overviewAfter.totalClicks).toBeGreaterThanOrEqual(1);
+      expect(settingsAfter.routePrefix).toBe('/s');
+      expect(settingsAfter.publicCreationMode).toBe('authenticated');
+      expect(settingsAfter.legacyPrefixEnabled).toBe(true);
+      expect(submissionsAfter.some((item) => item.id === submission.id)).toBe(true);
+    } finally {
+      await updateUrlShortenerSettings(originalSettings, db);
+
+      if (submissionId) {
+        await db('u_url_shortener_public_submissions').where({ id: submissionId }).delete();
+      }
+      if (linkId) {
+        await db('u_url_shortener_daily_stats').where({ link_id: linkId }).delete();
+        await db('u_url_shortener_click_events').where({ link_id: linkId }).delete();
+        await db('u_url_shortener_links').where({ id: linkId }).delete();
+      }
+      if (schemaBootstrappedByTest) {
+        await teardownUrlShortenerSchema(db);
+      }
+      if (pluginRowBootstrappedByTest) {
+        await db('devholm_plugins').where({ plugin_id: URL_SHORTENER_PLUGIN_ID }).delete();
+      }
+    }
+  });
 });

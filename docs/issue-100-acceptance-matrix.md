@@ -64,7 +64,7 @@ Gap:
 ## 4) Analytics
 
 - Redirect event recording and aggregation: `implemented+tested`
-- Link/global analytics: `implemented+insufficient-tests`
+- Link/global analytics: `implemented+tested`
 - Tracking-disabled behavior and anti-duplication boundaries: `partially-implemented`
 - Authorization/privacy boundaries: `implemented+insufficient-tests`
 
@@ -74,9 +74,14 @@ Evidence:
 - `src/user/extensions/plugins/url-shortener/tests/url-shortener-plugin-foundation.test.ts`
 - `src/user/extensions/plugins/url-shortener/tests/url-shortener-public-route-handler.test.ts`
 
+Gap:
+
+- Date-range filtering and explicit tracking-disable switch behavior are not yet represented as URL-Shortener-specific deterministic assertions.
+
 ## 5) Public submissions
 
 - Policy gate + create + moderation approve/reject + link creation on approval: `implemented+tested`
+- Validation/contract failures for malformed inputs: `implemented+tested`
 - Duplicate detection, anti-abuse constraints, and explicit audit-history assertions: `partially-implemented`
 
 Evidence:
@@ -86,16 +91,19 @@ Evidence:
 - `src/user/extensions/plugins/url-shortener/tests/url-shortener-api.test.ts`
 - `src/app/api/public/url-shortener/submissions/route.test.ts`
 - `src/user/extensions/plugins/url-shortener/tests/url-shortener-plugin-foundation.test.ts`
+- `src/user/extensions/plugins/url-shortener/tests/url-shortener-api.test.ts`
 
 ## 6) Settings
 
 - Route prefix/public creation mode/legacy prefix persistence+validation: `implemented+tested`
+- Invalid settings payload rejection contract: `implemented+tested`
 - Additional acceptance settings (redirect behavior defaults, expiration policy, slug policy, moderation policy, analytics policy, reserved slug policy, base URL/domain policy): `missing`
 
 Evidence:
 
 - `src/user/extensions/plugins/url-shortener/settings/definitions.ts`
 - `src/user/extensions/plugins/url-shortener/services/url-shortener-store.ts`
+- `src/user/extensions/plugins/url-shortener/tests/url-shortener-api.test.ts`
 
 ## 7) Managed disabled behavior
 
@@ -149,6 +157,7 @@ Evidence:
 ## 10) Lifecycle (install/enable/disable/re-enable/restart persistence/records/actions)
 
 - Install/enable/disable/re-enable/purge safeguards/operation records/checkpoint interactions: `implemented+tested`
+- URL-Shortener-specific disable/re-enable retention of links/analytics/submissions/settings: `implemented+tested`
 - URL-Shortener-specific restart-persistence and available/blocked action truth matrix: `implemented+insufficient-tests`
 
 Evidence:
@@ -194,13 +203,24 @@ Evidence:
 ## 14) Plugin Management truthful read model
 
 - Generic plugin state model exists and is used by admin APIs/UI: `implemented+insufficient-tests`
-- URL-Shortener-specific proof for identity/version/digest/source/trust/compatibility/desired-observed/lifecycle/rollback/recovery/actions+blocked-reasons: `partially-implemented`
+- URL-Shortener-specific projection truth-state proof from canonical marketplace source (active/local-override/disabled/pending/rollback/recovery): `implemented+tested`
+- URL-Shortener-specific Plugin Management API serialization proof for canonical fields, blocking reasons, and remediation: `implemented+tested`
+- URL-Shortener-specific Plugin Management UI rendering proof for active/local-override/disabled/update/rollback/recovery/missing-configuration states: `implemented+tested`
+- Global cross-plugin state derivation convergence, contradictory chip cleanup, action redesign, and remediation normalization: `deferred-to-issue-101`
 
 Evidence:
 
 - `src/core/db/plugins.ts`
 - `src/app/api/admin/plugins/route.ts`
 - `src/app/admin/plugins/page.tsx`
+- `src/core/lib/__tests__/plugin-marketplace-admin.server.test.ts`
+- `src/app/api/admin/plugins/marketplace/catalog/route.test.ts`
+- `src/app/admin/plugins/page.test.tsx`
+
+Boundary note:
+
+- Issue #100 includes URL Shortener-specific truthful projection/API/UI proof only.
+- Issue #101 remains the sole scope for global Plugin Management model convergence and cross-plugin redesign.
 
 ## 15) Security
 
