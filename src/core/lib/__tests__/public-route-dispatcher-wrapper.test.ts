@@ -152,7 +152,7 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
       meta: { executionId: 'exec-2', childPid: 12345 },
     });
     runIsolatedPublicRouteHandle.mockRejectedValue(
-      new Error('isolated public-route handle failed: extension-not-found: not found')
+      new Error('isolated public-route handler failed: extension-not-found: not found')
     );
 
     const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
@@ -163,5 +163,73 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
     if (resolution.type === 'match') {
       expect(resolution.response.status).toBe(204);
     }
+  });
+
+  it('does not fall back when arbitrary message text mentions extension-not-found', async () => {
+    runIsolatedPublicRouteMatch.mockRejectedValue(
+      new Error('worker unavailable: extension-not-found appeared in logs')
+    );
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(resolution.type).toBe('error');
+  });
+
+  it('does not fall back when isolated matcher code is extension-not-found-extra', async () => {
+    runIsolatedPublicRouteMatch.mockRejectedValue(
+      new Error('isolated public-route match failed: extension-not-found-extra: not found')
+    );
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(resolution.type).toBe('error');
+  });
+
+  it('does not fall back when isolated handler code is extension-not-found-extra', async () => {
+    runIsolatedPublicRouteMatch.mockResolvedValue({
+      matched: true,
+      match: { code: 'abc123' },
+      meta: { executionId: 'exec-2', childPid: 12345 },
+    });
+    runIsolatedPublicRouteHandle.mockRejectedValue(
+      new Error('isolated public-route handler failed: extension-not-found-extra: not found')
+    );
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(extensionHandle).not.toHaveBeenCalled();
+    expect(resolution.type).toBe('error');
+  });
+
+  it('does not fall back when isolated matcher fails with a different structured runtime code', async () => {
+    runIsolatedPublicRouteMatch.mockRejectedValue(
+      new Error(
+        'isolated public-route match failed: public-route-match-failure: worker unavailable'
+      )
+    );
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(resolution.type).toBe('error');
+  });
+
+  it('does not fall back for malformed structured error strings', async () => {
+    runIsolatedPublicRouteMatch.mockRejectedValue(
+      new Error('isolated public-route match failed extension-not-found not found')
+    );
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(resolution.type).toBe('error');
+  });
+
+  it('does not fall back for non-Error thrown values', async () => {
+    runIsolatedPublicRouteMatch.mockRejectedValue(
+      'isolated public-route match failed: extension-not-found: not found'
+    );
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(resolution.type).toBe('error');
   });
 });

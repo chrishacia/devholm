@@ -27,12 +27,17 @@ import {
 
 const EDGE_SAFE_HELPERS = {} as ExtensionHelpers;
 
+const ISOLATED_EXTENSION_NOT_FOUND_ERROR_PATTERNS = [
+  /^isolated public-route match failed: extension-not-found: /,
+  /^isolated public-route handler failed: extension-not-found: /,
+] as const;
+
 function isIsolatedExtensionNotFoundError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
 
-  return error.message.includes('extension-not-found');
+  return ISOLATED_EXTENSION_NOT_FOUND_ERROR_PATTERNS.some((pattern) => pattern.test(error.message));
 }
 
 function withIsolationBoundary(extension: (typeof publicRouteExtensions)[number]) {
