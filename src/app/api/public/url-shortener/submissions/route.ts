@@ -5,6 +5,7 @@ import {
   createUrlShortenerPublicSubmission,
   getUrlShortenerSettings,
 } from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
+import { mapPublicSubmissionCreateError } from '@user/extensions/plugins/url-shortener/errors';
 
 function disabledPluginResponse() {
   return NextResponse.json(
@@ -56,13 +57,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const submission = await createUrlShortenerPublicSubmission({
-    destinationUrl,
-    requestedCode: typeof body.requestedCode === 'string' ? body.requestedCode : undefined,
-    requesterType: 'public',
-    requesterId: null,
-    requesterLabel: typeof body.requesterLabel === 'string' ? body.requesterLabel : null,
-  });
+  let submission;
+  try {
+    submission = await createUrlShortenerPublicSubmission({
+      destinationUrl,
+      requestedCode: typeof body.requestedCode === 'string' ? body.requestedCode : undefined,
+      requesterType: 'public',
+      requesterId: null,
+      requesterLabel: typeof body.requesterLabel === 'string' ? body.requesterLabel : null,
+    });
+  } catch (error) {
+    const mapped = mapPublicSubmissionCreateError(error);
+    if (mapped.status >= 500) {
+      console.error('[url-shortener] public submission create failed', {
+        errorName: error instanceof Error ? error.name : typeof error,
+      });
+    }
+
+    return NextResponse.json(mapped.body, { status: mapped.status });
+  }
 
   return NextResponse.json({ submission }, { status: 201 });
 }

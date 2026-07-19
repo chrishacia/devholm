@@ -16,6 +16,11 @@ import {
   updateUrlShortenerSettings,
 } from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
 import { verifyPermission } from '@/lib/auth-helpers';
+import {
+  UrlShortenerConflictError,
+  UrlShortenerInvalidTransitionError,
+  UrlShortenerValidationError,
+} from '@user/extensions/plugins/url-shortener/errors';
 
 vi.mock('@/lib/auth-helpers', () => ({
   verifyPermission: vi.fn(),
@@ -147,6 +152,79 @@ describe('url shortener api extension', () => {
     );
   });
 
+  it('maps typed submission validation errors to stable 400 responses', async () => {
+    vi.mocked(createUrlShortenerPublicSubmission).mockRejectedValue(
+      new UrlShortenerValidationError('invalid payload')
+    );
+
+    const response = await urlShortenerApiExtensions[0].handlers.POST!(
+      mockRequest('POST', {
+        destinationUrl: 'https://example.com/request',
+        requestedCode: 'bad/code',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Invalid public submission payload',
+      code: 'INVALID_SUBMISSION',
+    });
+  });
+
+  it('maps submission conflicts to stable 409 responses', async () => {
+    vi.mocked(createUrlShortenerPublicSubmission).mockRejectedValue(
+      new UrlShortenerConflictError('duplicate', 'DUPLICATE_SHORT_CODE')
+    );
+
+    const response = await urlShortenerApiExtensions[0].handlers.POST!(
+      mockRequest('POST', {
+        destinationUrl: 'https://example.com/request',
+        requestedCode: 'duplicate',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Duplicate short code',
+      code: 'DUPLICATE_SHORT_CODE',
+    });
+  });
+
+  it('maps unexpected submission create failures to stable 500 responses without leakage', async () => {
+    vi.mocked(createUrlShortenerPublicSubmission).mockRejectedValue(
+      new Error('db down at /private/path with stack')
+    );
+
+    const response = await urlShortenerApiExtensions[0].handlers.POST!(
+      mockRequest('POST', {
+        destinationUrl: 'https://example.com/request',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      error: 'Failed to process public submission',
+      code: 'URL_SHORTENER_OPERATIONAL_ERROR',
+    });
+    const serialized = JSON.stringify(body).toLowerCase();
+    expect(serialized).not.toContain('db down');
+    expect(serialized).not.toContain('/private/path');
+    expect(serialized).not.toContain('stack');
+  });
+
   it('reviews a pending public submission through admin namespace', async () => {
     vi.mocked(reviewUrlShortenerPublicSubmission).mockResolvedValue({
       submission: {
@@ -196,6 +274,65 @@ describe('url shortener api extension', () => {
         decision: 'approved',
       })
     );
+  });
+
+  it('reviews a pending submission with rejection flow', async () => {
+    vi.mocked(reviewUrlShortenerPublicSubmission).mockResolvedValue({
+      submission: {
+        id: 'submission-3',
+        requestedDestination: 'https://example.com/request',
+        requestedCode: 'request-code',
+        requesterType: 'public',
+        requesterId: null,
+        requesterLabel: null,
+        status: 'rejected',
+        reviewNotes: 'rejected by policy',
+        approvedAt: null,
+        rejectedAt: '2026-07-07T00:00:00.000Z',
+        resultLinkId: null,
+        createdAt: '2026-07-07T00:00:00.000Z',
+        updatedAt: '2026-07-07T00:00:00.000Z',
+      },
+      link: null,
+    });
+
+    const response = await urlShortenerApiExtensions[0].handlers.PATCH!(
+      mockRequest('PATCH', {
+        decision: 'rejected',
+        reviewNotes: 'rejected by policy',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions', 'submission-3'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      submission: {
+        status: 'rejected',
+      },
+      link: null,
+    });
+  });
+
+  it('returns 404 when reviewing a missing submission', async () => {
+    vi.mocked(reviewUrlShortenerPublicSubmission).mockResolvedValue(null);
+
+    const response = await urlShortenerApiExtensions[0].handlers.PATCH!(
+      mockRequest('PATCH', {
+        decision: 'approved',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions', 'missing-submission'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Submission not found',
+    });
   });
 
   it('serves overview data from the plugin namespace', async () => {
@@ -322,6 +459,50 @@ describe('url shortener api extension', () => {
     });
   });
 
+  it('rejects invalid settings mode payloads', async () => {
+    const response = await urlShortenerApiExtensions[0].handlers.PATCH!(
+      mockRequest('PATCH', {
+        routePrefix: '/go',
+        publicCreationMode: 'public-anonymous',
+        legacyPrefixEnabled: true,
+      }),
+      {
+        params: { path: ['url-shortener', 'settings'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Invalid settings payload',
+      details: {
+        publicCreationMode: ['Invalid public creation mode'],
+      },
+    });
+    expect(vi.mocked(updateUrlShortenerSettings)).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid route prefixes in settings payloads', async () => {
+    const response = await urlShortenerApiExtensions[0].handlers.PATCH!(
+      mockRequest('PATCH', {
+        routePrefix: '/api',
+      }),
+      {
+        params: { path: ['url-shortener', 'settings'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Invalid settings payload',
+      details: {
+        routePrefix: ['Invalid route prefix'],
+      },
+    });
+    expect(vi.mocked(updateUrlShortenerSettings)).not.toHaveBeenCalled();
+  });
+
   it('deletes a link through the item endpoint', async () => {
     vi.mocked(deleteUrlShortenerLink).mockResolvedValue({
       id: 'link-1',
@@ -370,6 +551,96 @@ describe('url shortener api extension', () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       error: 'Invalid short link payload',
+    });
+  });
+
+  it('rejects invalid public submission requestedCode payloads', async () => {
+    vi.mocked(createUrlShortenerPublicSubmission).mockRejectedValue(
+      new UrlShortenerValidationError('invalid-code')
+    );
+
+    const response = await urlShortenerApiExtensions[0].handlers.POST!(
+      mockRequest('POST', {
+        destinationUrl: 'https://example.com/request',
+        requestedCode: 'bad/code',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Invalid public submission payload',
+      code: 'INVALID_SUBMISSION',
+    });
+  });
+
+  it('returns conflict status for duplicate short-code approval attempts', async () => {
+    vi.mocked(reviewUrlShortenerPublicSubmission).mockRejectedValue({ code: '23505' });
+
+    const response = await urlShortenerApiExtensions[0].handlers.PATCH!(
+      mockRequest('PATCH', {
+        decision: 'approved',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions', 'submission-2'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Duplicate short code',
+      code: 'DUPLICATE_SHORT_CODE',
+    });
+  });
+
+  it('returns stable invalid payload response without leaking internals on review failure', async () => {
+    vi.mocked(reviewUrlShortenerPublicSubmission).mockRejectedValue(new Error('db tx failed'));
+
+    const response = await urlShortenerApiExtensions[0].handlers.PATCH!(
+      mockRequest('PATCH', {
+        decision: 'approved',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions', 'submission-2'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      error: 'Failed to review public submission',
+      code: 'URL_SHORTENER_OPERATIONAL_ERROR',
+    });
+    const serialized = JSON.stringify(body).toLowerCase();
+    expect(serialized).not.toContain('db');
+    expect(serialized).not.toContain('stack');
+    expect(serialized).not.toContain('u_url_shortener_links');
+  });
+
+  it('returns 409 for already-reviewed submission transitions', async () => {
+    vi.mocked(reviewUrlShortenerPublicSubmission).mockRejectedValue(
+      new UrlShortenerInvalidTransitionError('already reviewed')
+    );
+
+    const response = await urlShortenerApiExtensions[0].handlers.PATCH!(
+      mockRequest('PATCH', {
+        decision: 'approved',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions', 'submission-2'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Submission review is already finalized',
+      code: 'INVALID_SUBMISSION_STATE',
     });
   });
 });

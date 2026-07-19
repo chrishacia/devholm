@@ -21,7 +21,12 @@ import {
   updateUrlShortenerSettings,
 } from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
 import {
+  mapPublicSubmissionCreateError,
+  mapPublicSubmissionReviewError,
+} from '@user/extensions/plugins/url-shortener/errors';
+import {
   createShortLinkInputSchema,
+  publicCreationModeSchema,
   shortCodeSchema,
 } from '@user/extensions/plugins/url-shortener/validation/schemas';
 import { validateRoutePrefix } from '@user/extensions/plugins/url-shortener/validation/prefix-validation';
@@ -187,15 +192,43 @@ async function handleSettingsGET(): Promise<Response> {
 
 async function handleSettingsPATCH(request: Request): Promise<Response> {
   const body = await parseBody(request);
-  const routePrefix =
-    body.routePrefix === undefined ? undefined : validateRoutePrefix(String(body.routePrefix));
+  const routePrefixRaw = body.routePrefix;
+  const publicCreationModeRaw = body.publicCreationMode;
+
+  let routePrefix: string | undefined;
+  if (routePrefixRaw !== undefined) {
+    try {
+      routePrefix = validateRoutePrefix(String(routePrefixRaw));
+    } catch {
+      return json(
+        {
+          error: 'Invalid settings payload',
+          details: { routePrefix: ['Invalid route prefix'] },
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const publicCreationMode =
-    body.publicCreationMode === undefined ? undefined : String(body.publicCreationMode);
+    publicCreationModeRaw === undefined
+      ? undefined
+      : publicCreationModeSchema.safeParse(String(publicCreationModeRaw));
+  if (publicCreationMode && !publicCreationMode.success) {
+    return json(
+      {
+        error: 'Invalid settings payload',
+        details: { publicCreationMode: ['Invalid public creation mode'] },
+      },
+      { status: 400 }
+    );
+  }
+
   const legacyPrefixEnabled = parseBoolean(body.legacyPrefixEnabled);
 
   const settings = await updateUrlShortenerSettings({
     routePrefix,
-    publicCreationMode: publicCreationMode as
+    publicCreationMode: publicCreationMode?.data as
       | 'admin-only'
       | 'authenticated'
       | 'public-with-approval'
@@ -218,27 +251,38 @@ async function handlePublicSubmissionsGET(): Promise<Response> {
   return json({ submissions: await listUrlShortenerPublicSubmissions() });
 }
 
-async function handlePublicSubmissionsPOST(request: Request): Promise<Response> {
+async function handlePublicSubmissionCreateWithMapping(request: Request): Promise<Response> {
   const body = await parseBody(request);
   if (typeof body.destinationUrl !== 'string') {
     return json(
       {
         error: 'Invalid public submission payload',
+        code: 'INVALID_SUBMISSION',
         details: { destinationUrl: ['Destination URL is required'] },
       },
       { status: 400 }
     );
   }
 
-  const submission = await createUrlShortenerPublicSubmission({
-    destinationUrl: body.destinationUrl,
-    requestedCode: typeof body.requestedCode === 'string' ? body.requestedCode : undefined,
-    requesterType: typeof body.requesterType === 'string' ? body.requesterType : 'admin',
-    requesterId: typeof body.requesterId === 'string' ? body.requesterId : null,
-    requesterLabel: typeof body.requesterLabel === 'string' ? body.requesterLabel : null,
-  });
+  try {
+    const submission = await createUrlShortenerPublicSubmission({
+      destinationUrl: body.destinationUrl,
+      requestedCode: typeof body.requestedCode === 'string' ? body.requestedCode : undefined,
+      requesterType: typeof body.requesterType === 'string' ? body.requesterType : 'admin',
+      requesterId: typeof body.requesterId === 'string' ? body.requesterId : null,
+      requesterLabel: typeof body.requesterLabel === 'string' ? body.requesterLabel : null,
+    });
 
-  return json({ submission }, { status: 201 });
+    return json({ submission }, { status: 201 });
+  } catch (error) {
+    const mapped = mapPublicSubmissionCreateError(error);
+    if (mapped.status >= 500) {
+      console.error('[url-shortener] submission-create operational failure', {
+        errorName: error instanceof Error ? error.name : typeof error,
+      });
+    }
+    return json(mapped.body, { status: mapped.status });
+  }
 }
 
 async function handlePublicSubmissionReviewPATCH(
@@ -263,15 +307,26 @@ async function handlePublicSubmissionReviewPATCH(
     );
   }
 
-  const result = await reviewUrlShortenerPublicSubmission(submissionId, {
-    decision,
-    reviewNotes: typeof body.reviewNotes === 'string' ? body.reviewNotes : null,
-    title: typeof body.title === 'string' ? body.title : null,
-    codeOverride: typeof body.codeOverride === 'string' ? body.codeOverride : undefined,
-    reviewerType: typeof body.reviewerType === 'string' ? body.reviewerType : 'admin',
-    reviewerId: typeof body.reviewerId === 'string' ? body.reviewerId : null,
-    reviewerLabel: typeof body.reviewerLabel === 'string' ? body.reviewerLabel : null,
-  });
+  let result;
+  try {
+    result = await reviewUrlShortenerPublicSubmission(submissionId, {
+      decision,
+      reviewNotes: typeof body.reviewNotes === 'string' ? body.reviewNotes : null,
+      title: typeof body.title === 'string' ? body.title : null,
+      codeOverride: typeof body.codeOverride === 'string' ? body.codeOverride : undefined,
+      reviewerType: typeof body.reviewerType === 'string' ? body.reviewerType : 'admin',
+      reviewerId: typeof body.reviewerId === 'string' ? body.reviewerId : null,
+      reviewerLabel: typeof body.reviewerLabel === 'string' ? body.reviewerLabel : null,
+    });
+  } catch (error) {
+    const mapped = mapPublicSubmissionReviewError(error);
+    if (mapped.status >= 500) {
+      console.error('[url-shortener] submission-review operational failure', {
+        errorName: error instanceof Error ? error.name : typeof error,
+      });
+    }
+    return json(mapped.body, { status: mapped.status });
+  }
 
   if (!result) {
     return responseForNotFound('Submission not found');
@@ -326,7 +381,7 @@ export const urlShortenerApiExtensions: readonly ApiExtension[] = [
         }
 
         if (segmentAt(path, 0) === 'public-submissions' && path.length === 1) {
-          return handlePublicSubmissionsPOST(request);
+          return handlePublicSubmissionCreateWithMapping(request);
         }
 
         return responseForNotFound('Unknown URL shortener API endpoint');

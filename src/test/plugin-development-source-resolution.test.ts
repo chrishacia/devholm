@@ -96,4 +96,79 @@ describe('plugin development source resolution', () => {
     expect(status.plugins).toHaveLength(bundledPlugins.length);
     expect(status.plugins.every((entry) => entry.pluginId.length > 0)).toBe(true);
   });
+
+  it('applies url-shortener local override in development and surfaces status without resolver failures', () => {
+    const overrideDir = createTempDir();
+    const overrideRaw = JSON.stringify({ 'url-shortener': overrideDir });
+
+    const status = resolveCanonicalPluginSourceStatus({
+      environment: 'development',
+      rootDir: process.cwd(),
+      overrideRaw,
+    });
+
+    const shortener = status.plugins.find((entry) => entry.pluginId === 'url-shortener');
+    expect(shortener).toBeDefined();
+    expect(shortener?.configuredSourceKind).toBe('local-development-checkout');
+    expect(shortener?.resolvedSourceKind).toBe('local-development-checkout');
+    expect(shortener?.localOverrideEnabled).toBe(true);
+    expect(shortener?.localOverrideFilesystemPath).toBe(overrideDir);
+    expect(shortener?.resolverFailureCodes).toEqual([]);
+  });
+
+  it('rejects malformed override payloads and missing override paths', () => {
+    expect(() =>
+      buildCanonicalPluginSourceResolution({
+        environment: 'development',
+        rootDir: process.cwd(),
+        overrideRaw: '["url-shortener"]',
+      })
+    ).toThrow(new RegExp(`${LOCAL_PLUGIN_OVERRIDE_ENV} must be a JSON object`));
+
+    expect(() =>
+      buildCanonicalPluginSourceResolution({
+        environment: 'development',
+        rootDir: process.cwd(),
+        overrideRaw: JSON.stringify({ 'url-shortener': '' }),
+      })
+    ).toThrow(/must be a non-empty string path/);
+
+    expect(() =>
+      buildCanonicalPluginSourceResolution({
+        environment: 'development',
+        rootDir: process.cwd(),
+        overrideRaw: JSON.stringify({ 'url-shortener': './does-not-exist' }),
+      })
+    ).toThrow(/must point to an existing directory/);
+  });
+
+  it('returns url-shortener to canonical source without identity or version drift after override removal', () => {
+    const overrideDir = createTempDir();
+    const overrideRaw = JSON.stringify({ 'url-shortener': overrideDir });
+
+    const withOverride = buildCanonicalPluginSourceResolution({
+      environment: 'development',
+      rootDir: process.cwd(),
+      overrideRaw,
+    });
+    const canonical = buildCanonicalPluginSourceResolution({
+      environment: 'development',
+      rootDir: process.cwd(),
+    });
+
+    const overriddenEntry = withOverride.entries.find(
+      (entry) => entry.pluginId === 'url-shortener'
+    );
+    const canonicalEntry = canonical.entries.find((entry) => entry.pluginId === 'url-shortener');
+
+    expect(overriddenEntry).toBeDefined();
+    expect(canonicalEntry).toBeDefined();
+
+    expect(overriddenEntry?.pluginId).toBe('url-shortener');
+    expect(canonicalEntry?.pluginId).toBe('url-shortener');
+    expect(overriddenEntry?.desiredVersion).toBe(canonicalEntry?.desiredVersion);
+    expect(overriddenEntry?.source.sourceKind).toBe('local-development-checkout');
+    expect(canonicalEntry?.source.sourceKind).toBe('bundled-fallback-artifact');
+    expect(canonicalEntry?.localSourceOverride?.enabled ?? false).toBe(false);
+  });
 });

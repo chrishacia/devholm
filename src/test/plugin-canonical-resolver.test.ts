@@ -269,4 +269,85 @@ describe('plugin canonical resolver', () => {
       true
     );
   });
+
+  it('enforces url-shortener canonical resolver failures for digest, version, and production override policy', () => {
+    const digestMissing = resolveCanonicalPlugins({
+      environment: 'production',
+      document: doc([
+        entry('url-shortener', {
+          source: {
+            sourceKind: 'marketplace-artifact',
+            immutableRef: 'sha256:url-shortener:abc123',
+            immutableRefType: 'content-addressed',
+            artifactUrlOrLocator: 'https://example.invalid/url-shortener.tar.gz',
+            sha256: '',
+            publisher: {
+              publisherId: 'devholm-first-party',
+            },
+            compatibility: {
+              devholmVersion: '^3.0.0',
+            },
+            packageFormat: 'tar.gz',
+            version: '1.2.3',
+            manifestId: 'url-shortener',
+            mutableRef: false,
+          } as never,
+        }),
+      ]),
+    });
+
+    expect(digestMissing.failures.some((failure) => failure.code === 'digest-missing')).toBe(true);
+
+    const exactVersionMismatch = resolveCanonicalPlugins({
+      environment: 'ci',
+      document: doc([
+        entry('url-shortener', {
+          desiredVersion: '1.2.4',
+          source: {
+            sourceKind: 'marketplace-artifact',
+            immutableRef: 'sha256:url-shortener:abc123',
+            immutableRefType: 'content-addressed',
+            artifactUrlOrLocator: 'https://example.invalid/url-shortener.tar.gz',
+            sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            publisher: {
+              publisherId: 'devholm-first-party',
+            },
+            compatibility: {
+              devholmVersion: '^3.0.0',
+            },
+            packageFormat: 'tar.gz',
+            version: '1.2.3',
+            manifestId: 'url-shortener',
+            mutableRef: false,
+          },
+        }),
+      ]),
+    });
+
+    expect(
+      exactVersionMismatch.failures.some((failure) => failure.code === 'exact-version-unavailable')
+    ).toBe(true);
+
+    const localOverrideRejectedInProd = resolveCanonicalPlugins({
+      environment: 'production',
+      document: doc([
+        entry('url-shortener', {
+          source: {
+            sourceKind: 'local-development-checkout',
+            filesystemPath: '/tmp/url-shortener-dev',
+            expectedPluginId: 'url-shortener',
+            expectedVersion: '1.2.3',
+            developmentOnly: true,
+            productionEligible: false,
+          },
+        }),
+      ]),
+    });
+
+    expect(
+      localOverrideRejectedInProd.failures.some(
+        (failure) => failure.code === 'local-override-forbidden'
+      )
+    ).toBe(true);
+  });
 });
