@@ -25,6 +25,16 @@ import {
   shouldUseIsolatedRuntimeForExtension,
 } from '@core/lib/plugin-isolation-runtime.server';
 
+const EDGE_SAFE_HELPERS = {} as ExtensionHelpers;
+
+function isIsolatedExtensionNotFoundError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.includes('extension-not-found');
+}
+
 function withIsolationBoundary(extension: (typeof publicRouteExtensions)[number]) {
   if (
     !shouldUseIsolatedRuntimeForExtension({
@@ -45,12 +55,23 @@ function withIsolationBoundary(extension: (typeof publicRouteExtensions)[number]
         return null;
       }
 
-      const result = await runIsolatedPublicRouteMatch({
-        pluginId: extension.pluginId!,
-        extensionId: extension.id,
-        pathname,
-        request,
-      });
+      let result: Awaited<ReturnType<typeof runIsolatedPublicRouteMatch>>;
+      try {
+        result = await runIsolatedPublicRouteMatch({
+          pluginId: extension.pluginId!,
+          extensionId: extension.id,
+          pathname,
+          request,
+        });
+      } catch (error) {
+        if (isIsolatedExtensionNotFoundError(error)) {
+          // If isolated worker cannot resolve this extension, keep routing behavior
+          // deterministic by using the successful in-process preflight claim.
+          return preflightMatch;
+        }
+
+        throw error;
+      }
 
       if (!result.matched) {
         return null;
@@ -59,12 +80,21 @@ function withIsolationBoundary(extension: (typeof publicRouteExtensions)[number]
       return result.match;
     },
     handle: async (match: unknown, request: NextRequest) => {
-      const result = await runIsolatedPublicRouteHandle({
-        pluginId: extension.pluginId!,
-        extensionId: extension.id,
-        match,
-        request,
-      });
+      let result: Awaited<ReturnType<typeof runIsolatedPublicRouteHandle>>;
+      try {
+        result = await runIsolatedPublicRouteHandle({
+          pluginId: extension.pluginId!,
+          extensionId: extension.id,
+          match,
+          request,
+        });
+      } catch (error) {
+        if (isIsolatedExtensionNotFoundError(error)) {
+          return extension.handle(match, request, EDGE_SAFE_HELPERS);
+        }
+
+        throw error;
+      }
 
       console.info('plugin runtime isolated public-route execution', {
         pluginId: extension.pluginId,
@@ -83,10 +113,6 @@ function withIsolationBoundary(extension: (typeof publicRouteExtensions)[number]
  * Creates fully-wired dispatcher dependencies
  */
 export function createPublicRouteDispatcherDependencies(): PublicRouteDispatcherDependencies {
-  // Proxy/interception path must remain DB-free. Enablement, settings, and
-  // redirect/storage logic are validated and enforced in Node route handlers.
-  const edgeSafeHelpers = {} as ExtensionHelpers;
-
   return {
     extensions: publicRouteExtensions.map(withIsolationBoundary),
     isPluginEnabled: async () => true,
@@ -101,7 +127,7 @@ export function createPublicRouteDispatcherDependencies(): PublicRouteDispatcher
       return decision.allowed;
     },
     getReservedRoutes,
-    getHelpers: async () => edgeSafeHelpers,
+    getHelpers: async () => EDGE_SAFE_HELPERS,
     createMatchContext: (reservedRoutes: ReadonlySet<string>) => ({
       reservedRoutes,
       settings: {

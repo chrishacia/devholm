@@ -3,6 +3,8 @@ import type { NextRequest } from 'next/server';
 
 const runIsolatedPublicRouteMatch = vi.hoisted(() => vi.fn());
 const runIsolatedPublicRouteHandle = vi.hoisted(() => vi.fn());
+const extensionMatch = vi.hoisted(() => vi.fn());
+const extensionHandle = vi.hoisted(() => vi.fn());
 
 vi.mock('@core/lib/plugin-capability-sandbox.server', () => ({
   evaluatePluginSandboxAccess: vi.fn(async () => ({
@@ -34,7 +36,7 @@ vi.mock('@user/extensions/public-routes', () => ({
         scope: 'public',
         runtimeOwner: 'plugin-extension',
       },
-      match: vi.fn(async (pathname: string) => {
+      match: extensionMatch.mockImplementation(async (pathname: string) => {
         const parts = pathname.split('/').filter(Boolean);
         if (parts.length === 2 && parts[0] === 's' && parts[1].length > 0) {
           return { code: parts[1] };
@@ -42,7 +44,7 @@ vi.mock('@user/extensions/public-routes', () => ({
 
         return null;
       }),
-      handle: vi.fn(async () => new Response(null, { status: 204 })),
+      handle: extensionHandle.mockImplementation(async () => new Response(null, { status: 204 })),
     },
   ],
 }));
@@ -65,6 +67,8 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
   beforeEach(() => {
     runIsolatedPublicRouteMatch.mockReset();
     runIsolatedPublicRouteHandle.mockReset();
+    extensionMatch.mockClear();
+    extensionHandle.mockClear();
     runIsolatedPublicRouteHandle.mockResolvedValue({
       response: new Response(null, {
         status: 200,
@@ -127,6 +131,37 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
     expect(resolution.type).toBe('error');
     if (resolution.type === 'error') {
       expect(resolution.error.message).toContain('worker unavailable');
+    }
+  });
+
+  it('falls back to in-process claim when isolated matcher reports extension-not-found', async () => {
+    runIsolatedPublicRouteMatch.mockRejectedValue(
+      new Error('isolated public-route match failed: extension-not-found: not found')
+    );
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(runIsolatedPublicRouteMatch).toHaveBeenCalledTimes(1);
+    expect(resolution.type).toBe('match');
+  });
+
+  it('falls back to in-process handler when isolated handler reports extension-not-found', async () => {
+    runIsolatedPublicRouteMatch.mockResolvedValue({
+      matched: true,
+      match: { code: 'abc123' },
+      meta: { executionId: 'exec-2', childPid: 12345 },
+    });
+    runIsolatedPublicRouteHandle.mockRejectedValue(
+      new Error('isolated public-route handle failed: extension-not-found: not found')
+    );
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(runIsolatedPublicRouteHandle).toHaveBeenCalledTimes(1);
+    expect(extensionHandle).toHaveBeenCalledTimes(1);
+    expect(resolution.type).toBe('match');
+    if (resolution.type === 'match') {
+      expect(resolution.response.status).toBe(204);
     }
   });
 });
