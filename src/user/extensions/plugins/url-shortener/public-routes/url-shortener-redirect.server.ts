@@ -5,6 +5,17 @@ import {
   recordUrlShortenerClick,
 } from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
 
+function disabledPluginResponse(): Response {
+  return Response.json(
+    {
+      error: 'URL Shortener plugin is disabled',
+      code: 'PLUGIN_DISABLED',
+      message: 'Short-link redirects are unavailable until the plugin is re-enabled.',
+    },
+    { status: 404 }
+  );
+}
+
 function plainText(message: string, status: number): Response {
   return new Response(message, {
     status,
@@ -19,7 +30,7 @@ export async function handleUrlShortenerRedirect(
   request: Request
 ): Promise<Response> {
   if (!(await isPluginEnabledForRequest(URL_SHORTENER_PLUGIN_ID).catch(() => false))) {
-    return plainText('Short link not found', 404);
+    return disabledPluginResponse();
   }
 
   const link = await getUrlShortenerLinkByCode(code);

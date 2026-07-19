@@ -8,11 +8,14 @@ import { performSafePluginUpdate } from '@core/lib/plugin-safe-activation.server
 import { resolvePublicRouteExtension } from '@core/lib/public-route-dispatcher.server';
 import { bundledPlugins } from '@user/extensions/plugins/registry';
 import {
+  createUrlShortenerPublicSubmission,
   createUrlShortenerLink,
   getUrlShortenerLinkByCode,
   getUrlShortenerOverview,
   getUrlShortenerSettings,
+  listUrlShortenerPublicSubmissions,
   recordUrlShortenerClick,
+  reviewUrlShortenerPublicSubmission,
   updateUrlShortenerSettings,
 } from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
 import {
@@ -389,6 +392,92 @@ describe('url shortener validation', () => {
 
       if (pluginRowBootstrappedByTest) {
         await db('devholm_plugins').where({ plugin_id: URL_SHORTENER_PLUGIN_ID }).delete();
+      }
+    }
+  });
+
+  it('supports public submission lifecycle at store layer', async () => {
+    const db = getDb();
+    const linksTableExists = await db.schema.hasTable('u_url_shortener_links');
+    let schemaBootstrappedByTest = false;
+
+    if (!linksTableExists) {
+      await setupUrlShortenerSchema(db);
+      schemaBootstrappedByTest = true;
+    }
+
+    let rejectedSubmissionId: string | null = null;
+    let approvedSubmissionId: string | null = null;
+    let approvedCode: string | null = null;
+
+    try {
+      const rejected = await createUrlShortenerPublicSubmission(
+        {
+          destinationUrl: 'https://example.com/submissions/rejected',
+          requestedCode: `reject-${Date.now().toString(36)}`,
+          requesterType: 'public',
+          requesterLabel: 'Submission Reject',
+        },
+        db
+      );
+      rejectedSubmissionId = rejected.id;
+
+      const rejectedResult = await reviewUrlShortenerPublicSubmission(
+        rejected.id,
+        {
+          decision: 'rejected',
+          reviewNotes: 'Rejected for coverage',
+        },
+        db
+      );
+
+      expect(rejectedResult?.submission.status).toBe('rejected');
+      expect(rejectedResult?.link).toBeNull();
+
+      const approveCode = `approve-${Date.now().toString(36)}`;
+      const approved = await createUrlShortenerPublicSubmission(
+        {
+          destinationUrl: 'https://example.com/submissions/approved',
+          requestedCode: approveCode,
+          requesterType: 'public',
+          requesterLabel: 'Submission Approve',
+        },
+        db
+      );
+      approvedSubmissionId = approved.id;
+      approvedCode = approveCode;
+
+      const approvedResult = await reviewUrlShortenerPublicSubmission(
+        approved.id,
+        {
+          decision: 'approved',
+          reviewNotes: 'Approved for coverage',
+          title: 'Approved Submission Link',
+        },
+        db
+      );
+
+      expect(approvedResult?.submission.status).toBe('approved');
+      expect(approvedResult?.link?.code).toBe(approveCode);
+
+      const listed = await listUrlShortenerPublicSubmissions(db);
+      expect(listed.some((item) => item.id === rejected.id)).toBe(true);
+      expect(listed.some((item) => item.id === approved.id)).toBe(true);
+
+      const approvedLink = await getUrlShortenerLinkByCode(approveCode, db);
+      expect(approvedLink?.destinationUrl).toBe('https://example.com/submissions/approved');
+    } finally {
+      if (approvedCode) {
+        await db('u_url_shortener_links').where({ code: approvedCode }).delete();
+      }
+      if (rejectedSubmissionId) {
+        await db('u_url_shortener_public_submissions').where({ id: rejectedSubmissionId }).delete();
+      }
+      if (approvedSubmissionId) {
+        await db('u_url_shortener_public_submissions').where({ id: approvedSubmissionId }).delete();
+      }
+      if (schemaBootstrappedByTest) {
+        await teardownUrlShortenerSchema(db);
       }
     }
   });

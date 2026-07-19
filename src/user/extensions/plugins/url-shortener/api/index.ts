@@ -8,12 +8,15 @@ import {
 } from '@user/extensions/plugins/url-shortener/constants';
 
 import {
+  createUrlShortenerPublicSubmission,
   createUrlShortenerLink,
   deleteUrlShortenerLink,
   getUrlShortenerLinkByCode,
   getUrlShortenerOverview,
   getUrlShortenerSettings,
+  listUrlShortenerPublicSubmissions,
   listUrlShortenerLinks,
+  reviewUrlShortenerPublicSubmission,
   updateUrlShortenerLink,
   updateUrlShortenerSettings,
 } from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
@@ -211,6 +214,72 @@ async function handleAnalyticsGET(): Promise<Response> {
   return json({ overview: await getUrlShortenerOverview() });
 }
 
+async function handlePublicSubmissionsGET(): Promise<Response> {
+  return json({ submissions: await listUrlShortenerPublicSubmissions() });
+}
+
+async function handlePublicSubmissionsPOST(request: Request): Promise<Response> {
+  const body = await parseBody(request);
+  if (typeof body.destinationUrl !== 'string') {
+    return json(
+      {
+        error: 'Invalid public submission payload',
+        details: { destinationUrl: ['Destination URL is required'] },
+      },
+      { status: 400 }
+    );
+  }
+
+  const submission = await createUrlShortenerPublicSubmission({
+    destinationUrl: body.destinationUrl,
+    requestedCode: typeof body.requestedCode === 'string' ? body.requestedCode : undefined,
+    requesterType: typeof body.requesterType === 'string' ? body.requesterType : 'admin',
+    requesterId: typeof body.requesterId === 'string' ? body.requesterId : null,
+    requesterLabel: typeof body.requesterLabel === 'string' ? body.requesterLabel : null,
+  });
+
+  return json({ submission }, { status: 201 });
+}
+
+async function handlePublicSubmissionReviewPATCH(
+  path: string[],
+  request: Request
+): Promise<Response> {
+  const submissionId = segmentAt(path, 1);
+  if (!submissionId) {
+    return responseForNotFound('Submission not found');
+  }
+
+  const body = await parseBody(request);
+  const decision =
+    body.decision === 'approved' || body.decision === 'rejected' ? body.decision : null;
+  if (!decision) {
+    return json(
+      {
+        error: 'Invalid submission review payload',
+        details: { decision: ['Must be approved or rejected'] },
+      },
+      { status: 400 }
+    );
+  }
+
+  const result = await reviewUrlShortenerPublicSubmission(submissionId, {
+    decision,
+    reviewNotes: typeof body.reviewNotes === 'string' ? body.reviewNotes : null,
+    title: typeof body.title === 'string' ? body.title : null,
+    codeOverride: typeof body.codeOverride === 'string' ? body.codeOverride : undefined,
+    reviewerType: typeof body.reviewerType === 'string' ? body.reviewerType : 'admin',
+    reviewerId: typeof body.reviewerId === 'string' ? body.reviewerId : null,
+    reviewerLabel: typeof body.reviewerLabel === 'string' ? body.reviewerLabel : null,
+  });
+
+  if (!result) {
+    return responseForNotFound('Submission not found');
+  }
+
+  return json(result);
+}
+
 export const urlShortenerApiExtensions: readonly ApiExtension[] = [
   {
     pluginId: URL_SHORTENER_PLUGIN_ID,
@@ -239,6 +308,8 @@ export const urlShortenerApiExtensions: readonly ApiExtension[] = [
             return handleSettingsGET();
           case 'links':
             return handleLinksGET(path);
+          case 'public-submissions':
+            return handlePublicSubmissionsGET();
           default:
             return responseForNotFound('Unknown URL shortener API endpoint');
         }
@@ -252,6 +323,10 @@ export const urlShortenerApiExtensions: readonly ApiExtension[] = [
         const path = context.params.path.slice(1);
         if (segmentAt(path, 0) === 'links' && path.length === 1) {
           return handleLinksPOST(request);
+        }
+
+        if (segmentAt(path, 0) === 'public-submissions' && path.length === 1) {
+          return handlePublicSubmissionsPOST(request);
         }
 
         return responseForNotFound('Unknown URL shortener API endpoint');
@@ -269,6 +344,10 @@ export const urlShortenerApiExtensions: readonly ApiExtension[] = [
 
         if (segmentAt(path, 0) === 'links') {
           return handleLinkMutation('PATCH', path, request);
+        }
+
+        if (segmentAt(path, 0) === 'public-submissions') {
+          return handlePublicSubmissionReviewPATCH(path, request);
         }
 
         return responseForNotFound('Unknown URL shortener API endpoint');

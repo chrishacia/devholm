@@ -17,6 +17,7 @@ import {
 const LINKS = 'u_url_shortener_links';
 const CLICKS = 'u_url_shortener_click_events';
 const DAILY = 'u_url_shortener_daily_stats';
+const SUBMISSIONS = 'u_url_shortener_public_submissions';
 const SETTINGS = 'site_settings';
 
 type LinkRow = {
@@ -64,6 +65,58 @@ export interface UrlShortenerOverview {
   expiredLinks: number;
   totalClicks: number;
   recentDailyClicks: Array<{ date: string; totalClicks: number }>;
+}
+
+export type UrlShortenerSubmissionStatus = 'pending' | 'approved' | 'rejected';
+
+type SubmissionRow = {
+  id: string;
+  requested_destination: string;
+  requested_code: string | null;
+  requester_type: string | null;
+  requester_id: string | null;
+  requester_label: string | null;
+  status: UrlShortenerSubmissionStatus;
+  review_notes: string | null;
+  approved_at: Date | string | null;
+  rejected_at: Date | string | null;
+  result_link_id: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+};
+
+export interface UrlShortenerPublicSubmission {
+  id: string;
+  requestedDestination: string;
+  requestedCode: string | null;
+  requesterType: string | null;
+  requesterId: string | null;
+  requesterLabel: string | null;
+  status: UrlShortenerSubmissionStatus;
+  reviewNotes: string | null;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  resultLinkId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePublicSubmissionInput {
+  destinationUrl: string;
+  requestedCode?: string;
+  requesterType?: string | null;
+  requesterId?: string | null;
+  requesterLabel?: string | null;
+}
+
+export interface ReviewPublicSubmissionInput {
+  decision: 'approved' | 'rejected';
+  reviewNotes?: string | null;
+  title?: string | null;
+  codeOverride?: string;
+  reviewerType?: string | null;
+  reviewerId?: string | null;
+  reviewerLabel?: string | null;
 }
 
 export interface CreateShortLinkInput {
@@ -123,6 +176,24 @@ function serializeLink(row: LinkRow): UrlShortenerLink {
 
 function normalizeCode(value: string): string {
   return shortCodeSchema.parse(value.trim());
+}
+
+function serializeSubmission(row: SubmissionRow): UrlShortenerPublicSubmission {
+  return {
+    id: row.id,
+    requestedDestination: row.requested_destination,
+    requestedCode: row.requested_code,
+    requesterType: row.requester_type,
+    requesterId: row.requester_id,
+    requesterLabel: row.requester_label,
+    status: row.status,
+    reviewNotes: row.review_notes,
+    approvedAt: row.approved_at ? toIso(row.approved_at) : null,
+    rejectedAt: row.rejected_at ? toIso(row.rejected_at) : null,
+    resultLinkId: row.result_link_id,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
 }
 
 function generateShortCode(input: { title?: string; destinationUrl: string }): string {
@@ -540,5 +611,122 @@ export async function recordUrlShortenerClick(
         );
       }
     }
+  });
+}
+
+export async function listUrlShortenerPublicSubmissions(
+  db?: Knex
+): Promise<UrlShortenerPublicSubmission[]> {
+  const database = getDatabase(db);
+  const rows = (await database(SUBMISSIONS).orderBy('created_at', 'desc')) as SubmissionRow[];
+  return rows.map(serializeSubmission);
+}
+
+export async function createUrlShortenerPublicSubmission(
+  input: CreatePublicSubmissionInput,
+  db?: Knex
+): Promise<UrlShortenerPublicSubmission> {
+  const database = getDatabase(db);
+  const destinationUrl = destinationUrlSchema.parse(input.destinationUrl);
+  const requestedCode = input.requestedCode ? normalizeCode(input.requestedCode) : null;
+  const now = new Date();
+
+  const [row] = (await database(SUBMISSIONS)
+    .insert({
+      id: randomUUID(),
+      requested_destination: destinationUrl,
+      requested_code: requestedCode,
+      requester_type: input.requesterType ?? null,
+      requester_id: input.requesterId ?? null,
+      requester_label: input.requesterLabel ?? null,
+      status: 'pending',
+      review_notes: null,
+      approved_at: null,
+      rejected_at: null,
+      result_link_id: null,
+      created_at: now,
+      updated_at: now,
+    })
+    .returning('*')) as SubmissionRow[];
+
+  return serializeSubmission(row);
+}
+
+export async function reviewUrlShortenerPublicSubmission(
+  submissionId: string,
+  input: ReviewPublicSubmissionInput,
+  db?: Knex
+): Promise<{ submission: UrlShortenerPublicSubmission; link: UrlShortenerLink | null } | null> {
+  const database = getDatabase(db);
+  const now = new Date();
+
+  return database.transaction(async (trx) => {
+    const existing = (await trx(SUBMISSIONS).where({ id: submissionId }).first()) as
+      | SubmissionRow
+      | undefined;
+
+    if (!existing) {
+      return null;
+    }
+
+    if (existing.status !== 'pending') {
+      return {
+        submission: serializeSubmission(existing),
+        link: null,
+      };
+    }
+
+    if (input.decision === 'rejected') {
+      const [row] = (await trx(SUBMISSIONS)
+        .where({ id: submissionId })
+        .update({
+          status: 'rejected',
+          review_notes: input.reviewNotes ?? null,
+          approved_at: null,
+          rejected_at: now,
+          updated_at: now,
+        })
+        .returning('*')) as SubmissionRow[];
+
+      return {
+        submission: serializeSubmission(row),
+        link: null,
+      };
+    }
+
+    const resolvedCode = input.codeOverride ?? existing.requested_code ?? undefined;
+    const link = await createUrlShortenerLink(
+      {
+        code: resolvedCode ?? undefined,
+        destinationUrl: existing.requested_destination,
+        title: input.title ?? undefined,
+        creatorType: input.reviewerType ?? 'admin',
+        creatorId: input.reviewerId ?? null,
+        creatorLabel: input.reviewerLabel ?? null,
+      },
+      trx
+    );
+
+    await trx(LINKS).where({ id: link.id }).update({
+      source_submission_id: submissionId,
+      updated_at: now,
+    });
+
+    const [row] = (await trx(SUBMISSIONS)
+      .where({ id: submissionId })
+      .update({
+        status: 'approved',
+        review_notes: input.reviewNotes ?? null,
+        approved_at: now,
+        rejected_at: null,
+        result_link_id: link.id,
+        updated_at: now,
+      })
+      .returning('*')) as SubmissionRow[];
+
+    return {
+      submission: serializeSubmission(row),
+      link,
+    };
   });
 }
