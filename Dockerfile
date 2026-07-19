@@ -84,6 +84,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
+# Isolated runtime workers execute source TypeScript with tsx and rely on
+# tsconfig path aliases (@core/*, @user/*) for module resolution.
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/src ./src
+
 # Copy migration infrastructure (TypeScript migration files kept with original names)
 COPY --from=builder /app/src/core/db/migrations ./migrations
 COPY --from=builder /app/src/user/extensions/db/migrations ./migrations/user
