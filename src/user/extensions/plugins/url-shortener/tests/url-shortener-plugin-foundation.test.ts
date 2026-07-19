@@ -681,6 +681,74 @@ describe('url shortener validation', () => {
     }
   });
 
+  it('blocks approval when requested code already exists and preserves pending submission state', async () => {
+    const db = getDb();
+    const linksTableExists = await db.schema.hasTable('u_url_shortener_links');
+    let schemaBootstrappedByTest = false;
+
+    if (!linksTableExists) {
+      await setupUrlShortenerSchema(db);
+      schemaBootstrappedByTest = true;
+    }
+
+    const duplicateCode = `dup-${Date.now().toString(36)}`;
+    let submissionId: string | null = null;
+
+    try {
+      const existingLink = await createUrlShortenerLink(
+        {
+          code: duplicateCode,
+          destinationUrl: 'https://example.com/existing-link',
+          title: 'Existing Link',
+        },
+        db
+      );
+
+      const submission = await createUrlShortenerPublicSubmission(
+        {
+          destinationUrl: 'https://example.com/submission-duplicate',
+          requestedCode: duplicateCode,
+          requesterType: 'public',
+          requesterLabel: 'Duplicate Submission',
+        },
+        db
+      );
+      submissionId = submission.id;
+
+      await expect(
+        reviewUrlShortenerPublicSubmission(
+          submission.id,
+          {
+            decision: 'approved',
+            reviewNotes: 'Approval should fail due to duplicate code',
+          },
+          db
+        )
+      ).rejects.toBeTruthy();
+
+      const submissions = await listUrlShortenerPublicSubmissions(db);
+      const afterFailure = submissions.find((item) => item.id === submission.id);
+
+      expect(afterFailure?.status).toBe('pending');
+      expect(afterFailure?.resultLinkId).toBeNull();
+      expect(afterFailure?.approvedAt).toBeNull();
+      expect(afterFailure?.rejectedAt).toBeNull();
+
+      const existingLinkAfter = await getUrlShortenerLinkByCode(duplicateCode, db);
+      expect(existingLinkAfter?.id).toBe(existingLink.id);
+      expect(existingLinkAfter?.destinationUrl).toBe('https://example.com/existing-link');
+      expect(existingLinkAfter?.isActive).toBe(true);
+    } finally {
+      if (submissionId) {
+        await db('u_url_shortener_public_submissions').where({ id: submissionId }).delete();
+      }
+      await db('u_url_shortener_links').where({ code: duplicateCode }).delete();
+      if (schemaBootstrappedByTest) {
+        await teardownUrlShortenerSchema(db);
+      }
+    }
+  });
+
   it('preserves links, analytics, submissions, and settings through disable and re-enable transitions', async () => {
     const db = getDb();
     const linksTableExists = await db.schema.hasTable('u_url_shortener_links');
