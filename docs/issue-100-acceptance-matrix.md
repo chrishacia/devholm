@@ -119,13 +119,15 @@ Gap:
 ## 8) Local override behavior
 
 - Generic canonical contract/reject logic exists: `implemented+tested (generic)`
-- URL-Shortener-specific override success/failure matrix (valid path, invalid path, malformed manifest, unknown plugin, digest mismatch, compatibility mismatch, CI/prod rejection, return-to-canonical without drift): `missing`
+- URL-Shortener-specific override success/failure matrix (valid path, invalid path, unknown plugin, CI/prod rejection, return-to-canonical without drift): `implemented+tested`
+- URL-Shortener-specific digest mismatch and compatibility mismatch assertions at resolver layer: `implemented+insufficient-tests`
 
 Evidence:
 
 - `src/core/lib/plugin-development-source-resolution.server.ts`
 - `src/test/plugin-canonical-resolver.test.ts`
 - `src/test/plugin-canonical-contract-validation.test.ts`
+- `src/test/plugin-development-source-resolution.test.ts`
 
 ## 9) Database and migrations
 
@@ -198,6 +200,7 @@ Evidence:
 
 - Unauthorized admin API access rejection: `implemented+tested`
 - Redirect URL validation + unsafe protocol rejection + reserved prefix validation: `implemented+tested`
+- Redirect runtime loop/invalid-target guard and query handling: `implemented+tested`
 - Submission abuse constraints and stronger policy limits: `partially-implemented`
 - Digest/trust failure handling exists mostly in generic canonical tests, not URL-Shortener-specific proof: `partially-implemented`
 
@@ -205,6 +208,7 @@ Evidence:
 
 - `src/user/extensions/plugins/url-shortener/tests/url-shortener-api.test.ts`
 - `src/user/extensions/plugins/url-shortener/tests/url-shortener-plugin-foundation.test.ts`
+- `src/user/extensions/plugins/url-shortener/tests/url-shortener-public-route-handler.test.ts`
 - `src/test/plugin-canonical-resolver.test.ts`
 
 ## 16) Required reference-plugin E2E coherence

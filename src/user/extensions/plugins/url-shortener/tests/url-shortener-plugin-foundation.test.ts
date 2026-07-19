@@ -28,10 +28,12 @@ import {
   URL_SHORTENER_ENABLEMENT_KEY,
   URL_SHORTENER_LEGACY_PREFIX_ENABLED_KEY,
   URL_SHORTENER_PLUGIN_ID,
+  URL_SHORTENER_PERMISSION_ADMIN_MANAGE,
   URL_SHORTENER_PUBLIC_CREATION_MODE_KEY,
   URL_SHORTENER_ROUTE_PREFIX_KEY,
 } from '@user/extensions/plugins/url-shortener/constants';
 import { urlShortenerPluginManifest } from '@user/extensions/plugins/url-shortener/manifest';
+import { urlShortenerAdminPageExtensions } from '@user/extensions/plugins/url-shortener/admin/pages';
 import {
   createShortLinkInputSchema,
   destinationUrlSchema,
@@ -170,6 +172,35 @@ describe('url shortener plugin manifest and registration', () => {
 
     for (const tableName of requiredTables) {
       expect(migrationContent.includes(tableName)).toBe(true);
+    }
+  });
+
+  it('keeps canonical plugin-owned authority for all admin pages', async () => {
+    const expectedHrefs = [
+      '/admin/url-shortener/overview',
+      '/admin/url-shortener/links',
+      '/admin/url-shortener/analytics',
+      '/admin/url-shortener/public-submissions',
+      '/admin/url-shortener/settings',
+    ];
+
+    const hrefs = urlShortenerAdminPageExtensions.map((page) => page.href);
+    expect(hrefs).toEqual(expectedHrefs);
+
+    for (const page of urlShortenerAdminPageExtensions) {
+      expect(page.pluginId).toBe(URL_SHORTENER_PLUGIN_ID);
+      expect(page.accessPolicy).toBeDefined();
+      expect(page.accessPolicy?.runtimeOwner).toBe('plugin-extension');
+      expect(page.accessPolicy?.scope).toBe('admin');
+      expect(page.accessPolicy?.permissionKeys).toContain(URL_SHORTENER_PERMISSION_ADMIN_MANAGE);
+
+      const loaded = await page.loadPage();
+      const component = 'default' in loaded ? loaded.default : loaded;
+      expect(component).toBeTypeOf('function');
+
+      const metadata = page.getMetadata ? await page.getMetadata() : null;
+      expect(metadata?.title).toBeTypeOf('string');
+      expect((metadata?.title as string).toLowerCase()).toContain('url shortener');
     }
   });
 });
