@@ -148,4 +148,56 @@ describe('reconcilePluginLifecycleState', () => {
 
     expect(result.action).toBe('require-recovery');
   });
+
+  it('returns manual-intervention-required when operation snapshots have incomplete version metadata', async () => {
+    findActivePluginLifecycleOperation.mockResolvedValue({
+      operationId: 'op-2',
+      leaseExpiresAt: new Date(now - 60_000).toISOString(),
+      nextStateSnapshot: {
+        installedVersion: null,
+      },
+      priorStateSnapshot: {
+        installedVersion: '0.1.0',
+      },
+    });
+    readLatestPluginLifecycleTransitionEventRecord.mockResolvedValue({
+      artifactDigest: 'sha256:url-shortener-artifact',
+    });
+    readInterruptedPluginMigrationCheckpoint.mockResolvedValue(null);
+    determinePluginRollbackCompatibility.mockResolvedValue({
+      rollbackCompatible: true,
+      reason: 'compatible',
+    });
+
+    const result = await reconcilePluginLifecycleState('url-shortener');
+
+    expect(result.action).toBe('manual-intervention-required');
+    expect(result.operationId).toBe('op-2');
+  });
+
+  it('returns require-recovery when rollback is blocked by irreversible migrations', async () => {
+    findActivePluginLifecycleOperation.mockResolvedValue({
+      operationId: 'op-3',
+      leaseExpiresAt: new Date(now - 60_000).toISOString(),
+      nextStateSnapshot: {
+        installedVersion: '0.2.0',
+      },
+      priorStateSnapshot: {
+        installedVersion: '0.1.0',
+      },
+    });
+    readLatestPluginLifecycleTransitionEventRecord.mockResolvedValue({
+      artifactDigest: 'sha256:url-shortener-artifact',
+    });
+    readInterruptedPluginMigrationCheckpoint.mockResolvedValue(null);
+    determinePluginRollbackCompatibility.mockResolvedValue({
+      rollbackCompatible: false,
+      reason: 'irreversible-migrations-present',
+    });
+
+    const result = await reconcilePluginLifecycleState('url-shortener');
+
+    expect(result.action).toBe('require-recovery');
+    expect(result.reason.toLowerCase()).toContain('irreversible');
+  });
 });

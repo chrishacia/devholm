@@ -182,7 +182,7 @@ Gap:
 ## 12) Rollback
 
 - Generic rollback evaluation/reconciler logic exists: `implemented+tested (generic)`
-- URL-Shortener-specific rollback/recovery decision-path assertions via reconciler: `partially-implemented`
+- URL-Shortener-specific rollback/recovery decision-path assertions via reconciler: `implemented+tested`
 
 Evidence:
 
@@ -192,7 +192,7 @@ Evidence:
 ## 13) Recovery
 
 - Generic recovery classification and checkpoint machinery exists: `implemented+tested (generic)`
-- URL-Shortener-specific recovery-state representation and manual-intervention cases: `partially-implemented`
+- URL-Shortener-specific recovery-state representation and manual-intervention cases: `implemented+tested`
 
 Evidence:
 
