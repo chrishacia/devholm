@@ -91,6 +91,14 @@ function responseForNotFound(message: string): Response {
   return json({ error: message }, { status: 404 });
 }
 
+function isUniqueViolationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  return (error as { code?: string }).code === '23505';
+}
+
 async function requireManageAccess(request: NextRequest) {
   return verifyPermission(request, MANAGE_PERMISSION);
 }
@@ -302,15 +310,35 @@ async function handlePublicSubmissionReviewPATCH(
     );
   }
 
-  const result = await reviewUrlShortenerPublicSubmission(submissionId, {
-    decision,
-    reviewNotes: typeof body.reviewNotes === 'string' ? body.reviewNotes : null,
-    title: typeof body.title === 'string' ? body.title : null,
-    codeOverride: typeof body.codeOverride === 'string' ? body.codeOverride : undefined,
-    reviewerType: typeof body.reviewerType === 'string' ? body.reviewerType : 'admin',
-    reviewerId: typeof body.reviewerId === 'string' ? body.reviewerId : null,
-    reviewerLabel: typeof body.reviewerLabel === 'string' ? body.reviewerLabel : null,
-  });
+  let result;
+  try {
+    result = await reviewUrlShortenerPublicSubmission(submissionId, {
+      decision,
+      reviewNotes: typeof body.reviewNotes === 'string' ? body.reviewNotes : null,
+      title: typeof body.title === 'string' ? body.title : null,
+      codeOverride: typeof body.codeOverride === 'string' ? body.codeOverride : undefined,
+      reviewerType: typeof body.reviewerType === 'string' ? body.reviewerType : 'admin',
+      reviewerId: typeof body.reviewerId === 'string' ? body.reviewerId : null,
+      reviewerLabel: typeof body.reviewerLabel === 'string' ? body.reviewerLabel : null,
+    });
+  } catch (error) {
+    if (isUniqueViolationError(error)) {
+      return json(
+        {
+          error: 'Duplicate short code',
+          code: 'DUPLICATE_SHORT_CODE',
+        },
+        { status: 409 }
+      );
+    }
+
+    return json(
+      {
+        error: 'Invalid submission review payload',
+      },
+      { status: 400 }
+    );
+  }
 
   if (!result) {
     return responseForNotFound('Submission not found');

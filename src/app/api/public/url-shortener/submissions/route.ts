@@ -56,13 +56,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const submission = await createUrlShortenerPublicSubmission({
-    destinationUrl,
-    requestedCode: typeof body.requestedCode === 'string' ? body.requestedCode : undefined,
-    requesterType: 'public',
-    requesterId: null,
-    requesterLabel: typeof body.requesterLabel === 'string' ? body.requesterLabel : null,
-  });
+  let submission;
+  try {
+    submission = await createUrlShortenerPublicSubmission({
+      destinationUrl,
+      requestedCode: typeof body.requestedCode === 'string' ? body.requestedCode : undefined,
+      requesterType: 'public',
+      requesterId: null,
+      requesterLabel: typeof body.requesterLabel === 'string' ? body.requesterLabel : null,
+    });
+  } catch {
+    return NextResponse.json(
+      {
+        error: 'Invalid public submission payload',
+      },
+      { status: 400 }
+    );
+  }
 
   return NextResponse.json({ submission }, { status: 201 });
 }

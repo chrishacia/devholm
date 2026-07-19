@@ -129,4 +129,43 @@ describe('public URL shortener submissions route', () => {
       })
     );
   });
+
+  it('returns stable invalid-payload response when destination URL is malformed', async () => {
+    createUrlShortenerPublicSubmission.mockRejectedValue(new Error('invalid-destination-url'));
+
+    const request = new NextRequest('http://localhost:3000/api/public/url-shortener/submissions', {
+      method: 'POST',
+      body: JSON.stringify({
+        destinationUrl: 'javascript:alert(1)',
+      }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Invalid public submission payload',
+    });
+  });
+
+  it('returns stable invalid-payload response when requested code format is invalid', async () => {
+    createUrlShortenerPublicSubmission.mockRejectedValue(new Error('invalid-requested-code'));
+
+    const request = new NextRequest('http://localhost:3000/api/public/url-shortener/submissions', {
+      method: 'POST',
+      body: JSON.stringify({
+        destinationUrl: 'https://example.com/landing',
+        requestedCode: 'bad/code',
+      }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Invalid public submission payload',
+    });
+  });
 });

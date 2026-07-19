@@ -436,4 +436,50 @@ describe('url shortener api extension', () => {
       error: 'Invalid public submission payload',
     });
   });
+
+  it('returns conflict status for duplicate short-code approval attempts', async () => {
+    vi.mocked(reviewUrlShortenerPublicSubmission).mockRejectedValue({ code: '23505' });
+
+    const response = await urlShortenerApiExtensions[0].handlers.PATCH!(
+      mockRequest('PATCH', {
+        decision: 'approved',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions', 'submission-2'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Duplicate short code',
+      code: 'DUPLICATE_SHORT_CODE',
+    });
+  });
+
+  it('returns stable invalid payload response without leaking internals on review failure', async () => {
+    vi.mocked(reviewUrlShortenerPublicSubmission).mockRejectedValue(
+      new Error('db duplicate key on u_url_shortener_links')
+    );
+
+    const response = await urlShortenerApiExtensions[0].handlers.PATCH!(
+      mockRequest('PATCH', {
+        decision: 'approved',
+      }),
+      {
+        params: { path: ['url-shortener', 'public-submissions', 'submission-2'] },
+        helpers: mockHelpers(),
+      }
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      error: 'Invalid submission review payload',
+    });
+    const serialized = JSON.stringify(body).toLowerCase();
+    expect(serialized).not.toContain('db');
+    expect(serialized).not.toContain('stack');
+    expect(serialized).not.toContain('u_url_shortener_links');
+  });
 });
