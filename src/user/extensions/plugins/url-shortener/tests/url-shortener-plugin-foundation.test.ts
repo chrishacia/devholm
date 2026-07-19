@@ -84,6 +84,74 @@ describe('url shortener plugin manifest and registration', () => {
     expect(fs.existsSync(absolute)).toBe(true);
   });
 
+  it('publishes canonical registry contract metadata for identity, provenance, and policy', () => {
+    const registryPath = path.join(process.cwd(), 'generated/plugins/registry.json');
+    const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8')) as {
+      content?: {
+        plugins?: Array<{
+          pluginId: string;
+          selectedVersion: string;
+          publisherId: string;
+          sourceKind: string;
+          immutableRef: string;
+          artifactSha256: string | null;
+          manifestId: string;
+          compatibility?: { devholmVersion?: string };
+          contributionSummary?: {
+            frontendAdminPages?: string[];
+            serverPublicRouteIds?: string[];
+            lifecycleHooks?: string[];
+          };
+          policySummary?: {
+            allowLocalOverrideInDevelopment?: boolean;
+            requireImmutableArtifactInProduction?: boolean;
+            requireDigestInProduction?: boolean;
+            dependencyPolicyMode?: string;
+          };
+          localOverride?: {
+            enabled?: boolean;
+            developmentOnly?: boolean;
+          };
+        }>;
+      };
+    };
+
+    const urlShortener = registry.content?.plugins?.find(
+      (plugin) => plugin.pluginId === URL_SHORTENER_PLUGIN_ID
+    );
+
+    expect(urlShortener).toBeDefined();
+    expect(urlShortener?.selectedVersion).toBe(urlShortenerPluginManifest.version);
+    expect(urlShortener?.publisherId).toBe('devholm-first-party');
+    expect(urlShortener?.sourceKind).toBe('bundled-fallback-artifact');
+    expect(urlShortener?.immutableRef).toBe('bundled:url-shortener@0.1.0');
+    expect(urlShortener?.artifactSha256).toMatch(/^[a-f0-9]{64}$/i);
+    expect(urlShortener?.manifestId).toBe(URL_SHORTENER_PLUGIN_ID);
+    expect(urlShortener?.compatibility?.devholmVersion).toBe(
+      urlShortenerPluginManifest.devholmVersion
+    );
+
+    expect(urlShortener?.contributionSummary?.frontendAdminPages).toEqual(
+      [...(urlShortenerPluginManifest.adminPageHrefs ?? [])].sort((left, right) =>
+        left.localeCompare(right)
+      )
+    );
+    expect(urlShortener?.contributionSummary?.serverPublicRouteIds).toEqual(
+      urlShortenerPluginManifest.publicRouteExtensionIds
+    );
+    expect(urlShortener?.contributionSummary?.lifecycleHooks).toEqual(['purge']);
+
+    expect(urlShortener?.policySummary?.allowLocalOverrideInDevelopment).toBe(true);
+    expect(urlShortener?.policySummary?.requireImmutableArtifactInProduction).toBe(true);
+    expect(urlShortener?.policySummary?.requireDigestInProduction).toBe(true);
+    expect(urlShortener?.policySummary?.dependencyPolicyMode).toBe('self-contained');
+
+    expect(urlShortener?.localOverride).toEqual({
+      enabled: false,
+      developmentOnly: false,
+    });
+  });
+
   it('keeps migration schema ownership for all required domain tables', () => {
     const migrationPath = path.join(
       process.cwd(),
