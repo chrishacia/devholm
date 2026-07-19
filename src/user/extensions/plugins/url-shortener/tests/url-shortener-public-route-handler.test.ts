@@ -62,6 +62,34 @@ describe('url shortener public route handler', () => {
     expect(vi.mocked(recordUrlShortenerClick).mock.calls[0]).toHaveLength(2);
   });
 
+  it('preserves incoming query parameters on redirect', async () => {
+    vi.mocked(getUrlShortenerLinkByCode).mockResolvedValue({
+      id: 'link-query',
+      code: 'query-pass',
+      destinationUrl: 'https://example.com/landing?from=dest',
+      title: 'Query Pass',
+      isActive: true,
+      expiresAt: null,
+      redirectStatusCode: 302,
+      cachedClickCount: 0,
+      createdAt: new Date('2026-07-07T00:00:00Z').toISOString(),
+      updatedAt: new Date('2026-07-07T00:00:00Z').toISOString(),
+      deletedAt: null,
+    });
+
+    const response = await handleUrlShortenerRedirect(
+      'query-pass',
+      mockRequest('/s/query-pass?utm_source=test&campaign=issue100')
+    );
+
+    expect(response.status).toBe(302);
+    const location = response.headers.get('location');
+    expect(location).toContain('https://example.com/landing?from=dest');
+    expect(location).toContain('utm_source=test');
+    expect(location).toContain('campaign=issue100');
+    expect(vi.mocked(recordUrlShortenerClick)).toHaveBeenCalledTimes(1);
+  });
+
   it('returns 404 for missing links', async () => {
     vi.mocked(getUrlShortenerLinkByCode).mockResolvedValue(null);
 
@@ -124,6 +152,50 @@ describe('url shortener public route handler', () => {
       code: 'PLUGIN_DISABLED',
     });
     expect(vi.mocked(getUrlShortenerLinkByCode)).not.toHaveBeenCalled();
+    expect(vi.mocked(recordUrlShortenerClick)).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for invalid destination protocol without recording click', async () => {
+    vi.mocked(getUrlShortenerLinkByCode).mockResolvedValue({
+      id: 'link-unsafe',
+      code: 'unsafe',
+      destinationUrl: 'javascript:alert(1)',
+      title: null,
+      isActive: true,
+      expiresAt: null,
+      redirectStatusCode: 302,
+      cachedClickCount: 0,
+      createdAt: new Date('2026-07-07T00:00:00Z').toISOString(),
+      updatedAt: new Date('2026-07-07T00:00:00Z').toISOString(),
+      deletedAt: null,
+    });
+
+    const response = await handleUrlShortenerRedirect('unsafe', mockRequest('/s/unsafe'));
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain('destination is invalid');
+    expect(vi.mocked(recordUrlShortenerClick)).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 for redirect loop target without recording click', async () => {
+    vi.mocked(getUrlShortenerLinkByCode).mockResolvedValue({
+      id: 'link-loop',
+      code: 'loop',
+      destinationUrl: 'http://localhost:3000/s/loop',
+      title: null,
+      isActive: true,
+      expiresAt: null,
+      redirectStatusCode: 302,
+      cachedClickCount: 0,
+      createdAt: new Date('2026-07-07T00:00:00Z').toISOString(),
+      updatedAt: new Date('2026-07-07T00:00:00Z').toISOString(),
+      deletedAt: null,
+    });
+
+    const response = await handleUrlShortenerRedirect('loop', mockRequest('/s/loop?x=1'));
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toContain('destination is invalid');
     expect(vi.mocked(recordUrlShortenerClick)).not.toHaveBeenCalled();
   });
 });

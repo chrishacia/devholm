@@ -25,6 +25,37 @@ function plainText(message: string, status: number): Response {
   });
 }
 
+function buildRedirectTarget(destinationUrl: string, requestUrl: string): string | null {
+  let target: URL;
+  let source: URL;
+
+  try {
+    target = new URL(destinationUrl);
+    source = new URL(requestUrl);
+  } catch {
+    return null;
+  }
+
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+    return null;
+  }
+
+  // Preserve incoming tracking/query parameters on redirect targets.
+  for (const [key, value] of source.searchParams.entries()) {
+    target.searchParams.append(key, value);
+  }
+
+  if (
+    target.origin === source.origin &&
+    target.pathname === source.pathname &&
+    target.search === source.search
+  ) {
+    return null;
+  }
+
+  return target.toString();
+}
+
 export async function handleUrlShortenerRedirect(
   code: string,
   request: Request
@@ -47,11 +78,15 @@ export async function handleUrlShortenerRedirect(
     return plainText('Short link has expired', 410);
   }
 
-  await recordUrlShortenerClick(link.id, request);
-
   const status = [301, 302, 307, 308].includes(link.redirectStatusCode)
     ? link.redirectStatusCode
     : 302;
+  const targetUrl = buildRedirectTarget(link.destinationUrl, request.url);
+  if (!targetUrl) {
+    return plainText('Short link destination is invalid', 400);
+  }
 
-  return Response.redirect(link.destinationUrl, status);
+  await recordUrlShortenerClick(link.id, request);
+
+  return Response.redirect(targetUrl, status);
 }
