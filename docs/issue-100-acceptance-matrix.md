@@ -135,7 +135,7 @@ Evidence:
 
 - Foundation schema ownership and migration presence: `implemented+tested`
 - Data preservation through safe update path (subset): `implemented+tested`
-- Idempotency/interrupted migration checkpoint/non-destructive guarantees with URL Shortener-specific assertions: `implemented+insufficient-tests`
+- Idempotency/interrupted migration checkpoint/non-destructive guarantees with URL Shortener-specific assertions: `implemented+tested`
 
 Evidence:
 
@@ -143,20 +143,23 @@ Evidence:
 - `src/user/extensions/plugins/url-shortener/tests/url-shortener-plugin-foundation.test.ts`
 - `src/core/db/plugin-migration-checkpoints.ts`
 - `src/core/lib/plugin-migration-runner.server.ts`
+- `src/core/lib/__tests__/plugin-lifecycle-postgres.integration.test.ts`
+- `src/core/lib/__tests__/plugin-migration-broker.test.ts`
 
 ## 10) Lifecycle (install/enable/disable/re-enable/restart persistence/records/actions)
 
-- Generic lifecycle flows include URL Shortener plugin target: `implemented+tested (generic)`
-- URL-Shortener-specific restart-persistence and available/blocked action truth matrix: `partially-implemented`
+- Install/enable/disable/re-enable/purge safeguards/operation records/checkpoint interactions: `implemented+tested`
+- URL-Shortener-specific restart-persistence and available/blocked action truth matrix: `implemented+insufficient-tests`
 
 Evidence:
 
 - `src/core/lib/__tests__/plugin-lifecycle-postgres.integration.test.ts`
 - `src/core/db/plugin-lifecycle.ts`
+- `src/core/lib/__tests__/plugin-lifecycle-orchestrator.test.ts`
 
 ## 11) Update
 
-- Generic admin-triggered safe update contract exists and one URL-Shortener data-preservation proof exists: `implemented+insufficient-tests`
+- Generic admin-triggered safe update contract plus URL-Shortener settings/data preservation proof: `implemented+tested`
 
 Evidence:
 
@@ -165,12 +168,12 @@ Evidence:
 
 Gap:
 
-- Missing broad URL-Shortener reference-proof update matrix (metadata verification, interrupted-update reconciliation, identity/settings/data preservation assertions).
+- Interrupted-update reconciliation and explicit trust/digest decision-path assertions remain insufficient.
 
 ## 12) Rollback
 
 - Generic rollback evaluation/reconciler logic exists: `implemented+tested (generic)`
-- URL-Shortener-specific rollback acceptance matrix: `missing`
+- URL-Shortener-specific rollback/recovery decision-path assertions via reconciler: `partially-implemented`
 
 Evidence:
 
@@ -180,12 +183,13 @@ Evidence:
 ## 13) Recovery
 
 - Generic recovery classification and checkpoint machinery exists: `implemented+tested (generic)`
-- URL-Shortener-specific recovery-state representation and manual-intervention cases: `missing`
+- URL-Shortener-specific recovery-state representation and manual-intervention cases: `partially-implemented`
 
 Evidence:
 
 - `src/core/db/plugin-migration-checkpoints.ts`
 - `src/core/lib/plugin-lifecycle-reconciler.server.ts`
+- `src/core/lib/__tests__/plugin-lifecycle-reconciler.test.ts`
 
 ## 14) Plugin Management truthful read model
 
