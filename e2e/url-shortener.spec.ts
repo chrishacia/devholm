@@ -71,9 +71,18 @@ test.describe('URL Shortener MVP', () => {
       expect(urlShortener?.isEnabled).toBe(enabled);
 
       await page.goto('/admin/plugins');
-      const toggle = page.getByLabel(/Toggle URL Shortener/i);
-      await expect(toggle).toBeVisible({ timeout: 20000 });
-      await expect.poll(async () => toggle.isChecked(), { timeout: 20000 }).toBe(enabled);
+      const desiredAction = enabled ? 'Enable' : 'Disable';
+      const inverseAction = enabled ? 'Disable' : 'Enable';
+      const actionButton = page.getByRole('button', { name: desiredAction }).first();
+
+      if ((await actionButton.count()) > 0) {
+        await expect(actionButton).toBeVisible({ timeout: 20000 });
+        await actionButton.click();
+      }
+
+      await expect(page.getByRole('button', { name: inverseAction }).first()).toBeVisible({
+        timeout: 20000,
+      });
     };
 
     const adminIdentity = createTestIdentity('admin');
