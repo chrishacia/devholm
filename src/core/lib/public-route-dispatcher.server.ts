@@ -33,6 +33,7 @@ const ISOLATED_EXTENSION_NOT_FOUND_ERROR_PATTERNS = [
 ] as const;
 
 const ISOLATED_MATCH_TIMEOUT_ERROR_PATTERN = /^isolated plugin execution timed out$/;
+const ISOLATED_HANDLE_TIMEOUT_ERROR_PATTERN = /^isolated plugin execution timed out$/;
 
 function isIsolatedExtensionNotFoundError(error: unknown): boolean {
   if (!(error instanceof Error)) {
@@ -44,6 +45,10 @@ function isIsolatedExtensionNotFoundError(error: unknown): boolean {
 
 function isIsolatedMatchTimeoutError(error: unknown): boolean {
   return error instanceof Error && ISOLATED_MATCH_TIMEOUT_ERROR_PATTERN.test(error.message);
+}
+
+function isIsolatedHandleTimeoutError(error: unknown): boolean {
+  return error instanceof Error && ISOLATED_HANDLE_TIMEOUT_ERROR_PATTERN.test(error.message);
 }
 
 function withIsolationBoundary(extension: (typeof publicRouteExtensions)[number]) {
@@ -113,6 +118,18 @@ function withIsolationBoundary(extension: (typeof publicRouteExtensions)[number]
         });
       } catch (error) {
         if (isIsolatedExtensionNotFoundError(error)) {
+          return extension.handle(match, request, EDGE_SAFE_HELPERS);
+        }
+
+        if (isIsolatedHandleTimeoutError(error)) {
+          console.warn(
+            'isolated public-route handler timed out; using in-process handler fallback',
+            {
+              pluginId: extension.pluginId,
+              extensionId: extension.id,
+              pathname: request.nextUrl.pathname,
+            }
+          );
           return extension.handle(match, request, EDGE_SAFE_HELPERS);
         }
 

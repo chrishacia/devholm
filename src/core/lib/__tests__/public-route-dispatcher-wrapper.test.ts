@@ -175,6 +175,26 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
     }
   });
 
+  it('falls back to in-process handler when isolated handler times out', async () => {
+    runIsolatedPublicRouteMatch.mockResolvedValue({
+      matched: true,
+      match: { code: 'abc123' },
+      meta: { executionId: 'exec-2', childPid: 12345 },
+    });
+    runIsolatedPublicRouteHandle.mockRejectedValue(
+      new Error('isolated plugin execution timed out')
+    );
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(runIsolatedPublicRouteHandle).toHaveBeenCalledTimes(1);
+    expect(extensionHandle).toHaveBeenCalledTimes(1);
+    expect(resolution.type).toBe('match');
+    if (resolution.type === 'match') {
+      expect(resolution.response.status).toBe(204);
+    }
+  });
+
   it('does not fall back when arbitrary message text mentions extension-not-found', async () => {
     runIsolatedPublicRouteMatch.mockRejectedValue(
       new Error('worker unavailable: extension-not-found appeared in logs')
@@ -203,6 +223,22 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
     });
     runIsolatedPublicRouteHandle.mockRejectedValue(
       new Error('isolated public-route handler failed: extension-not-found-extra: not found')
+    );
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(extensionHandle).not.toHaveBeenCalled();
+    expect(resolution.type).toBe('error');
+  });
+
+  it('does not fall back when isolated handler timeout-like error is not exact timeout', async () => {
+    runIsolatedPublicRouteMatch.mockResolvedValue({
+      matched: true,
+      match: { code: 'abc123' },
+      meta: { executionId: 'exec-2', childPid: 12345 },
+    });
+    runIsolatedPublicRouteHandle.mockRejectedValue(
+      new Error('isolated plugin execution timed out while booting handler')
     );
 
     const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
