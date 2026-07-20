@@ -84,6 +84,14 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
+# Isolated runtime workers execute source TypeScript with tsx and rely on
+# tsconfig path aliases (@core/*, @user/*) for module resolution.
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/src/core ./src/core
+COPY --from=builder /app/src/user ./src/user
+RUN find ./src -type d \( -name '__tests__' -o -name '__mocks__' -o -name 'fixtures' \) -prune -exec rm -rf {} + && \
+  find ./src -type f \( -name '*.test.ts' -o -name '*.test.tsx' -o -name '*.spec.ts' -o -name '*.spec.tsx' -o -name '*.swp' -o -name '*.swo' \) -delete
+
 # Copy migration infrastructure (TypeScript migration files kept with original names)
 COPY --from=builder /app/src/core/db/migrations ./migrations
 COPY --from=builder /app/src/user/extensions/db/migrations ./migrations/user
