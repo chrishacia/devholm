@@ -287,11 +287,10 @@ describe('AdminPluginsPage', () => {
   it('shows recovery status prominently and uses authority to disable install', async () => {
     await renderWithPlugin(createPlugin());
 
-    expect(screen.getByText(/Recovery required:/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Recovery required/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Interrupted migration checkpoint:/)).toBeInTheDocument();
 
-    const installButton = screen.getByRole('button', { name: 'Install' });
-    expect(installButton).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Open recovery' })).not.toBeInTheDocument();
   });
 
   it('renders canonical active truth without contradictory not-installed messaging', async () => {
@@ -351,11 +350,9 @@ describe('AdminPluginsPage', () => {
 
     await renderWithPlugin(plugin);
 
-    expect(screen.getByText('Available: 1.0.0')).toBeInTheDocument();
-    expect(screen.getByText('Installed: 0.1.0')).toBeInTheDocument();
-    expect(screen.getByText('Trust: allowed')).toBeInTheDocument();
-    expect(screen.getByText('Canonical active')).toBeInTheDocument();
-    expect(screen.getByText('Source: Bundled Default')).toBeInTheDocument();
+    expect(screen.getByText('Active • Bundled default')).toBeInTheDocument();
+    expect(screen.getByText(/Version: Installed 0.1.0 • Available 1.0.0/)).toBeInTheDocument();
+    expect(screen.getByText(/Source: Bundled default/)).toBeInTheDocument();
     expect(screen.queryByText('Not installed')).not.toBeInTheDocument();
   });
 
@@ -390,18 +387,16 @@ describe('AdminPluginsPage', () => {
 
     await renderWithPlugin(plugin);
 
-    expect(screen.getByText('Source: Local Override')).toBeInTheDocument();
-    expect(screen.getByText('Resolved source: local-development-checkout')).toBeInTheDocument();
+    expect(screen.getByText('Needs recovery • Local override')).toBeInTheDocument();
+    expect(screen.getByText(/Source: Local override/)).toBeInTheDocument();
 
     const inspectButton = screen.getByRole('button', { name: 'Inspect URL Shortener' });
     fireEvent.click(inspectButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Development source')).toBeInTheDocument();
+      expect(screen.getByText('Technical details')).toBeInTheDocument();
     });
-    expect(
-      screen.getByText(/Local override active at \[redacted-local-override-path\]/)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Resolver diagnostics/)).toBeInTheDocument();
   });
 
   it('renders disabled runtime truth with enable path and disable blocked reason', async () => {
@@ -458,8 +453,10 @@ describe('AdminPluginsPage', () => {
 
     await renderWithPlugin(plugin);
 
-    expect(screen.getByText('Disabled')).toBeInTheDocument();
-    expect(screen.getByText('Installed')).toBeInTheDocument();
+    expect(screen.getByText('Disabled • Bundled default')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Version: Installed not installed • Available 1.0.0/)
+    ).toBeInTheDocument();
     expect(screen.queryByText('Not installed')).not.toBeInTheDocument();
     expect(
       screen.getByText('Rollback blocked: no-eligible-rollback-candidate')
@@ -500,7 +497,7 @@ describe('AdminPluginsPage', () => {
     await renderWithPlugin(plugin);
 
     expect(screen.getByText(/Operation in progress: executing/)).toBeInTheDocument();
-    expect(screen.getByText('Desired updating')).toBeInTheDocument();
+    expect(screen.getByText('Primary action: None')).toBeInTheDocument();
     expect(screen.getByText('Lease worker-a')).toBeInTheDocument();
   });
 
@@ -627,17 +624,16 @@ describe('AdminPluginsPage', () => {
     });
 
     await renderWithPlugin(plugin);
-    expect(screen.getByText('Available: 0.2.0')).toBeInTheDocument();
-    expect(screen.getByText('Installed: 0.1.0')).toBeInTheDocument();
+    expect(screen.getByText(/Version: Installed 0.1.0 • Available 0.2.0/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Inspect URL Shortener' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Operation history')).toBeInTheDocument();
+      expect(screen.getByText('Lifecycle and deployment')).toBeInTheDocument();
     });
 
     expect(screen.getByText(/0.1.0 -> 0.2.0 \(failed\)/)).toBeInTheDocument();
-    expect(screen.getByText(/blocked=update:trust-blocked/)).toBeInTheDocument();
+    expect(screen.getByText(/Actions and remediation/)).toBeInTheDocument();
   });
 
   it('renders blocked install and remediation for missing configuration state', async () => {
@@ -694,12 +690,21 @@ describe('AdminPluginsPage', () => {
     expect(
       screen.getByText('Source resolution failed: canonical-source-missing')
     ).toBeInTheDocument();
-    expect(screen.getByText(/Install blocked: source-resolution-failed/)).toBeInTheDocument();
+    expect(screen.getByText(/Install blocked:/)).toBeInTheDocument();
     expect(
-      screen.getByText(/Fix configuration issues and rerun trust validation/)
-    ).toBeInTheDocument();
+      screen.getAllByText(/Fix configuration issues and rerun trust validation/).length
+    ).toBeGreaterThan(0);
 
-    const installButton = screen.getByRole('button', { name: 'Install' });
-    expect(installButton).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Open recovery' })).not.toBeInTheDocument();
+  });
+
+  it('renders canonical presentation without legacy transitional status or switch bypass', async () => {
+    await renderWithPlugin(createPlugin());
+
+    expect(screen.getByText('Needs recovery • Bundled default')).toBeInTheDocument();
+    expect(screen.getAllByText(/Recovery required/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Legacy \(transitional\)/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: /Toggle URL Shortener/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Inspect URL Shortener' })).toBeInTheDocument();
   });
 });

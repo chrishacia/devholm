@@ -3,10 +3,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from '@/components/common/Link';
 import {
-  deriveMarketplaceUiState,
-  getMarketplaceUiStateDefinition,
-} from '@/app/admin/plugins/marketplace-state';
+  derivePluginManagementPresentation,
+  type PluginManagementPresentationInput,
+} from '@/app/admin/plugins/presentation-model';
+import type { PluginLifecycleActionAuthority } from '@core/lib/plugin-lifecycle-action-authority.server';
+import type {
+  CanonicalPluginStateAxes,
+  CanonicalPluginSummaryState,
+} from '@core/types/plugin-canonical-contracts';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Autocomplete,
   Box,
@@ -24,13 +32,13 @@ import {
   ListItem,
   ListItemText,
   MenuItem,
-  Select,
   Skeleton,
   Stack,
   Switch,
   TextField,
   Typography,
 } from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 interface PluginAdminSurface {
   href: string;
@@ -171,42 +179,11 @@ interface MarketplacePluginView {
     rollbackAvailableUntil?: string;
   }>;
   lifecycleState: {
-    axes: {
-      desired: string;
-      resolution: string;
-      build: string;
-      deployment: string;
-      runtime: string;
-      trust: string;
-      health: string;
-      recovery: string;
-    };
-    summaryState: string;
+    axes: CanonicalPluginStateAxes;
+    summaryState: CanonicalPluginSummaryState;
     validationErrors: string[];
   };
-  actionAuthority: {
-    byId: Record<
-      string,
-      {
-        id: string;
-        enabled: boolean;
-        reasonCode: string | null;
-        safeExplanation: string;
-        approvalRequired: boolean;
-        destructive: boolean;
-        recoveryClassification: string;
-      }
-    >;
-    available: Array<{
-      id: string;
-      safeExplanation: string;
-    }>;
-    blocked: Array<{
-      id: string;
-      reasonCode: string | null;
-      safeExplanation: string;
-    }>;
-  };
+  actionAuthority: PluginLifecycleActionAuthority;
   actions: {
     install: { allowed: boolean; reasonCode: string | null; remediation: string };
     update: { allowed: boolean; reasonCode: string | null; remediation: string };
@@ -316,6 +293,45 @@ function mirrorToEditorModel(mirror: MarketplaceMirrorSummary): MarketplaceMirro
   };
 }
 
+function toPresentationInput(entry: MarketplacePluginView): PluginManagementPresentationInput {
+  return {
+    plugin: {
+      name: entry.plugin.name,
+      installed: entry.plugin.installed,
+      isEnabled: entry.plugin.isEnabled,
+      installedVersion: entry.plugin.installedVersion,
+      bundledVersion: entry.plugin.bundledVersion,
+    },
+    lifecycleState: {
+      axes: entry.lifecycleState.axes,
+      summaryState: entry.lifecycleState.summaryState,
+    },
+    actionAuthority: entry.actionAuthority,
+    sourceResolution: {
+      configuredSourceKind: entry.sourceResolution.configuredSourceKind,
+      resolvedSourceKind: entry.sourceResolution.resolvedSourceKind,
+      localOverrideEnabled: entry.sourceResolution.localOverrideEnabled,
+    },
+    trustPolicy: {
+      outcome: entry.trustPolicy.outcome,
+      reasonCode: entry.trustPolicy.reasonCode,
+    },
+    reconciliation: {
+      action: entry.reconciliation.action,
+      message: entry.reconciliation.message,
+      remediation: entry.reconciliation.remediation,
+    },
+    rollback: { eligible: entry.rollback.eligible },
+    operation: {
+      hasActive: entry.operation.hasActive,
+      recoveryRequired: entry.operation.recoveryRequired,
+    },
+    catalogEntry: {
+      version: entry.catalogEntry.version,
+    },
+  };
+}
+
 export default function AdminPluginsPage() {
   const [plugins, setPlugins] = useState<MarketplacePluginView[]>([]);
   const [cacheHealth, setCacheHealth] = useState<MarketplaceCacheHealthSummary | null>(null);
@@ -335,7 +351,16 @@ export default function AdminPluginsPage() {
   >(null);
   const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'installed' | 'not-installed'>('all');
+  const [statusFilter, setStatusFilter] = useState<
+    | 'all'
+    | 'needs-attention'
+    | 'active'
+    | 'disabled'
+    | 'pending'
+    | 'updates'
+    | 'blocked'
+    | 'local-overrides'
+  >('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingPluginId, setPendingPluginId] = useState<string | null>(null);
@@ -607,9 +632,22 @@ export default function AdminPluginsPage() {
   );
 
   const filteredPlugins = plugins.filter((entry) => {
+    const presentation = derivePluginManagementPresentation(toPresentationInput(entry));
+
     const matchesStatus =
       statusFilter === 'all' ||
-      (statusFilter === 'installed' ? entry.plugin.installed : !entry.plugin.installed);
+      (statusFilter === 'needs-attention' &&
+        (presentation.flags.recoveryRequired ||
+          presentation.flags.degraded ||
+          presentation.blockedActions.length > 0)) ||
+      (statusFilter === 'active' && presentation.primaryStatus.id === 'active') ||
+      (statusFilter === 'disabled' && presentation.primaryStatus.id === 'disabled') ||
+      (statusFilter === 'pending' &&
+        (presentation.flags.pendingBuild || presentation.flags.pendingDeployment)) ||
+      (statusFilter === 'updates' && presentation.flags.updateAvailable) ||
+      (statusFilter === 'blocked' && presentation.blockedActions.length > 0) ||
+      (statusFilter === 'local-overrides' && presentation.flags.localOverride);
+
     if (!matchesStatus) {
       return false;
     }
@@ -625,6 +663,8 @@ export default function AdminPluginsPage() {
       entry.plugin.description || '',
       entry.catalogEntry.publisher.publisherId,
       entry.catalogEntry.publisher.classification,
+      presentation.primaryStatus.label,
+      presentation.sourceLabel,
     ];
     return fields.some((value) => value.toLowerCase().includes(normalizedQuery));
   });
@@ -654,220 +694,337 @@ export default function AdminPluginsPage() {
           renderInput={(params) => <TextField {...params} label="Search plugins" size="small" />}
           sx={{ minWidth: 280, flex: 1 }}
         />
-        <Select
+        <TextField
+          select
           size="small"
           value={statusFilter}
           onChange={(event) => {
-            setStatusFilter(event.target.value as 'all' | 'installed' | 'not-installed');
+            setStatusFilter(event.target.value as typeof statusFilter);
           }}
+          label="Status"
           sx={{ width: { xs: '100%', md: 220 } }}
         >
           <MenuItem value="all">All plugins</MenuItem>
-          <MenuItem value="installed">Installed</MenuItem>
-          <MenuItem value="not-installed">Not installed</MenuItem>
-        </Select>
+          <MenuItem value="needs-attention">Needs attention</MenuItem>
+          <MenuItem value="active">Active</MenuItem>
+          <MenuItem value="disabled">Disabled</MenuItem>
+          <MenuItem value="pending">Pending</MenuItem>
+          <MenuItem value="updates">Updates</MenuItem>
+          <MenuItem value="blocked">Blocked</MenuItem>
+          <MenuItem value="local-overrides">Local overrides</MenuItem>
+        </TextField>
       </Stack>
 
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                Cache Usage
-              </Typography>
-              <Typography variant="h6" fontWeight={700}>
-                {cacheHealth
-                  ? `${formatBytes(cacheHealth.usageBytes)} / ${formatBytes(cacheHealth.policy.maxCacheBytes)}`
-                  : 'Unknown'}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Pinned {cacheHealth ? formatBytes(cacheHealth.pinnedUsageBytes) : 'Unknown'} •
-                Evictable {cacheHealth ? formatBytes(cacheHealth.evictableUsageBytes) : 'Unknown'}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                Cache Health
-              </Typography>
-              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                <Chip
-                  size="small"
-                  label={cacheHealth?.degraded.overQuota ? 'Over quota' : 'Quota healthy'}
-                  color={cacheHealth?.degraded.overQuota ? 'warning' : 'success'}
-                />
-                <Chip
-                  size="small"
-                  label={
-                    cacheHealth?.degraded.latestAuditDegraded ? 'Audit degraded' : 'Audit healthy'
-                  }
-                  color={cacheHealth?.degraded.latestAuditDegraded ? 'warning' : 'success'}
-                />
-              </Stack>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                Entries: {cacheHealth?.usageEntries ?? 'Unknown'} • Pinned:{' '}
-                {cacheHealth?.pinnedEntries ?? 'Unknown'}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                Mirrors
-              </Typography>
-              <Typography variant="h6" fontWeight={700}>
-                {cacheHealth
-                  ? `${cacheHealth.mirrors.enabled}/${cacheHealth.mirrors.total}`
-                  : 'Unknown'}{' '}
-                enabled
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Degraded: {cacheHealth?.mirrors.degraded ?? 'Unknown'}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid size={{ xs: 12, md: 6, lg: 3 }}>
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                Offline Readiness
-              </Typography>
-              <Chip
-                size="small"
-                label={
-                  cacheHealth && cacheHealth.evictableEntries === 0
-                    ? 'Protected cache only'
-                    : 'Review readiness'
-                }
-                color={cacheHealth && cacheHealth.evictableEntries === 0 ? 'success' : 'warning'}
-              />
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                Last audit:{' '}
-                {cacheHealth?.audits.latestCompletedAt
-                  ? new Date(cacheHealth.audits.latestCompletedAt).toLocaleString()
-                  : 'No audit completed'}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      <Card variant="outlined" sx={{ mb: 3 }}>
-        <CardContent>
-          <Stack
-            direction={{ xs: 'column', md: 'row' }}
-            spacing={1.5}
-            justifyContent="space-between"
-            alignItems={{ xs: 'flex-start', md: 'center' }}
-          >
-            <Box>
-              <Typography variant="subtitle1" fontWeight={700}>
-                Cache Operations
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Generate deterministic cleanup plans and run integrity audits without destructive
-                defaults.
-              </Typography>
-            </Box>
-            <Stack direction="row" spacing={1}>
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={cacheActionPending !== null}
-                onClick={() => {
-                  void requestCleanupDryRun();
-                }}
-              >
-                {cacheActionPending === 'dry-run' ? 'Planning…' : 'Dry-run cleanup'}
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                color="warning"
-                disabled={cacheActionPending !== null}
-                onClick={() => {
-                  setCleanupConfirmOpen(true);
-                }}
-              >
-                {cacheActionPending === 'execute' ? 'Executing…' : 'Execute cleanup'}
-              </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={cacheActionPending !== null}
-                onClick={() => {
-                  void requestIntegrityAudit();
-                }}
-              >
-                {cacheActionPending === 'audit' ? 'Auditing…' : 'Run integrity audit'}
-              </Button>
-            </Stack>
-          </Stack>
-
-          {cleanupPlan ? (
-            <Alert severity="info" sx={{ mt: 2 }}>
-              Dry-run selected {cleanupPlan.selectedEntries} artifact(s) reclaiming{' '}
-              {formatBytes(cleanupPlan.selectedBytes)}. Evictable total:{' '}
-              {cleanupPlan.evictableEntries} artifact(s) / {formatBytes(cleanupPlan.evictableBytes)}
-              .
-            </Alert>
-          ) : null}
-
-          {cleanupPlan && cleanupPlan.candidates.length > 0 ? (
-            <List dense sx={{ mt: 1 }}>
-              {cleanupPlan.candidates.slice(0, 8).map((candidate) => (
-                <ListItem key={candidate.cacheKey}>
-                  <ListItemText
-                    primary={`${candidate.cacheKey} • ${formatBytes(candidate.sizeBytes)} • ${candidate.selected ? 'selected' : 'retained'}`}
-                    secondary={candidate.reasonCodes.join(', ') || 'no reason code'}
+      <Accordion sx={{ mb: 3 }}>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Box>
+            <Typography variant="subtitle1" fontWeight={700}>
+              Marketplace Infrastructure
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Cache health, cleanup, integrity audit, and mirror administration.
+            </Typography>
+          </Box>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Cache Usage
+                  </Typography>
+                  <Typography variant="h6" fontWeight={700}>
+                    {cacheHealth
+                      ? `${formatBytes(cacheHealth.usageBytes)} / ${formatBytes(cacheHealth.policy.maxCacheBytes)}`
+                      : 'Unknown'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Pinned {cacheHealth ? formatBytes(cacheHealth.pinnedUsageBytes) : 'Unknown'} •
+                    Evictable{' '}
+                    {cacheHealth ? formatBytes(cacheHealth.evictableUsageBytes) : 'Unknown'}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Cache Health
+                  </Typography>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    <Chip
+                      size="small"
+                      label={cacheHealth?.degraded.overQuota ? 'Over quota' : 'Quota healthy'}
+                      color={cacheHealth?.degraded.overQuota ? 'warning' : 'success'}
+                    />
+                    <Chip
+                      size="small"
+                      label={
+                        cacheHealth?.degraded.latestAuditDegraded
+                          ? 'Audit degraded'
+                          : 'Audit healthy'
+                      }
+                      color={cacheHealth?.degraded.latestAuditDegraded ? 'warning' : 'success'}
+                    />
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    Entries: {cacheHealth?.usageEntries ?? 'Unknown'} • Pinned:{' '}
+                    {cacheHealth?.pinnedEntries ?? 'Unknown'}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Mirrors
+                  </Typography>
+                  <Typography variant="h6" fontWeight={700}>
+                    {cacheHealth
+                      ? `${cacheHealth.mirrors.enabled}/${cacheHealth.mirrors.total}`
+                      : 'Unknown'}{' '}
+                    enabled
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Degraded: {cacheHealth?.mirrors.degraded ?? 'Unknown'}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6, lg: 3 }}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    Offline Readiness
+                  </Typography>
+                  <Chip
+                    size="small"
+                    label={
+                      cacheHealth && cacheHealth.evictableEntries === 0
+                        ? 'Protected cache only'
+                        : 'Review readiness'
+                    }
+                    color={
+                      cacheHealth && cacheHealth.evictableEntries === 0 ? 'success' : 'warning'
+                    }
                   />
-                </ListItem>
-              ))}
-            </List>
-          ) : null}
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    Last audit:{' '}
+                    {cacheHealth?.audits.latestCompletedAt
+                      ? new Date(cacheHealth.audits.latestCompletedAt).toLocaleString()
+                      : 'No audit completed'}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
 
-          {auditStatus ? (
-            <Alert severity={auditStatus === 'succeeded' ? 'success' : 'warning'} sx={{ mt: 2 }}>
-              Latest audit request completed with status: {auditStatus}.
-            </Alert>
-          ) : null}
+          <Card variant="outlined" sx={{ mb: 1 }}>
+            <CardContent>
+              <Stack
+                direction={{ xs: 'column', md: 'row' }}
+                spacing={1.5}
+                justifyContent="space-between"
+                alignItems={{ xs: 'flex-start', md: 'center' }}
+              >
+                <Box>
+                  <Typography variant="subtitle1" fontWeight={700}>
+                    Cache Operations
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Generate deterministic cleanup plans and run integrity audits without
+                    destructive defaults.
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={cacheActionPending !== null}
+                    onClick={() => {
+                      void requestCleanupDryRun();
+                    }}
+                  >
+                    {cacheActionPending === 'dry-run' ? 'Planning…' : 'Dry-run cleanup'}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="warning"
+                    disabled={cacheActionPending !== null}
+                    onClick={() => {
+                      setCleanupConfirmOpen(true);
+                    }}
+                  >
+                    {cacheActionPending === 'execute' ? 'Executing…' : 'Execute cleanup'}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={cacheActionPending !== null}
+                    onClick={() => {
+                      void requestIntegrityAudit();
+                    }}
+                  >
+                    {cacheActionPending === 'audit' ? 'Auditing…' : 'Run integrity audit'}
+                  </Button>
+                </Stack>
+              </Stack>
 
-          <Typography variant="subtitle2" sx={{ mt: 2 }}>
-            Mirror Administration
-          </Typography>
-          <Stack spacing={1.25} sx={{ mt: 1 }}>
-            {mirrors.map((mirror) => {
-              const edit = mirrorEdits[mirror.mirrorId] ?? mirrorToEditorModel(mirror);
-              return (
+              {cleanupPlan ? (
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  Dry-run selected {cleanupPlan.selectedEntries} artifact(s) reclaiming{' '}
+                  {formatBytes(cleanupPlan.selectedBytes)}. Evictable total:{' '}
+                  {cleanupPlan.evictableEntries} artifact(s) /{' '}
+                  {formatBytes(cleanupPlan.evictableBytes)}.
+                </Alert>
+              ) : null}
+
+              {cleanupPlan && cleanupPlan.candidates.length > 0 ? (
+                <List dense sx={{ mt: 1 }}>
+                  {cleanupPlan.candidates.slice(0, 8).map((candidate) => (
+                    <ListItem key={candidate.cacheKey}>
+                      <ListItemText
+                        primary={`${candidate.cacheKey} • ${formatBytes(candidate.sizeBytes)} • ${candidate.selected ? 'selected' : 'retained'}`}
+                        secondary={candidate.reasonCodes.join(', ') || 'no reason code'}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              ) : null}
+
+              {auditStatus ? (
+                <Alert
+                  severity={auditStatus === 'succeeded' ? 'success' : 'warning'}
+                  sx={{ mt: 2 }}
+                >
+                  Latest audit request completed with status: {auditStatus}.
+                </Alert>
+              ) : null}
+
+              <Typography variant="subtitle2" sx={{ mt: 2 }}>
+                Mirror Administration
+              </Typography>
+              <Stack spacing={1.25} sx={{ mt: 1 }}>
+                {mirrors.map((mirror) => {
+                  const edit = mirrorEdits[mirror.mirrorId] ?? mirrorToEditorModel(mirror);
+                  return (
+                    <Stack
+                      key={mirror.mirrorId}
+                      direction={{ xs: 'column', md: 'row' }}
+                      spacing={1}
+                      alignItems={{ xs: 'stretch', md: 'center' }}
+                    >
+                      <TextField
+                        size="small"
+                        label="Mirror ID"
+                        value={edit.mirrorId}
+                        disabled
+                        sx={{ minWidth: 160 }}
+                      />
+                      <TextField
+                        size="small"
+                        label="Base URL"
+                        value={edit.baseUrl}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setMirrorEdits((previous) => ({
+                            ...previous,
+                            [mirror.mirrorId]: { ...edit, baseUrl: value },
+                          }));
+                        }}
+                        sx={{ flex: 1 }}
+                      />
+                      <TextField
+                        size="small"
+                        label="Priority"
+                        type="number"
+                        value={edit.priority}
+                        onChange={(event) => {
+                          const value = Number.parseInt(event.target.value, 10);
+                          setMirrorEdits((previous) => ({
+                            ...previous,
+                            [mirror.mirrorId]: {
+                              ...edit,
+                              priority: Number.isFinite(value) ? value : edit.priority,
+                            },
+                          }));
+                        }}
+                        sx={{ width: 120 }}
+                      />
+                      <TextField
+                        size="small"
+                        label="Scope"
+                        value={edit.scope}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setMirrorEdits((previous) => ({
+                            ...previous,
+                            [mirror.mirrorId]: { ...edit, scope: value },
+                          }));
+                        }}
+                        sx={{ width: 150 }}
+                      />
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        <Typography variant="body2" color="text.secondary">
+                          Enabled
+                        </Typography>
+                        <Switch
+                          checked={edit.enabled}
+                          onChange={(event) => {
+                            setMirrorEdits((previous) => ({
+                              ...previous,
+                              [mirror.mirrorId]: { ...edit, enabled: event.target.checked },
+                            }));
+                          }}
+                        />
+                      </Stack>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => {
+                          void saveMirror(edit, 'PATCH');
+                        }}
+                      >
+                        Save
+                      </Button>
+                      <Chip
+                        size="small"
+                        label={mirror.healthState}
+                        color={
+                          mirror.enabled &&
+                          (mirror.healthState === 'healthy' || mirror.healthState === 'unknown')
+                            ? 'success'
+                            : 'warning'
+                        }
+                      />
+                    </Stack>
+                  );
+                })}
+
                 <Stack
-                  key={mirror.mirrorId}
                   direction={{ xs: 'column', md: 'row' }}
                   spacing={1}
                   alignItems={{ xs: 'stretch', md: 'center' }}
                 >
                   <TextField
                     size="small"
-                    label="Mirror ID"
-                    value={edit.mirrorId}
-                    disabled
-                    sx={{ minWidth: 160 }}
+                    label="New mirror ID"
+                    value={mirrorDraft.mirrorId}
+                    onChange={(event) => {
+                      setMirrorDraft((previous) => ({ ...previous, mirrorId: event.target.value }));
+                    }}
+                    sx={{ minWidth: 180 }}
                   />
                   <TextField
                     size="small"
-                    label="Base URL"
-                    value={edit.baseUrl}
+                    label="New mirror base URL"
+                    value={mirrorDraft.baseUrl}
                     onChange={(event) => {
-                      const value = event.target.value;
-                      setMirrorEdits((previous) => ({
-                        ...previous,
-                        [mirror.mirrorId]: { ...edit, baseUrl: value },
-                      }));
+                      setMirrorDraft((previous) => ({ ...previous, baseUrl: event.target.value }));
                     }}
                     sx={{ flex: 1 }}
                   />
@@ -875,15 +1032,12 @@ export default function AdminPluginsPage() {
                     size="small"
                     label="Priority"
                     type="number"
-                    value={edit.priority}
+                    value={mirrorDraft.priority}
                     onChange={(event) => {
                       const value = Number.parseInt(event.target.value, 10);
-                      setMirrorEdits((previous) => ({
+                      setMirrorDraft((previous) => ({
                         ...previous,
-                        [mirror.mirrorId]: {
-                          ...edit,
-                          priority: Number.isFinite(value) ? value : edit.priority,
-                        },
+                        priority: Number.isFinite(value) ? value : previous.priority,
                       }));
                     }}
                     sx={{ width: 120 }}
@@ -891,112 +1045,27 @@ export default function AdminPluginsPage() {
                   <TextField
                     size="small"
                     label="Scope"
-                    value={edit.scope}
+                    value={mirrorDraft.scope}
                     onChange={(event) => {
-                      const value = event.target.value;
-                      setMirrorEdits((previous) => ({
-                        ...previous,
-                        [mirror.mirrorId]: { ...edit, scope: value },
-                      }));
+                      setMirrorDraft((previous) => ({ ...previous, scope: event.target.value }));
                     }}
-                    sx={{ width: 150 }}
+                    sx={{ width: 140 }}
                   />
-                  <Stack direction="row" spacing={0.5} alignItems="center">
-                    <Typography variant="body2" color="text.secondary">
-                      Enabled
-                    </Typography>
-                    <Switch
-                      checked={edit.enabled}
-                      onChange={(event) => {
-                        setMirrorEdits((previous) => ({
-                          ...previous,
-                          [mirror.mirrorId]: { ...edit, enabled: event.target.checked },
-                        }));
-                      }}
-                    />
-                  </Stack>
                   <Button
                     size="small"
-                    variant="outlined"
+                    variant="contained"
                     onClick={() => {
-                      void saveMirror(edit, 'PATCH');
+                      void createMirror();
                     }}
                   >
-                    Save
+                    Add mirror
                   </Button>
-                  <Chip
-                    size="small"
-                    label={mirror.healthState}
-                    color={
-                      mirror.enabled &&
-                      (mirror.healthState === 'healthy' || mirror.healthState === 'unknown')
-                        ? 'success'
-                        : 'warning'
-                    }
-                  />
                 </Stack>
-              );
-            })}
-
-            <Stack
-              direction={{ xs: 'column', md: 'row' }}
-              spacing={1}
-              alignItems={{ xs: 'stretch', md: 'center' }}
-            >
-              <TextField
-                size="small"
-                label="New mirror ID"
-                value={mirrorDraft.mirrorId}
-                onChange={(event) => {
-                  setMirrorDraft((previous) => ({ ...previous, mirrorId: event.target.value }));
-                }}
-                sx={{ minWidth: 180 }}
-              />
-              <TextField
-                size="small"
-                label="New mirror base URL"
-                value={mirrorDraft.baseUrl}
-                onChange={(event) => {
-                  setMirrorDraft((previous) => ({ ...previous, baseUrl: event.target.value }));
-                }}
-                sx={{ flex: 1 }}
-              />
-              <TextField
-                size="small"
-                label="Priority"
-                type="number"
-                value={mirrorDraft.priority}
-                onChange={(event) => {
-                  const value = Number.parseInt(event.target.value, 10);
-                  setMirrorDraft((previous) => ({
-                    ...previous,
-                    priority: Number.isFinite(value) ? value : previous.priority,
-                  }));
-                }}
-                sx={{ width: 120 }}
-              />
-              <TextField
-                size="small"
-                label="Scope"
-                value={mirrorDraft.scope}
-                onChange={(event) => {
-                  setMirrorDraft((previous) => ({ ...previous, scope: event.target.value }));
-                }}
-                sx={{ width: 140 }}
-              />
-              <Button
-                size="small"
-                variant="contained"
-                onClick={() => {
-                  void createMirror();
-                }}
-              >
-                Add mirror
-              </Button>
-            </Stack>
-          </Stack>
-        </CardContent>
-      </Card>
+              </Stack>
+            </CardContent>
+          </Card>
+        </AccordionDetails>
+      </Accordion>
 
       {error ? (
         <Alert severity="error" sx={{ mb: 3 }}>
@@ -1016,19 +1085,7 @@ export default function AdminPluginsPage() {
             const plugin = entry.plugin;
             const capabilities = capabilityLabels(plugin.capabilities);
             const isPending = pendingPluginId === plugin.id;
-            const uiState = deriveMarketplaceUiState({
-              installed: plugin.installed,
-              enabled: plugin.isEnabled,
-              operationStatus: entry.operation.status,
-              signatureDecision: entry.signature.decision,
-              trustOutcome: entry.trustPolicy.outcome,
-              trustReasonCode: entry.trustPolicy.reasonCode,
-              recoveryRequired: entry.operation.recoveryRequired,
-            });
-            const uiStateDef = getMarketplaceUiStateDefinition(uiState);
-            const toggleAction = plugin.isEnabled
-              ? entry.actionAuthority.byId.disable
-              : entry.actionAuthority.byId.enable;
+            const presentation = derivePluginManagementPresentation(toPresentationInput(entry));
             const installAction = entry.actionAuthority.byId.install;
             const rollbackAction = entry.actionAuthority.byId.rollback;
 
@@ -1046,50 +1103,10 @@ export default function AdminPluginsPage() {
                         <Typography variant="h6" fontWeight={700}>
                           {plugin.name}
                         </Typography>
-                        <Stack
-                          direction="row"
-                          spacing={1}
-                          sx={{ mt: 1, mb: 1.5 }}
-                          useFlexGap
-                          flexWrap="wrap"
-                        >
-                          <Chip
-                            size="small"
-                            label={plugin.source === 'core' ? 'Core' : 'Tenant'}
-                            color={plugin.source === 'core' ? 'primary' : 'default'}
-                          />
-                          <Chip
-                            size="small"
-                            label={plugin.installed ? 'Installed' : 'Not installed'}
-                            color={plugin.installed ? 'success' : 'default'}
-                          />
-                          <Chip
-                            size="small"
-                            label={`Canonical ${entry.lifecycleState.summaryState}`}
-                            variant="outlined"
-                          />
-                          <Chip
-                            size="small"
-                            variant="outlined"
-                            color={entry.reconciliation.action === 'none' ? 'default' : 'warning'}
-                            label={`Recovery ${entry.reconciliation.action}`}
-                          />
-                          <Chip
-                            size="small"
-                            label={plugin.isEnabled ? 'Enabled' : 'Disabled'}
-                            color={plugin.isEnabled ? 'success' : 'default'}
-                          />
-                          <Chip size="small" label={`Legacy (transitional): ${uiStateDef.label}`} />
-                        </Stack>
+                        <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 0.75 }}>
+                          {presentation.primaryStatus.label} • {presentation.sourceLabel}
+                        </Typography>
                       </Box>
-                      <Switch
-                        checked={plugin.isEnabled}
-                        disabled={isPending || !toggleAction?.enabled}
-                        onChange={() => {
-                          void togglePlugin(entry);
-                        }}
-                        inputProps={{ 'aria-label': `Toggle ${plugin.name}` }}
-                      />
                     </Stack>
 
                     <Typography color="text.secondary" sx={{ mb: 2 }}>
@@ -1115,46 +1132,28 @@ export default function AdminPluginsPage() {
                       <Chip
                         size="small"
                         variant="outlined"
-                        color={entry.signature.decision === 'trusted' ? 'success' : 'warning'}
-                        label={`Signature: ${entry.signature.status}`}
+                        label={presentation.primaryStatus.explanation}
                       />
                       <Chip
                         size="small"
                         variant="outlined"
-                        color={entry.trustPolicy.outcome === 'allow' ? 'success' : 'warning'}
-                        label={`Trust: ${entry.trustPolicy.reasonCode}`}
+                        label={`Version: ${presentation.versionSummary}`}
                       />
                       <Chip
                         size="small"
                         variant="outlined"
-                        label={`Publisher: ${entry.catalogEntry.publisher.classification}`}
-                      />
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        label={`Available: ${entry.catalogEntry.version}`}
-                      />
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        label={`Installed: ${entry.plugin.installedVersion || 'none'}`}
-                      />
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        color={entry.sourceResolution.localOverrideEnabled ? 'info' : 'default'}
-                        label={
-                          entry.sourceResolution.localOverrideEnabled
-                            ? 'Source: Local Override'
-                            : 'Source: Bundled Default'
-                        }
-                      />
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        label={`Resolved source: ${entry.sourceResolution.resolvedSourceKind || 'unresolved'}`}
+                        label={`Source: ${presentation.sourceLabel}`}
                       />
                     </Stack>
+
+                    {presentation.remediation ? (
+                      <Alert
+                        severity={presentation.primaryStatus.tone === 'error' ? 'error' : 'warning'}
+                        sx={{ mt: 2 }}
+                      >
+                        {presentation.remediation.title}: {presentation.remediation.detail}
+                      </Alert>
+                    ) : null}
 
                     {entry.sourceResolution.resolverFailureCodes.length > 0 ? (
                       <Alert severity="error" sx={{ mt: 2 }}>
@@ -1205,12 +1204,7 @@ export default function AdminPluginsPage() {
                       <Chip
                         size="small"
                         variant="outlined"
-                        label={`Desired ${entry.desiredLifecycleState}`}
-                      />
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        label={`Observed ${entry.observedLifecycleState}`}
+                        label={`Primary action: ${presentation.primaryAction?.label || 'None'}`}
                       />
                       {entry.operation.leaseOwner ? (
                         <Chip
@@ -1225,7 +1219,7 @@ export default function AdminPluginsPage() {
                     <Typography variant="caption" color="text.secondary">
                       {plugin.updatedAt
                         ? `Updated ${new Date(plugin.updatedAt).toLocaleString()}`
-                        : `Default: ${plugin.enabledByDefault ? 'enabled' : 'disabled'} • ${uiStateDef.reason}`}
+                        : `Default: ${plugin.enabledByDefault ? 'enabled' : 'disabled'} • ${presentation.primaryStatus.explanation}`}
                     </Typography>
                     <Stack direction="row" spacing={1}>
                       <Button
@@ -1235,18 +1229,31 @@ export default function AdminPluginsPage() {
                       >
                         Inspect
                       </Button>
-                      {!plugin.installed ? (
+                      {presentation.primaryAction ? (
                         <Button
                           size="small"
-                          disabled={!installAction?.enabled || isPending}
-                          onClick={() => setInstallDialogPluginId(plugin.id)}
+                          variant="contained"
+                          disabled={isPending || !presentation.primaryAction}
+                          onClick={() => {
+                            if (presentation.primaryAction?.id === 'install') {
+                              setInstallDialogPluginId(plugin.id);
+                              return;
+                            }
+
+                            if (
+                              presentation.primaryAction?.id === 'enable' ||
+                              presentation.primaryAction?.id === 'disable'
+                            ) {
+                              void togglePlugin(entry);
+                            }
+                          }}
                         >
-                          Install
+                          {presentation.primaryAction.label}
                         </Button>
                       ) : null}
-                      {plugin.adminSurface ? (
+                      {plugin.adminSurface?.href ? (
                         <Button component={Link} href={plugin.adminSurface.href} size="small">
-                          {plugin.adminSurface.label || 'Open settings'}
+                          {plugin.adminSurface.label || 'Open details'}
                         </Button>
                       ) : null}
                     </Stack>
@@ -1277,6 +1284,26 @@ export default function AdminPluginsPage() {
           <DialogTitle>{selectedPlugin.plugin.name || 'Plugin detail'}</DialogTitle>
           <DialogContent dividers>
             <Stack spacing={2}>
+              {(() => {
+                const presentation = derivePluginManagementPresentation(
+                  toPresentationInput(selectedPlugin)
+                );
+
+                return (
+                  <Alert
+                    severity={
+                      presentation.primaryStatus.tone === 'error'
+                        ? 'error'
+                        : presentation.primaryStatus.tone === 'warning'
+                          ? 'warning'
+                          : 'info'
+                    }
+                  >
+                    <strong>{presentation.primaryStatus.label}:</strong>{' '}
+                    {presentation.primaryStatus.explanation}
+                  </Alert>
+                );
+              })()}
               <Typography color="text.secondary">
                 {selectedPlugin.plugin.description || 'No description provided.'}
               </Typography>
@@ -1288,99 +1315,152 @@ export default function AdminPluginsPage() {
                 />
                 <Chip
                   size="small"
-                  label={`Publisher class: ${selectedPlugin.catalogEntry.publisher.classification}`}
+                  label={`Source: ${selectedPlugin.sourceResolution.localOverrideEnabled ? 'Local override' : selectedPlugin.sourceResolution.resolvedSourceKind || 'unresolved'}`}
                 />
-                <Chip size="small" label={`Signature: ${selectedPlugin.signature.status}`} />
-                <Chip size="small" label={`Trust: ${selectedPlugin.trustPolicy.reasonCode}`} />
-                <Chip
-                  size="small"
-                  label={`Install readiness: ${selectedPlugin.catalogEntry.installReadiness}`}
-                />
-                <Chip
-                  size="small"
-                  label={`Configured source: ${selectedPlugin.sourceResolution.configuredSourceKind}`}
-                />
-                <Chip
-                  size="small"
-                  label={`Resolved source: ${selectedPlugin.sourceResolution.resolvedSourceKind || 'unresolved'}`}
-                />
+                <Chip size="small" label={`Version: ${selectedPlugin.catalogEntry.version}`} />
               </Stack>
 
-              <Typography variant="subtitle2">Capabilities and lifecycle</Typography>
+              <Typography variant="subtitle2">Overview</Typography>
               <List dense>
                 <ListItem>
                   <ListItemText
-                    primary="Capabilities"
+                    primary="Canonical status"
+                    secondary={selectedPlugin.lifecycleState.summaryState}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Source"
                     secondary={
-                      selectedPlugin.capabilities.capabilities.length > 0
-                        ? selectedPlugin.capabilities.capabilities.join(', ')
-                        : 'No explicit capabilities declared'
+                      selectedPlugin.sourceResolution.localOverrideEnabled
+                        ? 'Local override active'
+                        : 'Canonical catalog source'
                     }
                   />
                 </ListItem>
                 <ListItem>
                   <ListItemText
-                    primary="Lifecycle hooks"
-                    secondary={`afterInstall=${selectedPlugin.lifecycle.hasAfterInstall}, afterUpgrade=${selectedPlugin.lifecycle.hasAfterUpgrade}, beforeDisable=${selectedPlugin.lifecycle.hasBeforeDisable}, beforeUninstall=${selectedPlugin.lifecycle.hasBeforeUninstall}, purge=${selectedPlugin.lifecycle.hasPurge}`}
+                    primary="Installed version"
+                    secondary={selectedPlugin.plugin.installedVersion || 'Not installed'}
                   />
                 </ListItem>
                 <ListItem>
                   <ListItemText
-                    primary="Migration policy"
-                    secondary={`count=${selectedPlugin.migration.migrationCount}, policy=${selectedPlugin.migration.policy}, destructiveDataWipe=${selectedPlugin.migration.destructiveDataWipe}`}
+                    primary="Build and deployment"
+                    secondary={`build=${selectedPlugin.lifecycleState.axes.build}, deploy=${selectedPlugin.lifecycleState.axes.deployment}, runtime=${selectedPlugin.lifecycleState.axes.runtime}`}
                   />
                 </ListItem>
                 <ListItem>
                   <ListItemText
-                    primary="Durable operation"
+                    primary="Runtime and recovery"
+                    secondary={`health=${selectedPlugin.lifecycleState.axes.health}, recovery=${selectedPlugin.lifecycleState.axes.recovery}`}
+                  />
+                </ListItem>
+              </List>
+
+              <Typography variant="subtitle2">Actions and remediation</Typography>
+              <List dense>
+                <ListItem>
+                  <ListItemText
+                    primary="Primary action"
+                    secondary={selectedPlugin.actionAuthority.available[0]?.id || 'None available'}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Blocked actions"
                     secondary={
-                      selectedPlugin.operation.operationId
-                        ? `${selectedPlugin.operation.operationId} (${selectedPlugin.operation.status}) stage=${selectedPlugin.operation.stage || 'n/a'}`
-                        : 'No active durable operation'
+                      selectedPlugin.actionAuthority.blocked.length > 0
+                        ? selectedPlugin.actionAuthority.blocked
+                            .map((action) => `${action.id}:${action.reasonCode || 'blocked'}`)
+                            .join(', ')
+                        : 'None'
                     }
                   />
                 </ListItem>
                 <ListItem>
                   <ListItemText
-                    primary="Recovery"
+                    primary="Remediation"
                     secondary={
                       selectedPlugin.operation.recoveryRequired
-                        ? 'Recovery required. Open Recovery Center to continue safely.'
-                        : 'No recovery action required.'
+                        ? selectedPlugin.reconciliation.remediation
+                        : selectedPlugin.reconciliation.message
                     }
+                  />
+                </ListItem>
+              </List>
+
+              <Typography variant="subtitle2">Trust and compatibility</Typography>
+              <List dense>
+                <ListItem>
+                  <ListItemText
+                    primary="Trust result"
+                    secondary={`${selectedPlugin.signature.status} • ${selectedPlugin.trustPolicy.reasonCode}`}
                   />
                 </ListItem>
                 <ListItem>
                   <ListItemText
-                    primary="Reconciliation"
-                    secondary={`${selectedPlugin.reconciliation.action} (${selectedPlugin.reconciliation.recoveryClassification}) - ${selectedPlugin.reconciliation.message}`}
+                    primary="Compatibility"
+                    secondary={`Install readiness: ${selectedPlugin.catalogEntry.installReadiness}`}
+                  />
+                </ListItem>
+              </List>
+
+              <Typography variant="subtitle2">Lifecycle and deployment</Typography>
+              <List dense>
+                <ListItem>
+                  <ListItemText
+                    primary="Desired / observed"
+                    secondary={`${selectedPlugin.desiredLifecycleState} / ${selectedPlugin.observedLifecycleState}`}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Operation"
+                    secondary={
+                      selectedPlugin.operation.operationId
+                        ? `${selectedPlugin.operation.operationId} (${selectedPlugin.operation.status || 'unknown'})`
+                        : 'No active operation'
+                    }
                   />
                 </ListItem>
                 <ListItem>
                   <ListItemText
                     primary="Rollback"
-                    secondary={`${selectedPlugin.rollback.eligible ? 'eligible' : 'blocked'} (${selectedPlugin.rollback.reasonCode})`}
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText
-                    primary="Migration checkpoints"
-                    secondary={`completed=${selectedPlugin.migrationCheckpoint.completedCount}, interrupted=${selectedPlugin.migrationCheckpoint.interrupted ? 'yes' : 'no'}, latestCompleted=${selectedPlugin.migrationCheckpoint.latestCompletedMigrationId || 'none'}`}
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText
-                    primary="Action authority"
-                    secondary={`available=${selectedPlugin.actionAuthority.available.map((action) => action.id).join(', ') || 'none'}; blocked=${selectedPlugin.actionAuthority.blocked.map((action) => `${action.id}:${action.reasonCode || 'blocked'}`).join(', ') || 'none'}`}
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText
-                    primary="Development source"
                     secondary={
-                      selectedPlugin.sourceResolution.localOverrideEnabled
-                        ? `Local override active at ${selectedPlugin.sourceResolution.localOverrideFilesystemPath || 'unknown path'}`
-                        : 'Using bundled default source configuration'
+                      selectedPlugin.rollback.eligible
+                        ? 'Eligible'
+                        : `Blocked (${selectedPlugin.rollback.reasonCode})`
+                    }
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Recovery Center"
+                    secondary={
+                      selectedPlugin.operation.recoveryRequired
+                        ? 'Open Recovery Center to continue safely.'
+                        : 'No recovery action required.'
+                    }
+                  />
+                </ListItem>
+              </List>
+
+              <Typography variant="subtitle2">Technical details</Typography>
+              <List dense>
+                <ListItem>
+                  <ListItemText
+                    primary="Latest transition"
+                    secondary={selectedPlugin.latestTransition.transition || 'none'}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Migration checkpoint"
+                    secondary={
+                      selectedPlugin.migrationCheckpoint.interrupted
+                        ? `Interrupted ${selectedPlugin.migrationCheckpoint.interruptedMigrationId || 'unknown'}`
+                        : 'No interruption recorded'
                     }
                   />
                 </ListItem>
@@ -1390,9 +1470,7 @@ export default function AdminPluginsPage() {
                     secondary={
                       selectedPlugin.sourceResolution.resolverFailureCodes.length > 0
                         ? selectedPlugin.sourceResolution.resolverFailureCodes.join(', ')
-                        : selectedPlugin.sourceResolution.diagnostics.hasErrors
-                          ? `Global source diagnostics present (${selectedPlugin.sourceResolution.diagnostics.errorCount} error(s))`
-                          : 'No source resolution errors detected'
+                        : 'No source resolution errors detected'
                     }
                   />
                 </ListItem>
@@ -1452,7 +1530,12 @@ export default function AdminPluginsPage() {
                       <strong>{plugin.catalogEntry.version}</strong>
                     </Typography>
                     <Typography color="text.secondary">
-                      Signature: {plugin.signature.status}. Trust: {plugin.trustPolicy.reasonCode}.
+                      Canonical status:{' '}
+                      {
+                        derivePluginManagementPresentation(toPresentationInput(plugin))
+                          .primaryStatus.label
+                      }{' '}
+                      • Trust: {plugin.trustPolicy.reasonCode}.
                     </Typography>
                     <Typography color="text.secondary">
                       Migrations: {plugin.migration.migrationCount}. Policy:{' '}
