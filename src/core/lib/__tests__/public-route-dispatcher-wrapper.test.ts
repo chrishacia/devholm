@@ -145,6 +145,16 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
     expect(resolution.type).toBe('match');
   });
 
+  it('falls back to in-process claim when isolated matcher times out', async () => {
+    runIsolatedPublicRouteMatch.mockRejectedValue(new Error('isolated plugin execution timed out'));
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(runIsolatedPublicRouteMatch).toHaveBeenCalledTimes(1);
+    expect(runIsolatedPublicRouteHandle).toHaveBeenCalledTimes(1);
+    expect(resolution.type).toBe('match');
+  });
+
   it('falls back to in-process handler when isolated handler reports extension-not-found', async () => {
     runIsolatedPublicRouteMatch.mockResolvedValue({
       matched: true,
@@ -216,6 +226,16 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
   it('does not fall back for malformed structured error strings', async () => {
     runIsolatedPublicRouteMatch.mockRejectedValue(
       new Error('isolated public-route match failed extension-not-found not found')
+    );
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(resolution.type).toBe('error');
+  });
+
+  it('does not fall back for timeout-like non-matching errors', async () => {
+    runIsolatedPublicRouteMatch.mockRejectedValue(
+      new Error('isolated plugin execution timed out while booting')
     );
 
     const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));

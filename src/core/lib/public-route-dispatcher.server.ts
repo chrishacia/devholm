@@ -32,12 +32,18 @@ const ISOLATED_EXTENSION_NOT_FOUND_ERROR_PATTERNS = [
   /^isolated public-route handler failed: extension-not-found: /,
 ] as const;
 
+const ISOLATED_MATCH_TIMEOUT_ERROR_PATTERN = /^isolated plugin execution timed out$/;
+
 function isIsolatedExtensionNotFoundError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
 
   return ISOLATED_EXTENSION_NOT_FOUND_ERROR_PATTERNS.some((pattern) => pattern.test(error.message));
+}
+
+function isIsolatedMatchTimeoutError(error: unknown): boolean {
+  return error instanceof Error && ISOLATED_MATCH_TIMEOUT_ERROR_PATTERN.test(error.message);
 }
 
 function withIsolationBoundary(extension: (typeof publicRouteExtensions)[number]) {
@@ -72,6 +78,18 @@ function withIsolationBoundary(extension: (typeof publicRouteExtensions)[number]
         if (isIsolatedExtensionNotFoundError(error)) {
           // If isolated worker cannot resolve this extension, keep routing behavior
           // deterministic by using the successful in-process preflight claim.
+          return preflightMatch;
+        }
+
+        if (isIsolatedMatchTimeoutError(error)) {
+          // The in-process preflight already confirmed this extension claims the path.
+          // If the isolated matcher times out, continue with that deterministic claim
+          // and let the isolated handler boundary enforce fail-closed behavior if needed.
+          console.warn('isolated public-route matcher timed out; using preflight match fallback', {
+            pluginId: extension.pluginId,
+            extensionId: extension.id,
+            pathname,
+          });
           return preflightMatch;
         }
 
