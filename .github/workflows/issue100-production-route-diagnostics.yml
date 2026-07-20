@@ -284,7 +284,7 @@ jobs:
           SINCE_UTC="$(date -u -d "$START_UTC - ${LOG_WINDOW_MINUTES} minutes" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           section "Image Parity"
-          docker inspect "$TARGET_CONTAINER" --format '{{range .RepoDigests}}{{println .}}{{end}}' | redact_line
+          docker inspect "$TARGET_CONTAINER" --format '{{json .}}' | node -e "const fs=require('fs'); const raw=fs.readFileSync(0,'utf8'); const data=JSON.parse(raw); const labels=(data.Config&&data.Config.Labels)||{}; const repoDigests=Array.isArray(data.RepoDigests)?data.RepoDigests:[]; const summary={image:data.Config?data.Config.Image:null,imageId:data.Image||null,repoDigests,revision:labels['org.opencontainers.image.revision']||null}; process.stdout.write(JSON.stringify(summary,null,2)+'\\n');" | redact_line
 
           section "Focused Container Logs"
           docker logs --since "$SINCE_UTC" "$TARGET_CONTAINER" 2>&1 | \
