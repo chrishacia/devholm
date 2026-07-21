@@ -12,6 +12,7 @@ const readPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
 const reconcileLegacyAndCanonicalPluginState = vi.hoisted(() => vi.fn());
 const upsertPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
 const readLatestPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
+const logicallyDecommissionLegacyPluginState = vi.hoisted(() => vi.fn());
 
 vi.mock('@/db/plugins', () => ({
   listPluginStates,
@@ -53,6 +54,10 @@ vi.mock('@core/db/plugin-cutover-rollback', () => ({
   })),
   upsertPluginCutoverRollbackCheckpoint,
   readLatestPluginCutoverRollbackCheckpoint,
+}));
+
+vi.mock('@core/lib/plugin-cutover-legacy-decommission.server', () => ({
+  logicallyDecommissionLegacyPluginState,
 }));
 
 import {
@@ -205,6 +210,12 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
     });
     upsertPluginCutoverRollbackCheckpoint.mockResolvedValue(undefined);
     readLatestPluginCutoverRollbackCheckpoint.mockResolvedValue(null);
+    logicallyDecommissionLegacyPluginState.mockResolvedValue({
+      pluginId: 'calendar',
+      applied: true,
+      reason: 'legacy-logically-decommissioned',
+      decommissionedAt: new Date().toISOString(),
+    });
     reconcileLegacyAndCanonicalPluginState.mockResolvedValue({
       pluginId: 'calendar',
       topology: 'canonical-only',
@@ -233,6 +244,7 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
     expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(2);
     expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(2);
     expect(reconcileLegacyAndCanonicalPluginState).toHaveBeenCalledTimes(2);
+    expect(logicallyDecommissionLegacyPluginState).toHaveBeenCalledTimes(1);
     expect(upsertPluginCutoverRollbackCheckpoint).toHaveBeenCalledTimes(0);
   });
 

@@ -4,10 +4,12 @@ const getDb = vi.hoisted(() => vi.fn());
 const reconcilePluginLifecycleState = vi.hoisted(() => vi.fn());
 const markPluginStartupReconciliationStateDirty = vi.hoisted(() => vi.fn());
 const findActivePluginLifecycleOperation = vi.hoisted(() => vi.fn());
+const getInstalledPlugin = vi.hoisted(() => vi.fn());
 const writePluginLifecycleOperationRecord = vi.hoisted(() => vi.fn());
 const writePluginLifecycleTransitionEvent = vi.hoisted(() => vi.fn());
 const upsertPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
 const appendPluginCutoverReconciliationEvent = vi.hoisted(() => vi.fn());
+const readPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
 const reconcileLegacyAndCanonicalPluginState = vi.hoisted(() => vi.fn());
 const upsertPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
 const readLatestPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
@@ -26,6 +28,7 @@ vi.mock('@core/lib/plugin-startup-reconciliation.server', () => ({
 
 vi.mock('@core/db/plugin-lifecycle', () => ({
   findActivePluginLifecycleOperation,
+  getInstalledPlugin,
   writePluginLifecycleOperationRecord,
   writePluginLifecycleTransitionEvent,
 }));
@@ -67,6 +70,7 @@ vi.mock('@core/lib/plugin-cutover-reconciliation-classifier.server', () => ({
 vi.mock('@core/db/plugin-cutover-reconciliation', () => ({
   upsertPluginCutoverReconciliationState,
   appendPluginCutoverReconciliationEvent,
+  readPluginCutoverReconciliationState,
 }));
 
 vi.mock('@core/lib/plugin-cutover-legacy-reconciler.server', () => ({
@@ -120,6 +124,20 @@ describe('plugin lifecycle recovery runner execution', () => {
     });
     writePluginLifecycleOperationRecord.mockResolvedValue(undefined);
     writePluginLifecycleTransitionEvent.mockResolvedValue(undefined);
+    getInstalledPlugin.mockResolvedValue({
+      pluginId: 'url-shortener',
+      bundledVersion: '0.1.0',
+      installedVersion: '0.1.0',
+      enabled: true,
+      lifecycleState: 'installed',
+      operationStatus: 'idle',
+      installedAt: null,
+      upgradedAt: null,
+      disabledAt: null,
+      updatedAt: null,
+      lastError: null,
+      manifestChecksum: null,
+    });
     upsertPluginCutoverReconciliationState.mockImplementation(async (input) => ({
       pluginId: input.pluginId,
       phase: input.phase,
@@ -136,7 +154,38 @@ describe('plugin lifecycle recovery runner execution', () => {
       updatedAt: new Date().toISOString(),
     }));
     appendPluginCutoverReconciliationEvent.mockResolvedValue(undefined);
-    upsertPluginCutoverRollbackCheckpoint.mockResolvedValue(undefined);
+    readPluginCutoverReconciliationState.mockResolvedValue({
+      pluginId: 'url-shortener',
+      phase: 'rollback-pending',
+      operationId: 'op-1',
+      correlationId: 'corr-1',
+      classification: 'rollback-required',
+      blocking: true,
+      reason: 'rollback required',
+      evidence: {},
+      snapshot: null,
+      inspectedAt: new Date().toISOString(),
+      phaseUpdatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    upsertPluginCutoverRollbackCheckpoint.mockResolvedValue({
+      checkpointId: 'cp-rollback-1',
+      pluginId: 'url-shortener',
+      stage: 'after-enabled-settings-reconciliation',
+      status: 'running',
+      attemptCount: 1,
+      rollbackEligible: true,
+      irreversibleBoundary: false,
+      operationId: 'op-1',
+      correlationId: 'corr-1',
+      reason: 'rollback execution planned',
+      evidence: {},
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
     readLatestPluginCutoverRollbackCheckpoint.mockResolvedValue(null);
     reconcileLegacyAndCanonicalPluginState.mockResolvedValue({
       pluginId: 'url-shortener',
@@ -215,6 +264,6 @@ describe('plugin lifecycle recovery runner execution', () => {
     expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
     expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(1);
     expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(1);
-    expect(upsertPluginCutoverRollbackCheckpoint).toHaveBeenCalledTimes(1);
+    expect(upsertPluginCutoverRollbackCheckpoint).toHaveBeenCalledTimes(2);
   });
 });

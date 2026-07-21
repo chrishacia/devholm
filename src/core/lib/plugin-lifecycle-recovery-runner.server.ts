@@ -35,7 +35,9 @@ import {
   readLatestPluginCutoverRollbackCheckpoint,
   upsertPluginCutoverRollbackCheckpoint,
 } from '@core/db/plugin-cutover-rollback';
+import { executePluginCutoverRollback } from '@core/lib/plugin-cutover-rollback-executor.server';
 import { reconcileLegacyAndCanonicalPluginState } from '@core/lib/plugin-cutover-legacy-reconciler.server';
+import { logicallyDecommissionLegacyPluginState } from '@core/lib/plugin-cutover-legacy-decommission.server';
 
 export interface PluginLifecycleRecoveryScanResult {
   scannedAt: string;
@@ -307,21 +309,15 @@ export async function reconcileSinglePluginLifecycle(
   });
 
   if (result.action === 'schedule-rollback') {
-    const rollbackPlan = deriveCutoverRollbackPlanFromPhase(state.phase);
-    await upsertPluginCutoverRollbackCheckpoint({
-      pluginId,
-      stage: rollbackPlan.stage,
-      status: execution.executed ? 'running' : 'pending',
-      rollbackEligible: rollbackPlan.rollbackEligible,
-      irreversibleBoundary: rollbackPlan.irreversibleBoundary,
+    const rollbackResult = await executePluginCutoverRollback(pluginId, {
       operationId: result.operationId,
       correlationId: result.operationId,
-      reason: rollbackPlan.reason,
-      evidence: {
-        reconciliationAction: result.action,
-        executed: execution.executed,
-      },
     });
+
+    execution.executed = rollbackResult.executed;
+    execution.executedAt = rollbackResult.executed
+      ? new Date().toISOString()
+      : execution.executedAt;
   }
 
   markPluginStartupReconciliationStateDirty();
@@ -362,6 +358,19 @@ export async function runPluginLifecycleRecoveryScan(options?: {
         hasInterruptedMigrationCheckpoint: interruptedCheckpoint !== null,
         rollbackCompatible: rollbackCompatibility.rollbackCompatible,
       });
+
+      let legacyDecommissioned = false;
+      if (
+        reconciliation.action === 'none' &&
+        !cutover.blocking &&
+        cutover.classification === 'already-canonical'
+      ) {
+        const decommission = await logicallyDecommissionLegacyPluginState(plugin.id, {
+          operationId: reconciliation.operationId,
+          correlationId: reconciliation.operationId,
+        });
+        legacyDecommissioned = decommission.applied;
+      }
 
       const phase = toDurableCutoverPhase({
         action: reconciliation.action,
@@ -431,6 +440,11 @@ export async function runPluginLifecycleRecoveryScan(options?: {
           rollbackCheckpointId: latestRollbackCheckpoint.checkpointId,
         };
       }
+
+      recoveryCenter.safeEvidence = {
+        ...recoveryCenter.safeEvidence,
+        legacyPathLogicallyDecommissioned: legacyDecommissioned,
+      };
 
       return {
         pluginId: plugin.id,
