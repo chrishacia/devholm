@@ -3,6 +3,7 @@ import {
   reconcilePluginLifecycleState,
   type LifecycleReconciliationResult,
 } from '@core/lib/plugin-lifecycle-reconciler.server';
+import { markPluginStartupReconciliationStateDirty } from '@core/lib/plugin-startup-reconciliation.server';
 
 export interface PluginLifecycleRecoveryScanResult {
   scannedAt: string;
@@ -17,7 +18,9 @@ export interface PluginLifecycleRecoveryScanResult {
 export async function reconcileSinglePluginLifecycle(
   pluginId: string
 ): Promise<LifecycleReconciliationResult> {
-  return reconcilePluginLifecycleState(pluginId);
+  const result = await reconcilePluginLifecycleState(pluginId);
+  markPluginStartupReconciliationStateDirty();
+  return result;
 }
 
 export async function runPluginLifecycleRecoveryScan(options?: {
@@ -33,6 +36,8 @@ export async function runPluginLifecycleRecoveryScan(options?: {
       ...(await reconcilePluginLifecycleState(plugin.id)),
     }))
   );
+
+  markPluginStartupReconciliationStateDirty();
 
   return {
     scannedAt: new Date().toISOString(),

@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 const verifyAdmin = vi.hoisted(() => vi.fn());
 const runPluginLifecycleRecoveryScan = vi.hoisted(() => vi.fn());
 const reconcileSinglePluginLifecycle = vi.hoisted(() => vi.fn());
+const initializePluginStartupReconciliation = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/auth-helpers', () => ({
   verifyAdmin,
@@ -12,6 +13,10 @@ vi.mock('@/lib/auth-helpers', () => ({
 vi.mock('@core/lib/plugin-lifecycle-recovery-runner.server', () => ({
   runPluginLifecycleRecoveryScan,
   reconcileSinglePluginLifecycle,
+}));
+
+vi.mock('@core/lib/plugin-startup-reconciliation.server', () => ({
+  initializePluginStartupReconciliation,
 }));
 
 import { POST } from './route';
@@ -41,6 +46,7 @@ describe('admin plugin recovery reconcile route', () => {
       reason: 'Interrupted migration checkpoint requires reconciliation.',
       operationId: 'op-1',
     });
+    initializePluginStartupReconciliation.mockResolvedValue(undefined);
   });
 
   it('returns unauthorized when admin token is missing', async () => {
@@ -65,6 +71,7 @@ describe('admin plugin recovery reconcile route', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
+    expect(initializePluginStartupReconciliation).toHaveBeenCalledTimes(1);
     expect(runPluginLifecycleRecoveryScan).toHaveBeenCalledWith({ limit: 10 });
     expect(body.pluginCount).toBe(1);
   });
@@ -80,6 +87,7 @@ describe('admin plugin recovery reconcile route', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
+    expect(initializePluginStartupReconciliation).toHaveBeenCalledTimes(1);
     expect(reconcileSinglePluginLifecycle).toHaveBeenCalledWith('url-shortener');
     expect(body.results[0].action).toBe('require-recovery');
   });
