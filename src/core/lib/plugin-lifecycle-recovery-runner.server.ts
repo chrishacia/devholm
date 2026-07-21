@@ -4,6 +4,14 @@ import {
   type LifecycleReconciliationResult,
 } from '@core/lib/plugin-lifecycle-reconciler.server';
 import { markPluginStartupReconciliationStateDirty } from '@core/lib/plugin-startup-reconciliation.server';
+import {
+  determinePluginRollbackCompatibility,
+  readInterruptedPluginMigrationCheckpoint,
+} from '@core/db/plugin-migration-checkpoints';
+import {
+  classifyPluginCutoverState,
+  type PluginCutoverClassificationResult,
+} from '@core/lib/plugin-cutover-reconciliation-classifier.server';
 
 export interface PluginLifecycleRecoveryScanResult {
   scannedAt: string;
@@ -11,6 +19,7 @@ export interface PluginLifecycleRecoveryScanResult {
   results: Array<
     LifecycleReconciliationResult & {
       pluginId: string;
+      cutover?: PluginCutoverClassificationResult;
     }
   >;
 }
@@ -31,10 +40,24 @@ export async function runPluginLifecycleRecoveryScan(options?: {
   const selected = pluginStates.slice(0, limit);
 
   const results = await Promise.all(
-    selected.map(async (plugin) => ({
-      pluginId: plugin.id,
-      ...(await reconcilePluginLifecycleState(plugin.id)),
-    }))
+    selected.map(async (plugin) => {
+      const reconciliation = await reconcilePluginLifecycleState(plugin.id);
+      const [interruptedCheckpoint, rollbackCompatibility] = await Promise.all([
+        readInterruptedPluginMigrationCheckpoint(plugin.id),
+        determinePluginRollbackCompatibility(plugin.id),
+      ]);
+
+      return {
+        pluginId: plugin.id,
+        ...reconciliation,
+        cutover: classifyPluginCutoverState({
+          plugin,
+          reconciliation,
+          hasInterruptedMigrationCheckpoint: interruptedCheckpoint !== null,
+          rollbackCompatible: rollbackCompatibility.rollbackCompatible,
+        }),
+      };
+    })
   );
 
   markPluginStartupReconciliationStateDirty();
