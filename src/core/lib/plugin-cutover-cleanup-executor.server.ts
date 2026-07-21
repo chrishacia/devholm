@@ -11,8 +11,11 @@ import {
 import {
   assertCleanupExecutionIntentMatchesPlan,
   computePluginCutoverCleanupPlanVersion,
+  CLEANUP_PLAN_SCHEMA_VERSION,
   type PluginCutoverCleanupExecutionIntent,
 } from './plugin-cutover-cleanup-contract.server';
+
+const consumedCleanupExecutionTokens = new Set<string>();
 
 export interface PluginCutoverCleanupExecutionResult {
   pluginId: string;
@@ -63,7 +66,13 @@ export async function executePluginCutoverCleanup(
     };
   }
 
-  assertCleanupExecutionIntentMatchesPlan(options?.intent, plan);
+  assertCleanupExecutionIntentMatchesPlan(
+    options?.intent,
+    plan,
+    plan.stateFingerprint,
+    consumedCleanupExecutionTokens
+  );
+  consumedCleanupExecutionTokens.add(options.intent!.executionToken);
   const planVersion = computePluginCutoverCleanupPlanVersion(plan);
 
   const keys = legacyCleanupMarkerKeys(pluginId);
@@ -100,9 +109,12 @@ export async function executePluginCutoverCleanup(
         blocking: false,
         reason: 'Legacy compatibility state tombstoned and runtime authority remains canonical.',
         evidence: {
+          cleanupSchemaVersion: CLEANUP_PLAN_SCHEMA_VERSION,
           cleanupMode: 'tombstone',
           affectedRows,
           planVersion,
+          stateFingerprint: plan.stateFingerprint,
+          executionToken: options.intent!.executionToken,
           excludedDomainDataTables: plan.excludedDomainDataTables,
         },
       },
@@ -134,4 +146,8 @@ export async function executePluginCutoverCleanup(
     blockers: [],
     affectedRows,
   };
+}
+
+export function resetCleanupExecutionTokenRegistryForTests(): void {
+  consumedCleanupExecutionTokens.clear();
 }

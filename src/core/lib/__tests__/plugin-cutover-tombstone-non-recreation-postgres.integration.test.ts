@@ -119,6 +119,10 @@ postgresDescribe('plugin cutover tombstone non-recreation PostgreSQL integration
     const { runPluginLifecycleRecoveryScan } = await import(
       '@core/lib/plugin-lifecycle-recovery-runner.server'
     );
+    const { syncPluginDefinitions } = await import('@/db/plugins');
+    const { installPlugin, enablePlugin, disablePlugin } = await import(
+      '@core/lib/plugin-lifecycle.server'
+    );
 
     const manifest = getBundledPluginManifests().find((entry) => entry.id === 'url-shortener');
     if (!manifest) {
@@ -182,7 +186,10 @@ postgresDescribe('plugin cutover tombstone non-recreation PostgreSQL integration
       db: integrationDb,
       intent: {
         pluginId: 'url-shortener',
+        schemaVersion: 2,
         planVersion: computePluginCutoverCleanupPlanVersion(plan),
+        stateFingerprint: plan.stateFingerprint,
+        executionToken: 'cleanup-token-first',
       },
     });
 
@@ -200,6 +207,12 @@ postgresDescribe('plugin cutover tombstone non-recreation PostgreSQL integration
 
     await runPluginLifecycleRecoveryScan({ limit: 50 });
 
+    await syncPluginDefinitions();
+
+    await expect(installPlugin('url-shortener')).resolves.toBeUndefined();
+    await expect(enablePlugin('url-shortener')).resolves.toBeUndefined();
+    await expect(disablePlugin('url-shortener')).resolves.toBeUndefined();
+
     const enabledAfterRecovery = await integrationDb('site_settings')
       .where({ key: 'plugin:url-shortener:enabled' })
       .first();
@@ -211,7 +224,10 @@ postgresDescribe('plugin cutover tombstone non-recreation PostgreSQL integration
       db: integrationDb,
       intent: {
         pluginId: 'url-shortener',
+        schemaVersion: 2,
         planVersion: computePluginCutoverCleanupPlanVersion(secondPlan),
+        stateFingerprint: secondPlan.stateFingerprint,
+        executionToken: 'cleanup-token-second',
       },
     });
 

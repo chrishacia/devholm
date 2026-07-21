@@ -3,6 +3,10 @@ import { getDb } from '@/db';
 import { getInstalledPlugin, findActivePluginLifecycleOperation } from '@core/db/plugin-lifecycle';
 import { readPluginCutoverReconciliationState } from '@core/db/plugin-cutover-reconciliation';
 import { readLatestPluginCutoverRollbackCheckpoint } from '@core/db/plugin-cutover-rollback';
+import {
+  computePluginCutoverCleanupStateFingerprint,
+  type PluginCutoverCleanupStateBindingInput,
+} from './plugin-cutover-cleanup-contract.server';
 
 export interface PluginCutoverCleanupPlan {
   pluginId: string;
@@ -16,6 +20,8 @@ export interface PluginCutoverCleanupPlan {
   hasCleanupTombstoneMarker: boolean;
   proposedChanges: string[];
   excludedDomainDataTables: string[];
+  stateBinding: PluginCutoverCleanupStateBindingInput;
+  stateFingerprint: string;
 }
 
 function legacyEnabledKey(pluginId: string): string {
@@ -108,6 +114,40 @@ export async function buildPluginCutoverCleanupPlan(
   const cleanupEligible =
     blockers.length === 0 && (hasLegacyEnabledSetting || !hasCleanupTombstoneMarker);
 
+  const stateBinding: PluginCutoverCleanupStateBindingInput = {
+    pluginId,
+    canonicalIdentity: {
+      lifecycleState: installed?.lifecycleState ?? null,
+      installedVersion: installed?.installedVersion ?? null,
+      bundledVersion: installed?.bundledVersion ?? null,
+      enabled: installed?.enabled ?? null,
+      manifestChecksum: installed?.manifestChecksum ?? null,
+      updatedAtIso: installed?.updatedAt ? new Date(installed.updatedAt).toISOString() : null,
+    },
+    legacyIdentity: {
+      hasLegacyEnabledSetting,
+      hasLogicalDecommissionMarker,
+      hasCleanupTombstoneMarker,
+    },
+    cutoverIdentity: {
+      phase: cutoverState?.phase ?? null,
+      classification: cutoverState?.classification ?? null,
+      blocking: cutoverState?.blocking ?? false,
+      updatedAtIso: cutoverState?.updatedAt ?? null,
+    },
+    rollbackIdentity: {
+      status: rollbackCheckpoint?.status ?? null,
+      rollbackEligible: rollbackCheckpoint?.rollbackEligible ?? true,
+      irreversibleBoundary,
+      attemptCount: rollbackCheckpoint?.attemptCount ?? null,
+    },
+    operationIdentity: {
+      hasActiveOperation: Boolean(activeOperation),
+      activeOperationId: activeOperation?.operationId ?? null,
+    },
+  };
+  const stateFingerprint = computePluginCutoverCleanupStateFingerprint(stateBinding);
+
   return {
     pluginId,
     mode: 'tombstone',
@@ -126,6 +166,8 @@ export async function buildPluginCutoverCleanupPlan(
       'u_url_shortener_links',
       'u_url_shortener_click_events',
     ],
+    stateBinding,
+    stateFingerprint,
   };
 }
 
