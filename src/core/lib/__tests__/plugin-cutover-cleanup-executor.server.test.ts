@@ -71,6 +71,30 @@ describe('plugin cutover cleanup executor', () => {
     expect(upsertPluginCutoverReconciliationState).not.toHaveBeenCalled();
   });
 
+  it('rejects non-dry-run cleanup execution when intent is missing or stale', async () => {
+    const { executePluginCutoverCleanup } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
+
+    await expect(
+      executePluginCutoverCleanup('url-shortener', {
+        dryRun: false,
+        db: { transaction: vi.fn() } as never,
+      })
+    ).rejects.toThrow(/cleanup execution intent is required/);
+
+    await expect(
+      executePluginCutoverCleanup('url-shortener', {
+        dryRun: false,
+        intent: {
+          pluginId: 'url-shortener',
+          planVersion: 'stale',
+        },
+        db: { transaction: vi.fn() } as never,
+      })
+    ).rejects.toThrow(/stale-cleanup-plan-version/);
+  });
+
   it('executes tombstone cleanup when eligible', async () => {
     const del = vi.fn(async () => 1);
     const insert = vi.fn(() => ({
@@ -96,8 +120,18 @@ describe('plugin cutover cleanup executor', () => {
       '@core/lib/plugin-cutover-cleanup-executor.server'
     );
 
+    const { computePluginCutoverCleanupPlanVersion } = await import(
+      '@core/lib/plugin-cutover-cleanup-contract.server'
+    );
+    const plan = await buildPluginCutoverCleanupPlan();
+    const planVersion = computePluginCutoverCleanupPlanVersion(plan);
+
     const result = await executePluginCutoverCleanup('url-shortener', {
       dryRun: false,
+      intent: {
+        pluginId: 'url-shortener',
+        planVersion,
+      },
       db: db as never,
     });
 

@@ -8,6 +8,11 @@ import {
   buildPluginCutoverCleanupPlan,
   legacyCleanupMarkerKeys,
 } from './plugin-cutover-cleanup-planner.server';
+import {
+  assertCleanupExecutionIntentMatchesPlan,
+  computePluginCutoverCleanupPlanVersion,
+  type PluginCutoverCleanupExecutionIntent,
+} from './plugin-cutover-cleanup-contract.server';
 
 export interface PluginCutoverCleanupExecutionResult {
   pluginId: string;
@@ -23,6 +28,7 @@ export async function executePluginCutoverCleanup(
   pluginId: string,
   options?: {
     dryRun?: boolean;
+    intent?: PluginCutoverCleanupExecutionIntent;
     operationId?: string | null;
     correlationId?: string | null;
     db?: Knex;
@@ -56,6 +62,9 @@ export async function executePluginCutoverCleanup(
       affectedRows: 0,
     };
   }
+
+  assertCleanupExecutionIntentMatchesPlan(options?.intent, plan);
+  const planVersion = computePluginCutoverCleanupPlanVersion(plan);
 
   const keys = legacyCleanupMarkerKeys(pluginId);
   let affectedRows = 0;
@@ -93,6 +102,7 @@ export async function executePluginCutoverCleanup(
         evidence: {
           cleanupMode: 'tombstone',
           affectedRows,
+          planVersion,
           excludedDomainDataTables: plan.excludedDomainDataTables,
         },
       },
