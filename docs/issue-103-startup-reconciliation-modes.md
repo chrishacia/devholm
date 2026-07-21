@@ -77,3 +77,16 @@ This document defines startup reconciliation behavior for Phase A migration/reco
 
 - No legacy-path deletion in startup reconciliation mode changes.
 - No implicit destructive rollback execution from startup mode checks.
+
+## Canonical ownership (current)
+
+- Lifecycle mutation writes are canonical-only (`devholm_plugins` authority).
+- Lifecycle mutation flows no longer write `plugin:*:enabled` keys.
+- Public-route dispatch now gates plugin execution through canonical request-time enablement checks.
+
+## Rollback stage checkpoints (current)
+
+- Added durable rollback checkpoint table for cutover recovery:
+  - `devholm_plugin_cutover_rollback_checkpoints`
+- Stage checkpoints are written for rollback-required classifications.
+- Recovery scan payload includes rollback stage visibility and availability metadata for Recovery Center.

@@ -36,10 +36,19 @@ This inventory maps legacy or transitional plugin architecture paths to canonica
 
 ### Phase C - Removal
 
-- Remove duplicate direct registry/bypass consumers.
-- Remove synthetic scaffold fallbacks once reconciliation reports no unresolved legacy dependencies.
-- Keep only documented migration compatibility shims.
-
 ## Non-removal rule
 
 Do not remove a legacy path until each listed consumer is switched to a proven canonical replacement and reconciliation reports zero ambiguous/manual-intervention states for affected plugins.
+
+## Incremental closure status (latest)
+
+- Canonical write ownership:
+  - `src/core/lib/plugin-lifecycle.server` no longer writes `plugin:*:enabled` during lifecycle mutations.
+  - `src/core/db/plugins.ts` no longer seeds legacy enablement keys during definition sync.
+  - Canonical runtime authority remains `devholm_plugins`.
+- Runtime bypass decommission:
+  - `src/core/lib/public-route-dispatcher.server` now uses `isPluginEnabledForRequest` instead of unconditional enablement.
+  - Disabled plugin public routes are now fail-closed by canonical authority checks.
+- Rollback stage foundation:
+  - Added durable rollback stage checkpoint schema and APIs.
+  - Recovery scan now records rollback checkpoints for rollback-required classifications and surfaces stage/availability metadata.
