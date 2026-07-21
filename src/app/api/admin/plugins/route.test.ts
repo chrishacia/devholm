@@ -235,4 +235,27 @@ describe('admin plugins PATCH route', () => {
     expect(response.status).toBe(503);
     expect(body.error).toBe('Lifecycle infrastructure is temporarily unavailable.');
   });
+
+  it('fails closed for ordinary mutation when startup reconciliation reports recovery required', async () => {
+    ensurePluginStartupReadyForMutation.mockRejectedValue(
+      new PluginLifecycleError({
+        code: 'LIFECYCLE_RECOVERY_REQUIRED',
+        internalDiagnostic:
+          'startup reconciliation blocked by unresolved lifecycle recovery actions',
+      })
+    );
+
+    const request = new NextRequest('http://localhost:3000/api/admin/plugins', {
+      method: 'PATCH',
+      body: JSON.stringify({ pluginId: 'url-shortener', isEnabled: true }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await PATCH(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe('Lifecycle state is ambiguous and requires explicit recovery.');
+    expect(orchestratePluginLifecycleMutation).not.toHaveBeenCalled();
+  });
 });

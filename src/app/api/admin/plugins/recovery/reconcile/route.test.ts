@@ -91,4 +91,51 @@ describe('admin plugin recovery reconcile route', () => {
     expect(reconcileSinglePluginLifecycle).toHaveBeenCalledWith('url-shortener');
     expect(body.results[0].action).toBe('require-recovery');
   });
+
+  it('remains executable when recovery is required and routes to recovery runner', async () => {
+    runPluginLifecycleRecoveryScan.mockResolvedValueOnce({
+      scannedAt: '2026-07-20T00:00:00.000Z',
+      pluginCount: 1,
+      results: [
+        {
+          pluginId: 'url-shortener',
+          action: 'require-recovery',
+          reason: 'Interrupted migration checkpoint requires reconciliation.',
+          operationId: 'op-42',
+        },
+      ],
+    });
+
+    const request = new NextRequest('http://localhost:3000/api/admin/plugins/recovery/reconcile', {
+      method: 'POST',
+      body: JSON.stringify({ limit: 50 }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(initializePluginStartupReconciliation).toHaveBeenCalledTimes(1);
+    expect(runPluginLifecycleRecoveryScan).toHaveBeenCalledWith({ limit: 50 });
+    expect(body.results[0].action).toBe('require-recovery');
+  });
+
+  it('maps initialization failures to safe recovery error response', async () => {
+    initializePluginStartupReconciliation.mockRejectedValueOnce(
+      new Error('startup inspection infrastructure unavailable')
+    );
+
+    const request = new NextRequest('http://localhost:3000/api/admin/plugins/recovery/reconcile', {
+      method: 'POST',
+      body: JSON.stringify({ limit: 10 }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await POST(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.reasonCode).toBe('lifecycle-recovery-scan-failed');
+  });
 });
