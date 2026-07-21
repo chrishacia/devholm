@@ -45,6 +45,8 @@
     "plugins:generate": "tsx scripts/plugins-generate-registry.ts",
     "plugins:check": "tsx scripts/plugins-check-registry.ts",
     "plugins:prepare-production": "tsx scripts/plugins-prepare-production.ts",
+    "plugins:export:first-party-marketplace-contract": "tsx scripts/generate-first-party-marketplace-contract.ts",
+    "plugins:check:first-party-marketplace-contract": "pnpm plugins:export:first-party-marketplace-contract && vitest run src/test/first-party-marketplace-contract-export.test.ts",
     "sdk:version-sync": "tsx scripts/sync-sdk-version-cli.ts",
     "seed:admin": "tsx src/db/seed-admin.ts",
     "debug:smoke": "node scripts/debug-smoke.js",
