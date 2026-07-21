@@ -81,8 +81,7 @@ export function computePluginCutoverCleanupStateFingerprint(
 export function assertCleanupExecutionIntentMatchesPlan(
   intent: PluginCutoverCleanupExecutionIntent | undefined,
   plan: PluginCutoverCleanupPlan,
-  expectedStateFingerprint: string,
-  consumedExecutionTokens: ReadonlySet<string>
+  expectedStateFingerprint: string
 ): void {
   if (!intent) {
     throw new Error('cleanup execution intent is required');
@@ -102,10 +101,6 @@ export function assertCleanupExecutionIntentMatchesPlan(
 
   if (!intent.executionToken || intent.executionToken.trim().length === 0) {
     throw new Error('cleanup execution token is required');
-  }
-
-  if (consumedExecutionTokens.has(intent.executionToken)) {
-    throw new Error('cleanup-execution-token-replayed');
   }
 
   const expectedPlanVersion = computePluginCutoverCleanupPlanVersion(plan);

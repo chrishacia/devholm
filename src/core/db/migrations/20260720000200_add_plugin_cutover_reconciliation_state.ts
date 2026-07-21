@@ -54,6 +54,11 @@ export async function up(knex: Knex): Promise<void> {
     table.text('reason').nullable();
     table.json('evidence').nullable();
     table.json('snapshot').nullable();
+    table.integer('cleanup_schema_version').nullable();
+    table.string('cleanup_state_fingerprint', 64).nullable();
+    table.string('cleanup_plan_version', 64).nullable();
+    table.string('cleanup_execution_token_hash', 64).nullable();
+    table.timestamp('cleanup_executed_at').nullable();
     table.timestamp('inspected_at').nullable();
     table.timestamp('phase_updated_at').notNullable();
     table.timestamp('created_at').notNullable().defaultTo(knex.fn.now());
@@ -62,7 +67,14 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['phase']);
     table.index(['blocking']);
     table.index(['phase_updated_at']);
+    table.index(['cleanup_state_fingerprint']);
   });
+
+  await knex.raw(
+    `CREATE UNIQUE INDEX IF NOT EXISTS devholm_plugin_cutover_reconciliation_states_cleanup_token_uq
+     ON devholm_plugin_cutover_reconciliation_states (plugin_id, cleanup_execution_token_hash)
+     WHERE cleanup_execution_token_hash IS NOT NULL`
+  );
 
   await knex.schema.createTable('devholm_plugin_cutover_reconciliation_events', (table) => {
     table.increments('id').primary();
@@ -87,6 +99,9 @@ export async function up(knex: Knex): Promise<void> {
 }
 
 export async function down(knex: Knex): Promise<void> {
+  await knex.raw(
+    `DROP INDEX IF EXISTS devholm_plugin_cutover_reconciliation_states_cleanup_token_uq`
+  );
   await knex.schema.dropTableIfExists('devholm_plugin_cutover_reconciliation_events');
   await knex.schema.dropTableIfExists('devholm_plugin_cutover_reconciliation_states');
 

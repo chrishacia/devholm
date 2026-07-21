@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Knex } from 'knex';
 import { getDb } from '@/db';
 import {
@@ -15,7 +16,24 @@ import {
   type PluginCutoverCleanupExecutionIntent,
 } from './plugin-cutover-cleanup-contract.server';
 
-const consumedCleanupExecutionTokens = new Set<string>();
+function isReplayState(
+  row: {
+    cleanup_execution_token_hash?: string | null;
+    cleanup_executed_at?: string | Date | null;
+  },
+  tokenHash: string | null
+): boolean {
+  return Boolean(
+    tokenHash &&
+      row.cleanup_execution_token_hash &&
+      row.cleanup_execution_token_hash === tokenHash &&
+      row.cleanup_executed_at
+  );
+}
+
+function hashCleanupExecutionToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 export interface PluginCutoverCleanupExecutionResult {
   pluginId: string;
@@ -41,18 +59,8 @@ export async function executePluginCutoverCleanup(
   const dryRun = options?.dryRun !== false;
 
   const plan = await buildPluginCutoverCleanupPlan(pluginId, db);
-
-  if (!plan.cleanupEligible) {
-    return {
-      pluginId,
-      mode: 'tombstone',
-      dryRun,
-      cleanupEligible: false,
-      executed: false,
-      blockers: plan.blockers,
-      affectedRows: 0,
-    };
-  }
+  const executionToken = options?.intent?.executionToken ?? '';
+  const executionTokenHash = executionToken ? hashCleanupExecutionToken(executionToken) : null;
 
   if (dryRun) {
     return {
@@ -66,19 +74,84 @@ export async function executePluginCutoverCleanup(
     };
   }
 
-  assertCleanupExecutionIntentMatchesPlan(
-    options?.intent,
-    plan,
-    plan.stateFingerprint,
-    consumedCleanupExecutionTokens
-  );
-  consumedCleanupExecutionTokens.add(options.intent!.executionToken);
+  assertCleanupExecutionIntentMatchesPlan(options?.intent, plan, plan.stateFingerprint);
   const planVersion = computePluginCutoverCleanupPlanVersion(plan);
+
+  const durableReplayState = await db('devholm_plugin_cutover_reconciliation_states')
+    .select('cleanup_execution_token_hash', 'cleanup_executed_at')
+    .where({ plugin_id: pluginId })
+    .first();
+
+  if (isReplayState(durableReplayState ?? {}, executionTokenHash)) {
+    throw new Error('cleanup-execution-token-replayed');
+  }
+
+  if (!plan.cleanupEligible) {
+    return {
+      pluginId,
+      mode: 'tombstone',
+      dryRun,
+      cleanupEligible: false,
+      executed: false,
+      blockers: plan.blockers,
+      affectedRows: 0,
+    };
+  }
 
   const keys = legacyCleanupMarkerKeys(pluginId);
   let affectedRows = 0;
 
   await db.transaction(async (trx) => {
+    // Ensure there is a durable state row we can atomically claim against.
+    await trx('devholm_plugin_cutover_reconciliation_states')
+      .insert({
+        plugin_id: pluginId,
+        phase: 'legacy-path-decommissioned',
+        operation_id: options?.operationId ?? null,
+        correlation_id: options?.correlationId ?? null,
+        classification: 'cleanup-claim-initialized',
+        blocking: false,
+        reason: 'cleanup execution claim initialized',
+        evidence: null,
+        snapshot: null,
+        cleanup_schema_version: null,
+        cleanup_state_fingerprint: null,
+        cleanup_plan_version: null,
+        cleanup_execution_token_hash: null,
+        cleanup_executed_at: null,
+        inspected_at: new Date(),
+        phase_updated_at: new Date(),
+        created_at: new Date(),
+        updated_at: new Date(),
+      })
+      .onConflict('plugin_id')
+      .ignore();
+
+    const claimCount = await trx('devholm_plugin_cutover_reconciliation_states')
+      .where({ plugin_id: pluginId })
+      .whereNull('cleanup_execution_token_hash')
+      .update({
+        cleanup_schema_version: CLEANUP_PLAN_SCHEMA_VERSION,
+        cleanup_state_fingerprint: plan.stateFingerprint,
+        cleanup_plan_version: planVersion,
+        cleanup_execution_token_hash: executionTokenHash,
+        cleanup_executed_at: null,
+        updated_at: new Date(),
+      });
+
+    if (!claimCount) {
+      const state = await trx('devholm_plugin_cutover_reconciliation_states')
+        .select('cleanup_execution_token_hash', 'cleanup_executed_at')
+        .where({ plugin_id: pluginId })
+        .first();
+
+      if (isReplayState(state ?? {}, executionTokenHash)) {
+        throw new Error('cleanup-execution-token-replayed');
+      }
+
+      throw new Error('cleanup-execution-claim-conflict');
+    }
+
     if (plan.hasLegacyEnabledSetting) {
       const deleted = await trx('site_settings').where({ key: keys.enabled }).del();
       affectedRows += Number(deleted ?? 0);
@@ -114,12 +187,27 @@ export async function executePluginCutoverCleanup(
           affectedRows,
           planVersion,
           stateFingerprint: plan.stateFingerprint,
-          executionToken: options.intent!.executionToken,
           excludedDomainDataTables: plan.excludedDomainDataTables,
         },
+        cleanupSchemaVersion: CLEANUP_PLAN_SCHEMA_VERSION,
+        cleanupStateFingerprint: plan.stateFingerprint,
+        cleanupPlanVersion: planVersion,
+        cleanupExecutionTokenHash: executionTokenHash,
+        cleanupExecutedAt: new Date().toISOString(),
       },
       trx
     );
+
+    await trx('devholm_plugin_cutover_reconciliation_states')
+      .where({ plugin_id: pluginId })
+      .update({
+        cleanup_schema_version: CLEANUP_PLAN_SCHEMA_VERSION,
+        cleanup_state_fingerprint: plan.stateFingerprint,
+        cleanup_plan_version: planVersion,
+        cleanup_execution_token_hash: executionTokenHash,
+        cleanup_executed_at: new Date(),
+        updated_at: new Date(),
+      });
 
     await appendPluginCutoverReconciliationEvent(
       {
@@ -146,8 +234,4 @@ export async function executePluginCutoverCleanup(
     blockers: [],
     affectedRows,
   };
-}
-
-export function resetCleanupExecutionTokenRegistryForTests(): void {
-  consumedCleanupExecutionTokens.clear();
 }

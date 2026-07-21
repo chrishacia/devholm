@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const buildPluginCutoverCleanupPlan = vi.hoisted(() => vi.fn());
@@ -79,6 +80,11 @@ describe('plugin cutover cleanup executor', () => {
       reason: 'cleanup complete',
       evidence: {},
       snapshot: null,
+      cleanupSchemaVersion: 2,
+      cleanupStateFingerprint: 'fp-1',
+      cleanupPlanVersion: 'plan-1',
+      cleanupExecutionTokenHash: 'hash-1',
+      cleanupExecutedAt: new Date().toISOString(),
       operationId: null,
       correlationId: null,
       inspectedAt: new Date().toISOString(),
@@ -165,24 +171,56 @@ describe('plugin cutover cleanup executor', () => {
       onConflict: vi.fn(() => ({ merge: vi.fn(async () => undefined) })),
     }));
 
+    const cleanupState: Record<string, unknown> | null = null;
+
     const trx = ((tableName: string) => {
-      if (tableName !== 'site_settings') {
-        throw new Error(`unexpected table ${tableName}`);
+      if (tableName === 'site_settings') {
+        return {
+          where: ({ key }: { key: string }) => ({ del: key.endsWith(':enabled') ? del : vi.fn() }),
+          insert,
+        };
       }
 
-      return {
-        where: ({ key }: { key: string }) => ({ del: key.endsWith(':enabled') ? del : vi.fn() }),
-        insert,
-      };
+      if (tableName === 'devholm_plugin_cutover_reconciliation_states') {
+        return {
+          insert: vi.fn(() => ({
+            onConflict: vi.fn(() => ({ ignore: vi.fn(async () => undefined) })),
+          })),
+          where: vi.fn(() => ({
+            whereNull: vi.fn(() => ({ update: vi.fn(async () => 1) })),
+            update: vi.fn(async () => 1),
+          })),
+          select: vi.fn(() => ({
+            where: vi.fn(() => ({ first: vi.fn(async () => cleanupState) })),
+          })),
+        };
+      }
+
+      throw new Error(`unexpected table ${tableName}`);
     }) as unknown as ReturnType<typeof vi.fn>;
 
-    const db = {
-      transaction: async (callback: (trxDb: typeof trx) => Promise<void>) => callback(trx),
-    };
+    const db = Object.assign(
+      ((tableName: string) => {
+        if (tableName === 'devholm_plugin_cutover_reconciliation_states') {
+          return {
+            select: () => ({
+              where: () => ({
+                first: async () => cleanupState,
+              }),
+            }),
+          };
+        }
 
-    const { executePluginCutoverCleanup, resetCleanupExecutionTokenRegistryForTests } =
-      await import('@core/lib/plugin-cutover-cleanup-executor.server');
-    resetCleanupExecutionTokenRegistryForTests();
+        throw new Error(`unexpected table ${tableName}`);
+      }) as unknown as ReturnType<typeof vi.fn>,
+      {
+        transaction: async (callback: (trxDb: typeof trx) => Promise<void>) => callback(trx),
+      }
+    );
+
+    const { executePluginCutoverCleanup } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
 
     const { computePluginCutoverCleanupPlanVersion } = await import(
       '@core/lib/plugin-cutover-cleanup-contract.server'
@@ -209,15 +247,17 @@ describe('plugin cutover cleanup executor', () => {
   });
 
   it('rejects replayed cleanup execution token', async () => {
-    const { executePluginCutoverCleanup, resetCleanupExecutionTokenRegistryForTests } =
-      await import('@core/lib/plugin-cutover-cleanup-executor.server');
+    const { executePluginCutoverCleanup } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
     const { computePluginCutoverCleanupPlanVersion } = await import(
       '@core/lib/plugin-cutover-cleanup-contract.server'
     );
-    resetCleanupExecutionTokenRegistryForTests();
 
     const plan = await buildPluginCutoverCleanupPlan();
     const planVersion = computePluginCutoverCleanupPlanVersion(plan);
+
+    let cleanupState: Record<string, unknown> | null = null;
 
     const del = vi.fn(async () => 1);
     const insert = vi.fn(() => ({
@@ -225,19 +265,50 @@ describe('plugin cutover cleanup executor', () => {
     }));
 
     const trx = ((tableName: string) => {
-      if (tableName !== 'site_settings') {
-        throw new Error(`unexpected table ${tableName}`);
+      if (tableName === 'site_settings') {
+        return {
+          where: ({ key }: { key: string }) => ({ del: key.endsWith(':enabled') ? del : vi.fn() }),
+          insert,
+        };
       }
 
-      return {
-        where: ({ key }: { key: string }) => ({ del: key.endsWith(':enabled') ? del : vi.fn() }),
-        insert,
-      };
+      if (tableName === 'devholm_plugin_cutover_reconciliation_states') {
+        return {
+          insert: vi.fn(() => ({
+            onConflict: vi.fn(() => ({ ignore: vi.fn(async () => undefined) })),
+          })),
+          where: vi.fn(() => ({
+            whereNull: vi.fn(() => ({
+              update: vi.fn(async () => (cleanupState ? 0 : 1)),
+            })),
+            update: vi.fn(async () => 1),
+          })),
+          select: vi.fn(() => ({
+            where: vi.fn(() => ({ first: vi.fn(async () => cleanupState) })),
+          })),
+        };
+      }
+
+      throw new Error(`unexpected table ${tableName}`);
     }) as unknown as ReturnType<typeof vi.fn>;
 
-    const db = {
+    const tableDb = ((tableName: string) => {
+      if (tableName === 'devholm_plugin_cutover_reconciliation_states') {
+        return {
+          select: () => ({
+            where: () => ({
+              first: async () => cleanupState,
+            }),
+          }),
+        };
+      }
+
+      throw new Error(`unexpected table ${tableName}`);
+    }) as unknown as ReturnType<typeof vi.fn>;
+
+    const db = Object.assign(tableDb, {
       transaction: async (callback: (trxDb: typeof trx) => Promise<void>) => callback(trx),
-    };
+    });
 
     await expect(
       executePluginCutoverCleanup('url-shortener', {
@@ -252,6 +323,12 @@ describe('plugin cutover cleanup executor', () => {
         db: db as never,
       })
     ).resolves.toBeDefined();
+
+    cleanupState = {
+      cleanup_execution_token_hash: createHash('sha256').update('token-replay-1').digest('hex'),
+      cleanup_executed_at: new Date().toISOString(),
+      cleanup_state_fingerprint: 'fp-1',
+    };
 
     await expect(
       executePluginCutoverCleanup('url-shortener', {

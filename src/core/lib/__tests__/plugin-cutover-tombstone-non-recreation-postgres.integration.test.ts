@@ -2,7 +2,7 @@
 
 import path from 'path';
 import knex, { type Knex } from 'knex';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const TEST_DB_SUFFIX = `_cutover_tombstone_nonrecreate_it_${process.pid}`;
 const configuredTestDbUrl = process.env.PHASE2_TEST_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -237,5 +237,211 @@ postgresDescribe('plugin cutover tombstone non-recreation PostgreSQL integration
       .where({ key: 'plugin:url-shortener:legacy-state-tombstoned-at' })
       .count<{ count: string }[]>('* as count');
     expect(Number(tombstoneRows[0]?.count ?? '0')).toBe(1);
+  });
+
+  it('rejects replay of the same cleanup execution token after successful execution', async () => {
+    const { executePluginCutoverCleanup } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
+    const { computePluginCutoverCleanupPlanVersion } = await import(
+      '@core/lib/plugin-cutover-cleanup-contract.server'
+    );
+    const { buildPluginCutoverCleanupPlan } = await import(
+      '@core/lib/plugin-cutover-cleanup-planner.server'
+    );
+    const { upsertPluginLedgerRecord } = await import('@core/db/plugin-lifecycle');
+    const { getBundledPluginManifests } = await import('@core/lib/plugin-registry.server');
+
+    const manifest = getBundledPluginManifests().find((entry) => entry.id === 'url-shortener');
+    if (!manifest) {
+      throw new Error('missing url-shortener manifest');
+    }
+
+    await upsertPluginLedgerRecord(
+      {
+        manifest,
+        state: 'installed',
+        operationStatus: 'idle',
+        enabled: true,
+        installedVersion: manifest.version,
+        installedAt: new Date(),
+        upgradedAt: null,
+        disabledAt: null,
+        lastError: null,
+      },
+      integrationDb
+    );
+
+    await integrationDb('site_settings').insert([
+      {
+        key: 'plugin:url-shortener:enabled',
+        value: 'true',
+        type: 'boolean',
+        category: 'plugins',
+        description: 'legacy enabled key',
+        updated_at: new Date(),
+      },
+      {
+        key: 'plugin:url-shortener:legacy-state-decommissioned-at',
+        value: new Date().toISOString(),
+        type: 'string',
+        category: 'plugins',
+        description: 'logical decommission marker',
+        updated_at: new Date(),
+      },
+    ]);
+
+    await integrationDb('devholm_plugin_cutover_reconciliation_states').insert({
+      plugin_id: 'url-shortener',
+      phase: 'legacy-path-decommissioned',
+      operation_id: null,
+      correlation_id: null,
+      classification: 'legacy-logically-decommissioned',
+      blocking: false,
+      reason: 'ready for cleanup',
+      evidence: JSON.stringify({ ready: true }),
+      snapshot: null,
+      inspected_at: new Date(),
+      phase_updated_at: new Date(),
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    const firstPlan = await buildPluginCutoverCleanupPlan('url-shortener', integrationDb);
+    const replayToken = 'cleanup-token-replay-proof';
+
+    await expect(
+      executePluginCutoverCleanup('url-shortener', {
+        dryRun: false,
+        db: integrationDb,
+        intent: {
+          pluginId: 'url-shortener',
+          schemaVersion: 2,
+          planVersion: computePluginCutoverCleanupPlanVersion(firstPlan),
+          stateFingerprint: firstPlan.stateFingerprint,
+          executionToken: replayToken,
+        },
+      })
+    ).resolves.toBeDefined();
+
+    vi.resetModules();
+
+    const { executePluginCutoverCleanup: executeAfterReset } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
+    const { buildPluginCutoverCleanupPlan: buildPlanAfterReset } = await import(
+      '@core/lib/plugin-cutover-cleanup-planner.server'
+    );
+    const planAfterReset = await buildPlanAfterReset('url-shortener', integrationDb);
+
+    await expect(
+      executeAfterReset('url-shortener', {
+        dryRun: false,
+        db: integrationDb,
+        intent: {
+          pluginId: 'url-shortener',
+          schemaVersion: 2,
+          planVersion: computePluginCutoverCleanupPlanVersion(planAfterReset),
+          stateFingerprint: planAfterReset.stateFingerprint,
+          executionToken: replayToken,
+        },
+      })
+    ).rejects.toThrow(/cleanup-execution-token-replayed/);
+  });
+
+  it('allows exactly one winner for concurrent same-token cleanup attempts', async () => {
+    const { executePluginCutoverCleanup } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
+    const { computePluginCutoverCleanupPlanVersion } = await import(
+      '@core/lib/plugin-cutover-cleanup-contract.server'
+    );
+    const { buildPluginCutoverCleanupPlan } = await import(
+      '@core/lib/plugin-cutover-cleanup-planner.server'
+    );
+    const { upsertPluginLedgerRecord } = await import('@core/db/plugin-lifecycle');
+    const { getBundledPluginManifests } = await import('@core/lib/plugin-registry.server');
+
+    const manifest = getBundledPluginManifests().find((entry) => entry.id === 'url-shortener');
+    if (!manifest) {
+      throw new Error('missing url-shortener manifest');
+    }
+
+    await upsertPluginLedgerRecord(
+      {
+        manifest,
+        state: 'installed',
+        operationStatus: 'idle',
+        enabled: true,
+        installedVersion: manifest.version,
+        installedAt: new Date(),
+        upgradedAt: null,
+        disabledAt: null,
+        lastError: null,
+      },
+      integrationDb
+    );
+
+    await integrationDb('site_settings').insert([
+      {
+        key: 'plugin:url-shortener:enabled',
+        value: 'true',
+        type: 'boolean',
+        category: 'plugins',
+        description: 'legacy enabled key',
+        updated_at: new Date(),
+      },
+      {
+        key: 'plugin:url-shortener:legacy-state-decommissioned-at',
+        value: new Date().toISOString(),
+        type: 'string',
+        category: 'plugins',
+        description: 'logical decommission marker',
+        updated_at: new Date(),
+      },
+    ]);
+
+    await integrationDb('devholm_plugin_cutover_reconciliation_states').insert({
+      plugin_id: 'url-shortener',
+      phase: 'legacy-path-decommissioned',
+      operation_id: null,
+      correlation_id: null,
+      classification: 'legacy-logically-decommissioned',
+      blocking: false,
+      reason: 'ready for cleanup',
+      evidence: JSON.stringify({ ready: true }),
+      snapshot: null,
+      inspected_at: new Date(),
+      phase_updated_at: new Date(),
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    const plan = await buildPluginCutoverCleanupPlan('url-shortener', integrationDb);
+    const sharedToken = 'cleanup-token-race-proof';
+
+    const attempt = () =>
+      executePluginCutoverCleanup('url-shortener', {
+        dryRun: false,
+        db: integrationDb,
+        intent: {
+          pluginId: 'url-shortener',
+          schemaVersion: 2,
+          planVersion: computePluginCutoverCleanupPlanVersion(plan),
+          stateFingerprint: plan.stateFingerprint,
+          executionToken: sharedToken,
+        },
+      });
+
+    const [first, second] = await Promise.allSettled([attempt(), attempt()]);
+    const outcomes = [first, second];
+    const fulfilled = outcomes.filter((result) => result.status === 'fulfilled');
+    const rejected = outcomes.filter((result) => result.status === 'rejected');
+
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(1);
+
+    const rejectionReason = String((rejected[0] as PromiseRejectedResult).reason ?? '');
+    expect(rejectionReason).toMatch(/cleanup-execution-(claim-conflict|token-replayed)/);
   });
 });

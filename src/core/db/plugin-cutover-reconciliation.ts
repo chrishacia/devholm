@@ -29,6 +29,11 @@ export interface PluginCutoverReconciliationStateRecord {
   reason: string | null;
   evidence: Record<string, unknown> | null;
   snapshot: Record<string, unknown> | null;
+  cleanupSchemaVersion: number | null;
+  cleanupStateFingerprint: string | null;
+  cleanupPlanVersion: string | null;
+  cleanupExecutionTokenHash: string | null;
+  cleanupExecutedAt: string | null;
   inspectedAt: string | null;
   phaseUpdatedAt: string;
   createdAt: string;
@@ -100,6 +105,15 @@ function mapRow(row: Record<string, unknown>): PluginCutoverReconciliationStateR
     reason: row.reason ? String(row.reason) : null,
     evidence: row.evidence ? parseJsonColumn<Record<string, unknown>>(row.evidence) : null,
     snapshot: row.snapshot ? parseJsonColumn<Record<string, unknown>>(row.snapshot) : null,
+    cleanupSchemaVersion: row.cleanup_schema_version ? Number(row.cleanup_schema_version) : null,
+    cleanupStateFingerprint: row.cleanup_state_fingerprint
+      ? String(row.cleanup_state_fingerprint)
+      : null,
+    cleanupPlanVersion: row.cleanup_plan_version ? String(row.cleanup_plan_version) : null,
+    cleanupExecutionTokenHash: row.cleanup_execution_token_hash
+      ? String(row.cleanup_execution_token_hash)
+      : null,
+    cleanupExecutedAt: row.cleanup_executed_at ? String(row.cleanup_executed_at) : null,
     inspectedAt: row.inspected_at ? String(row.inspected_at) : null,
     phaseUpdatedAt: String(row.phase_updated_at),
     createdAt: String(row.created_at),
@@ -148,6 +162,11 @@ export async function upsertPluginCutoverReconciliationState(
     reason?: string | null;
     evidence?: Record<string, unknown> | null;
     snapshot?: Record<string, unknown> | null;
+    cleanupSchemaVersion?: number | null;
+    cleanupStateFingerprint?: string | null;
+    cleanupPlanVersion?: string | null;
+    cleanupExecutionTokenHash?: string | null;
+    cleanupExecutedAt?: string | null;
     inspectedAt?: string | null;
   },
   db: Knex = getDb()
@@ -167,6 +186,11 @@ export async function upsertPluginCutoverReconciliationState(
       reason: input.reason ?? null,
       evidence: input.evidence ? JSON.stringify(input.evidence) : null,
       snapshot: input.snapshot ? JSON.stringify(input.snapshot) : null,
+      cleanup_schema_version: input.cleanupSchemaVersion ?? null,
+      cleanup_state_fingerprint: input.cleanupStateFingerprint ?? null,
+      cleanup_plan_version: input.cleanupPlanVersion ?? null,
+      cleanup_execution_token_hash: input.cleanupExecutionTokenHash ?? null,
+      cleanup_executed_at: input.cleanupExecutedAt ? new Date(input.cleanupExecutedAt) : null,
       inspected_at: input.inspectedAt ? new Date(input.inspectedAt) : now,
       phase_updated_at: now,
       updated_at: now,
@@ -182,6 +206,17 @@ export async function upsertPluginCutoverReconciliationState(
       reason: input.reason ?? null,
       evidence: input.evidence ? JSON.stringify(input.evidence) : null,
       snapshot: input.snapshot ? JSON.stringify(input.snapshot) : null,
+      cleanup_schema_version: input.cleanupSchemaVersion ?? previous?.cleanupSchemaVersion ?? null,
+      cleanup_state_fingerprint:
+        input.cleanupStateFingerprint ?? previous?.cleanupStateFingerprint ?? null,
+      cleanup_plan_version: input.cleanupPlanVersion ?? previous?.cleanupPlanVersion ?? null,
+      cleanup_execution_token_hash:
+        input.cleanupExecutionTokenHash ?? previous?.cleanupExecutionTokenHash ?? null,
+      cleanup_executed_at: input.cleanupExecutedAt
+        ? new Date(input.cleanupExecutedAt)
+        : previous?.cleanupExecutedAt
+          ? new Date(previous.cleanupExecutedAt)
+          : null,
       inspected_at: input.inspectedAt
         ? new Date(input.inspectedAt)
         : previous?.inspectedAt
