@@ -207,10 +207,12 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
     expect(result.results[0]?.pluginId).toBe('calendar');
     expect(result.results[0]?.cutover?.classification).toBe('already-canonical');
     expect(result.results[0]?.snapshot?.contradictoryState).toBe(false);
+    expect(result.results[0]?.recoveryCenter?.recommendedAction).toBe('no-action-required');
 
     expect(result.results[1]?.pluginId).toBe('gallery');
     expect(result.results[1]?.cutover?.classification).toBe('incompatible-legacy-state');
     expect(result.results[1]?.snapshot?.contradictoryState).toBe(true);
+    expect(result.results[1]?.recoveryCenter?.automaticRepairAllowed).toBe(false);
 
     expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
     expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(2);

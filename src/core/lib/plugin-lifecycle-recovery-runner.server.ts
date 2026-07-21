@@ -41,6 +41,15 @@ export interface PluginLifecycleRecoveryScanResult {
       cutover?: PluginCutoverClassificationResult;
       snapshot?: PluginCutoverStateSnapshot;
       durableCutoverState?: PluginCutoverReconciliationStateRecord | null;
+      recoveryCenter?: {
+        pluginId: string;
+        classification: string;
+        blocker: string | null;
+        safeEvidence: Record<string, unknown>;
+        recommendedAction: string;
+        automaticRepairAllowed: boolean;
+        rollbackAvailable: boolean;
+      };
     }
   >;
 }
@@ -96,6 +105,73 @@ function toDurableCutoverPhase(input: {
   }
 
   return input.blocking ? 'recovery-required' : 'inspected';
+}
+
+function deriveRecoveryCenterPayload(input: {
+  pluginId: string;
+  cutover: PluginCutoverClassificationResult;
+  rollbackCompatible: boolean;
+  snapshot: PluginCutoverStateSnapshot | undefined;
+}): {
+  pluginId: string;
+  classification: string;
+  blocker: string | null;
+  safeEvidence: Record<string, unknown>;
+  recommendedAction: string;
+  automaticRepairAllowed: boolean;
+  rollbackAvailable: boolean;
+} {
+  const blocker = input.cutover.blocking ? input.cutover.reason : null;
+
+  let recommendedAction = 'none';
+  let automaticRepairAllowed = false;
+
+  switch (input.cutover.classification) {
+    case 'already-canonical':
+      recommendedAction = 'no-action-required';
+      automaticRepairAllowed = true;
+      break;
+    case 'safe-automatic-migration':
+      recommendedAction = 'run-automatic-reconciliation';
+      automaticRepairAllowed = true;
+      break;
+    case 'rollback-required':
+      recommendedAction = input.rollbackCompatible
+        ? 'execute-rollback-path'
+        : 'manual-recovery-required';
+      automaticRepairAllowed = input.rollbackCompatible;
+      break;
+    case 'recovery-required':
+      recommendedAction = 'manual-recovery-required';
+      automaticRepairAllowed = false;
+      break;
+    case 'incompatible-legacy-state':
+      recommendedAction = 'manual-state-reconciliation';
+      automaticRepairAllowed = false;
+      break;
+    case 'ambiguous-manual-intervention':
+      recommendedAction = 'manual-intervention-required';
+      automaticRepairAllowed = false;
+      break;
+    default:
+      recommendedAction = 'manual-review-required';
+      automaticRepairAllowed = false;
+      break;
+  }
+
+  return {
+    pluginId: input.pluginId,
+    classification: input.cutover.classification,
+    blocker,
+    safeEvidence: {
+      ...input.cutover.evidence,
+      contradictoryState: input.snapshot?.contradictoryState ?? false,
+      contradictionReasons: input.snapshot?.contradictionReasons ?? [],
+    },
+    recommendedAction,
+    automaticRepairAllowed,
+    rollbackAvailable: input.rollbackCompatible,
+  };
 }
 
 async function applySafeRecoveryAction(
@@ -264,6 +340,8 @@ export async function runPluginLifecycleRecoveryScan(options?: {
         blocking: cutover.blocking,
       });
 
+      const snapshot = snapshotByPluginId.get(plugin.id);
+
       const state = await upsertPluginCutoverReconciliationState({
         pluginId: plugin.id,
         phase,
@@ -273,10 +351,7 @@ export async function runPluginLifecycleRecoveryScan(options?: {
         blocking: cutover.blocking,
         reason: cutover.reason,
         evidence: cutover.evidence,
-        snapshot: (snapshotByPluginId.get(plugin.id) ?? null) as unknown as Record<
-          string,
-          unknown
-        > | null,
+        snapshot: (snapshot ?? null) as unknown as Record<string, unknown> | null,
       });
 
       await appendPluginCutoverReconciliationEvent({
@@ -289,20 +364,24 @@ export async function runPluginLifecycleRecoveryScan(options?: {
         blocking: cutover.blocking,
         reason: cutover.reason,
         evidence: cutover.evidence,
-        snapshot: (snapshotByPluginId.get(plugin.id) ?? null) as unknown as Record<
-          string,
-          unknown
-        > | null,
+        snapshot: (snapshot ?? null) as unknown as Record<string, unknown> | null,
       });
 
       const durableCutoverState = await readPluginCutoverReconciliationState(plugin.id);
+      const recoveryCenter = deriveRecoveryCenterPayload({
+        pluginId: plugin.id,
+        cutover,
+        rollbackCompatible: rollbackCompatibility.rollbackCompatible,
+        snapshot,
+      });
 
       return {
         pluginId: plugin.id,
         ...reconciliation,
-        snapshot: snapshotByPluginId.get(plugin.id),
+        snapshot,
         cutover,
         durableCutoverState,
+        recoveryCenter,
       };
     })
   );
