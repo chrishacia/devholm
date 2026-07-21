@@ -6,6 +6,8 @@ const markPluginStartupReconciliationStateDirty = vi.hoisted(() => vi.fn());
 const findActivePluginLifecycleOperation = vi.hoisted(() => vi.fn());
 const writePluginLifecycleOperationRecord = vi.hoisted(() => vi.fn());
 const writePluginLifecycleTransitionEvent = vi.hoisted(() => vi.fn());
+const upsertPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
+const appendPluginCutoverReconciliationEvent = vi.hoisted(() => vi.fn());
 
 vi.mock('@/db', () => ({
   getDb,
@@ -59,6 +61,11 @@ vi.mock('@core/lib/plugin-cutover-reconciliation-classifier.server', () => ({
   })),
 }));
 
+vi.mock('@core/db/plugin-cutover-reconciliation', () => ({
+  upsertPluginCutoverReconciliationState,
+  appendPluginCutoverReconciliationEvent,
+}));
+
 import { reconcileSinglePluginLifecycle } from '@core/lib/plugin-lifecycle-recovery-runner.server';
 
 function createDbMock() {
@@ -95,6 +102,22 @@ describe('plugin lifecycle recovery runner execution', () => {
     });
     writePluginLifecycleOperationRecord.mockResolvedValue(undefined);
     writePluginLifecycleTransitionEvent.mockResolvedValue(undefined);
+    upsertPluginCutoverReconciliationState.mockImplementation(async (input) => ({
+      pluginId: input.pluginId,
+      phase: input.phase,
+      operationId: input.operationId ?? null,
+      correlationId: input.correlationId ?? null,
+      classification: input.classification ?? null,
+      blocking: input.blocking,
+      reason: input.reason ?? null,
+      evidence: input.evidence ?? null,
+      snapshot: input.snapshot ?? null,
+      inspectedAt: new Date().toISOString(),
+      phaseUpdatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    appendPluginCutoverReconciliationEvent.mockResolvedValue(undefined);
   });
 
   it('finalizes proven success operations during explicit recovery execution', async () => {
@@ -110,6 +133,8 @@ describe('plugin lifecycle recovery runner execution', () => {
     expect(writePluginLifecycleOperationRecord).toHaveBeenCalledTimes(1);
     expect(writePluginLifecycleTransitionEvent).not.toHaveBeenCalled();
     expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
+    expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(1);
+    expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(1);
   });
 
   it('takes over expired lease by marking interrupted and writing failure transition event', async () => {
@@ -125,6 +150,8 @@ describe('plugin lifecycle recovery runner execution', () => {
     expect(writePluginLifecycleOperationRecord).toHaveBeenCalledTimes(1);
     expect(writePluginLifecycleTransitionEvent).toHaveBeenCalledTimes(1);
     expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
+    expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(1);
+    expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(1);
   });
 
   it('does not mutate durable records for require-recovery/manual states', async () => {
@@ -140,6 +167,8 @@ describe('plugin lifecycle recovery runner execution', () => {
     expect(writePluginLifecycleOperationRecord).not.toHaveBeenCalled();
     expect(writePluginLifecycleTransitionEvent).not.toHaveBeenCalled();
     expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
+    expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(1);
+    expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(1);
   });
 
   it('treats schedule-rollback as executable recovery path without implicit mutation', async () => {
@@ -156,5 +185,7 @@ describe('plugin lifecycle recovery runner execution', () => {
     expect(writePluginLifecycleOperationRecord).not.toHaveBeenCalled();
     expect(writePluginLifecycleTransitionEvent).not.toHaveBeenCalled();
     expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
+    expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(1);
+    expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(1);
   });
 });

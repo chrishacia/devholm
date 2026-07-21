@@ -6,6 +6,8 @@ const markPluginStartupReconciliationStateDirty = vi.hoisted(() => vi.fn());
 const readInterruptedPluginMigrationCheckpoint = vi.hoisted(() => vi.fn());
 const determinePluginRollbackCompatibility = vi.hoisted(() => vi.fn());
 const readPluginCutoverStateSnapshots = vi.hoisted(() => vi.fn());
+const upsertPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
+const appendPluginCutoverReconciliationEvent = vi.hoisted(() => vi.fn());
 
 vi.mock('@/db/plugins', () => ({
   listPluginStates,
@@ -26,6 +28,11 @@ vi.mock('@core/db/plugin-migration-checkpoints', () => ({
 
 vi.mock('@core/lib/plugin-cutover-state-snapshot.server', () => ({
   readPluginCutoverStateSnapshots,
+}));
+
+vi.mock('@core/db/plugin-cutover-reconciliation', () => ({
+  upsertPluginCutoverReconciliationState,
+  appendPluginCutoverReconciliationEvent,
 }));
 
 import {
@@ -145,6 +152,22 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
         contradictionReasons: ['bundled-state-has-installed-version'],
       },
     ]);
+    upsertPluginCutoverReconciliationState.mockImplementation(async (input) => ({
+      pluginId: input.pluginId,
+      phase: input.phase,
+      operationId: input.operationId ?? null,
+      correlationId: input.correlationId ?? null,
+      classification: input.classification ?? null,
+      blocking: input.blocking,
+      reason: input.reason ?? null,
+      evidence: input.evidence ?? null,
+      snapshot: input.snapshot ?? null,
+      inspectedAt: new Date().toISOString(),
+      phaseUpdatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    appendPluginCutoverReconciliationEvent.mockResolvedValue(undefined);
   });
 
   it('returns deterministic cutover + snapshot outputs and marks startup state dirty', async () => {
@@ -160,6 +183,8 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
     expect(result.results[1]?.snapshot?.contradictoryState).toBe(true);
 
     expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
+    expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(2);
+    expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(2);
   });
 
   it('marks startup state dirty after single-plugin reconciliation', async () => {
@@ -168,5 +193,7 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
     expect(single.action).toBeTruthy();
     expect(reconcilePluginLifecycleState).toHaveBeenCalledWith('calendar');
     expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
+    expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(1);
+    expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(1);
   });
 });
