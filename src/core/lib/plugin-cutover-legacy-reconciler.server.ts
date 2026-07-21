@@ -1,4 +1,5 @@
 import { getDb } from '@/db';
+import type { Knex } from 'knex';
 import { getPluginDefinitions } from '@core/lib/plugins';
 import { getInstalledPlugin, upsertPluginLedgerRecord } from '@core/db/plugin-lifecycle';
 import { getBundledPluginManifests } from '@core/lib/plugin-registry.server';
@@ -63,7 +64,7 @@ function resolveTopology(
 
 export async function reconcileLegacyAndCanonicalPluginState(
   pluginId: string,
-  options?: { correlationId?: string }
+  options?: { correlationId?: string; db?: Knex }
 ): Promise<PluginLegacyReconciliationResult> {
   const definition = getPluginDefinitions().find((entry) => entry.id === pluginId);
   const manifest = getBundledPluginManifests().find((entry) => entry.id === pluginId);
@@ -74,13 +75,13 @@ export async function reconcileLegacyAndCanonicalPluginState(
     throw new Error(`Missing bundled manifest for reconciliation: ${pluginId}`);
   }
 
-  const db = getDb();
+  const db = options?.db ?? getDb();
   const [legacySetting, canonicalRecord] = await Promise.all([
     db('site_settings')
       .select('value', 'updated_at')
       .where({ key: pluginSettingKey(pluginId) })
       .first(),
-    getInstalledPlugin(pluginId),
+    getInstalledPlugin(pluginId, db),
   ]);
 
   const hasLegacySetting = Boolean(legacySetting);
@@ -95,17 +96,20 @@ export async function reconcileLegacyAndCanonicalPluginState(
   await db.transaction(async (trx) => {
     if (topology === 'legacy-only') {
       const enabledIntent = parseBooleanLike(legacySetting?.value);
-      await upsertPluginLedgerRecord({
-        manifest,
-        state: enabledIntent ? 'installed' : 'disabled',
-        operationStatus: 'idle',
-        enabled: enabledIntent,
-        installedVersion: manifest.version,
-        installedAt: new Date(),
-        upgradedAt: null,
-        disabledAt: enabledIntent ? null : new Date(),
-        lastError: null,
-      });
+      await upsertPluginLedgerRecord(
+        {
+          manifest,
+          state: enabledIntent ? 'installed' : 'disabled',
+          operationStatus: 'idle',
+          enabled: enabledIntent,
+          installedVersion: manifest.version,
+          installedAt: new Date(),
+          upgradedAt: null,
+          disabledAt: enabledIntent ? null : new Date(),
+          lastError: null,
+        },
+        trx as Knex
+      );
 
       phase = 'canonical-record-established';
       reason = 'Canonical lifecycle record established from legacy intent.';

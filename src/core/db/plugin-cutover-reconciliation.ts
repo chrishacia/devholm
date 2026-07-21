@@ -152,7 +152,7 @@ export async function upsertPluginCutoverReconciliationState(
   },
   db: Knex = getDb()
 ): Promise<PluginCutoverReconciliationStateRecord> {
-  const now = new Date().toISOString();
+  const now = new Date();
   const previous = await readPluginCutoverReconciliationState(input.pluginId, db);
   const nextPhase = resolveNextPhase(previous?.phase ?? null, input.phase);
 
@@ -167,7 +167,7 @@ export async function upsertPluginCutoverReconciliationState(
       reason: input.reason ?? null,
       evidence: input.evidence ? JSON.stringify(input.evidence) : null,
       snapshot: input.snapshot ? JSON.stringify(input.snapshot) : null,
-      inspected_at: input.inspectedAt ?? now,
+      inspected_at: input.inspectedAt ? new Date(input.inspectedAt) : now,
       phase_updated_at: now,
       updated_at: now,
       created_at: now,
@@ -182,7 +182,11 @@ export async function upsertPluginCutoverReconciliationState(
       reason: input.reason ?? null,
       evidence: input.evidence ? JSON.stringify(input.evidence) : null,
       snapshot: input.snapshot ? JSON.stringify(input.snapshot) : null,
-      inspected_at: input.inspectedAt ?? previous?.inspectedAt ?? now,
+      inspected_at: input.inspectedAt
+        ? new Date(input.inspectedAt)
+        : previous?.inspectedAt
+          ? new Date(previous.inspectedAt)
+          : now,
       phase_updated_at: now,
       updated_at: now,
     });
@@ -212,7 +216,7 @@ export async function appendPluginCutoverReconciliationEvent(
   },
   db: Knex = getDb()
 ): Promise<void> {
-  const timestamp = input.timestamp ?? new Date().toISOString();
+  const timestamp = input.timestamp ? new Date(input.timestamp) : new Date();
   const eventId = input.eventId ?? randomUUID();
 
   await db('devholm_plugin_cutover_reconciliation_events').insert({

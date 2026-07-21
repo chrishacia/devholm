@@ -112,18 +112,20 @@ export function checksumManifest(manifest: DevholmPluginManifest): string {
   return checksum(JSON.stringify(manifest));
 }
 
-export async function upsertPluginLedgerRecord(input: {
-  manifest: DevholmPluginManifest;
-  state: PluginLifecycleState;
-  operationStatus: PluginOperationStatus;
-  enabled: boolean;
-  installedVersion: string | null;
-  installedAt?: Date | null;
-  upgradedAt?: Date | null;
-  disabledAt?: Date | null;
-  lastError?: string | null;
-}): Promise<void> {
-  const db = getDb();
+export async function upsertPluginLedgerRecord(
+  input: {
+    manifest: DevholmPluginManifest;
+    state: PluginLifecycleState;
+    operationStatus: PluginOperationStatus;
+    enabled: boolean;
+    installedVersion: string | null;
+    installedAt?: Date | null;
+    upgradedAt?: Date | null;
+    disabledAt?: Date | null;
+    lastError?: string | null;
+  },
+  db: Knex = getDb()
+): Promise<void> {
   const now = new Date();
   const installedAt = input.installedAt === undefined ? null : input.installedAt;
   const upgradedAt = input.upgradedAt === undefined ? null : input.upgradedAt;
@@ -159,8 +161,10 @@ export async function upsertPluginLedgerRecord(input: {
     });
 }
 
-export async function getInstalledPlugin(pluginId: string): Promise<InstalledPluginRecord | null> {
-  const db = getDb();
+export async function getInstalledPlugin(
+  pluginId: string,
+  db: Knex = getDb()
+): Promise<InstalledPluginRecord | null> {
   const row = await db('devholm_plugins').where({ plugin_id: pluginId }).first();
   if (!row) {
     return null;
