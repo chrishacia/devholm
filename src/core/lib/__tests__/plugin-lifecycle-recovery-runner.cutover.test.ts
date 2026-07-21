@@ -13,6 +13,7 @@ const reconcileLegacyAndCanonicalPluginState = vi.hoisted(() => vi.fn());
 const upsertPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
 const readLatestPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
 const logicallyDecommissionLegacyPluginState = vi.hoisted(() => vi.fn());
+const buildPluginCutoverCleanupPlan = vi.hoisted(() => vi.fn());
 
 vi.mock('@/db/plugins', () => ({
   listPluginStates,
@@ -58,6 +59,10 @@ vi.mock('@core/db/plugin-cutover-rollback', () => ({
 
 vi.mock('@core/lib/plugin-cutover-legacy-decommission.server', () => ({
   logicallyDecommissionLegacyPluginState,
+}));
+
+vi.mock('@core/lib/plugin-cutover-cleanup-planner.server', () => ({
+  buildPluginCutoverCleanupPlan,
 }));
 
 import {
@@ -215,6 +220,19 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
       applied: true,
       reason: 'legacy-logically-decommissioned',
       decommissionedAt: new Date().toISOString(),
+    });
+    buildPluginCutoverCleanupPlan.mockResolvedValue({
+      pluginId: 'calendar',
+      mode: 'tombstone',
+      cleanupEligible: false,
+      blockers: ['legacy-not-logically-decommissioned'],
+      rollbackAvailable: true,
+      irreversibleBoundary: false,
+      hasLegacyEnabledSetting: false,
+      hasLogicalDecommissionMarker: true,
+      hasCleanupTombstoneMarker: false,
+      proposedChanges: ['write-legacy-tombstone-marker'],
+      excludedDomainDataTables: ['u_url_shortener_links'],
     });
     reconcileLegacyAndCanonicalPluginState.mockResolvedValue({
       pluginId: 'calendar',

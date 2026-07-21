@@ -11,6 +11,7 @@ import {
 import { getBundledPluginManifests } from '@core/lib/plugin-registry.server';
 import { getInstalledPlugin, upsertPluginLedgerRecord } from '@core/db/plugin-lifecycle';
 import { buildPluginCutoverRollbackExecutionPlan } from './plugin-cutover-rollback-planner.server';
+import { legacyCleanupMarkerKeys } from './plugin-cutover-cleanup-planner.server';
 
 export interface PluginCutoverRollbackExecutionResult {
   pluginId: string;
@@ -155,6 +156,30 @@ export async function executePluginCutoverRollback(
         stage: plan.stage,
         db: trx,
       });
+
+      if (
+        plan.stage === 'before-legacy-decommission' ||
+        plan.stage === 'after-legacy-decommission-initiation'
+      ) {
+        const keys = legacyCleanupMarkerKeys(pluginId);
+
+        await trx('site_settings')
+          .insert({
+            key: keys.enabled,
+            value: inverse.enabled ? 'true' : 'false',
+            type: 'boolean',
+            category: 'plugins',
+            description: `${pluginId} legacy compatibility enabled state`,
+            updated_at: new Date(),
+          })
+          .onConflict('key')
+          .merge({
+            value: inverse.enabled ? 'true' : 'false',
+            updated_at: new Date(),
+          });
+
+        await trx('site_settings').where({ key: keys.tombstoned }).del();
+      }
 
       await upsertPluginLedgerRecord(
         {

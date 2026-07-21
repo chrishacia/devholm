@@ -38,6 +38,7 @@ import {
 import { executePluginCutoverRollback } from '@core/lib/plugin-cutover-rollback-executor.server';
 import { reconcileLegacyAndCanonicalPluginState } from '@core/lib/plugin-cutover-legacy-reconciler.server';
 import { logicallyDecommissionLegacyPluginState } from '@core/lib/plugin-cutover-legacy-decommission.server';
+import { buildPluginCutoverCleanupPlan } from '@core/lib/plugin-cutover-cleanup-planner.server';
 
 export interface PluginLifecycleRecoveryScanResult {
   scannedAt: string;
@@ -424,6 +425,7 @@ export async function runPluginLifecycleRecoveryScan(options?: {
         });
       }
       const latestRollbackCheckpoint = await readLatestPluginCutoverRollbackCheckpoint(plugin.id);
+      const cleanupPlan = await buildPluginCutoverCleanupPlan(plugin.id);
       const recoveryCenter = deriveRecoveryCenterPayload({
         pluginId: plugin.id,
         cutover,
@@ -444,6 +446,9 @@ export async function runPluginLifecycleRecoveryScan(options?: {
       recoveryCenter.safeEvidence = {
         ...recoveryCenter.safeEvidence,
         legacyPathLogicallyDecommissioned: legacyDecommissioned,
+        cleanupEligible: cleanupPlan.cleanupEligible,
+        cleanupBlockers: cleanupPlan.blockers,
+        cleanupMode: cleanupPlan.mode,
       };
 
       return {
