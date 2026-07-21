@@ -10,6 +10,8 @@ const upsertPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
 const appendPluginCutoverReconciliationEvent = vi.hoisted(() => vi.fn());
 const readPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
 const reconcileLegacyAndCanonicalPluginState = vi.hoisted(() => vi.fn());
+const upsertPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
+const readLatestPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
 
 vi.mock('@/db/plugins', () => ({
   listPluginStates,
@@ -40,6 +42,17 @@ vi.mock('@core/db/plugin-cutover-reconciliation', () => ({
 
 vi.mock('@core/lib/plugin-cutover-legacy-reconciler.server', () => ({
   reconcileLegacyAndCanonicalPluginState,
+}));
+
+vi.mock('@core/db/plugin-cutover-rollback', () => ({
+  deriveCutoverRollbackPlanFromPhase: vi.fn(() => ({
+    stage: 'after-enabled-settings-reconciliation',
+    rollbackEligible: true,
+    irreversibleBoundary: false,
+    reason: 'rollback required',
+  })),
+  upsertPluginCutoverRollbackCheckpoint,
+  readLatestPluginCutoverRollbackCheckpoint,
 }));
 
 import {
@@ -190,6 +203,8 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
+    upsertPluginCutoverRollbackCheckpoint.mockResolvedValue(undefined);
+    readLatestPluginCutoverRollbackCheckpoint.mockResolvedValue(null);
     reconcileLegacyAndCanonicalPluginState.mockResolvedValue({
       pluginId: 'calendar',
       topology: 'canonical-only',
@@ -218,6 +233,7 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
     expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(2);
     expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(2);
     expect(reconcileLegacyAndCanonicalPluginState).toHaveBeenCalledTimes(2);
+    expect(upsertPluginCutoverRollbackCheckpoint).toHaveBeenCalledTimes(0);
   });
 
   it('marks startup state dirty after single-plugin reconciliation', async () => {

@@ -162,23 +162,8 @@ function serializeSettingDefaultValue(
 }
 
 async function setPluginEnabledSetting(pluginId: string, enabled: boolean): Promise<void> {
-  const db = getDb();
-  const now = new Date();
-
-  await db('site_settings')
-    .insert({
-      key: `plugin:${pluginId}:enabled`,
-      value: enabled ? 'true' : 'false',
-      type: 'boolean',
-      category: 'plugins',
-      description: `${pluginId} plugin enabled state`,
-      updated_at: now,
-    })
-    .onConflict('key')
-    .merge({
-      value: enabled ? 'true' : 'false',
-      updated_at: now,
-    });
+  void pluginId;
+  void enabled;
 }
 
 async function ensureManifestSettings(manifest: DevholmPluginManifest): Promise<void> {
@@ -374,7 +359,6 @@ export async function installPlugin(
         disabledAt: enabled ? null : existing?.disabledAt ?? null,
         lastError: null,
       });
-      await setPluginEnabledSetting(pluginId, enabled);
     } catch (error) {
       await upsertPluginLedgerRecord({
         manifest,
@@ -387,7 +371,6 @@ export async function installPlugin(
         disabledAt: existing?.disabledAt ?? null,
         lastError: error instanceof Error ? error.message : String(error),
       });
-      await setPluginEnabledSetting(pluginId, existing?.enabled ?? false);
       throw error;
     }
   });
@@ -411,7 +394,6 @@ export async function enablePlugin(pluginId: string, initiatedBy?: string): Prom
     }
 
     try {
-      await setPluginEnabledSetting(pluginId, true);
       await upsertPluginLedgerRecord({
         manifest,
         state: 'installed',
@@ -435,7 +417,6 @@ export async function enablePlugin(pluginId: string, initiatedBy?: string): Prom
         disabledAt: previous.disabledAt,
         lastError: error instanceof Error ? error.message : String(error),
       });
-      await setPluginEnabledSetting(pluginId, previous.enabled);
       throw error;
     }
   });
@@ -555,7 +536,6 @@ export async function disablePlugin(pluginId: string, initiatedBy?: string): Pro
         operationId,
       });
 
-      await setPluginEnabledSetting(pluginId, false);
       await upsertPluginLedgerRecord({
         manifest,
         state: 'disabled',
@@ -579,7 +559,6 @@ export async function disablePlugin(pluginId: string, initiatedBy?: string): Pro
         disabledAt: previous.disabledAt,
         lastError: error instanceof Error ? error.message : String(error),
       });
-      await setPluginEnabledSetting(pluginId, previous.enabled);
       throw error;
     }
   });
@@ -621,7 +600,6 @@ export async function uninstallPlugin(pluginId: string, initiatedBy?: string): P
         operationId,
       });
 
-      await setPluginEnabledSetting(pluginId, false);
       await upsertPluginLedgerRecord({
         manifest,
         state: 'uninstalled',
@@ -645,7 +623,6 @@ export async function uninstallPlugin(pluginId: string, initiatedBy?: string): P
         disabledAt: previous.disabledAt,
         lastError: error instanceof Error ? error.message : String(error),
       });
-      await setPluginEnabledSetting(pluginId, previous.enabled);
       throw error;
     }
   });
@@ -739,7 +716,6 @@ export async function purgePlugin(pluginId: string, options?: PurgeOptions): Pro
         disabledAt: previous.disabledAt,
         lastError: error instanceof Error ? error.message : String(error),
       });
-      await setPluginEnabledSetting(pluginId, previous.enabled);
       throw error;
     }
   });

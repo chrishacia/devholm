@@ -30,6 +30,11 @@ import {
   type PluginCutoverReconciliationPhase,
   type PluginCutoverReconciliationStateRecord,
 } from '@core/db/plugin-cutover-reconciliation';
+import {
+  deriveCutoverRollbackPlanFromPhase,
+  readLatestPluginCutoverRollbackCheckpoint,
+  upsertPluginCutoverRollbackCheckpoint,
+} from '@core/db/plugin-cutover-rollback';
 import { reconcileLegacyAndCanonicalPluginState } from '@core/lib/plugin-cutover-legacy-reconciler.server';
 
 export interface PluginLifecycleRecoveryScanResult {
@@ -49,6 +54,7 @@ export interface PluginLifecycleRecoveryScanResult {
         recommendedAction: string;
         automaticRepairAllowed: boolean;
         rollbackAvailable: boolean;
+        rollbackStage?: string | null;
       };
     }
   >;
@@ -120,6 +126,7 @@ function deriveRecoveryCenterPayload(input: {
   recommendedAction: string;
   automaticRepairAllowed: boolean;
   rollbackAvailable: boolean;
+  rollbackStage: string | null;
 } {
   const blocker = input.cutover.blocking ? input.cutover.reason : null;
 
@@ -171,6 +178,10 @@ function deriveRecoveryCenterPayload(input: {
     recommendedAction,
     automaticRepairAllowed,
     rollbackAvailable: input.rollbackCompatible,
+    rollbackStage:
+      input.cutover.classification === 'rollback-required'
+        ? 'after-enabled-settings-reconciliation'
+        : null,
   };
 }
 
@@ -295,6 +306,24 @@ export async function reconcileSinglePluginLifecycle(
     snapshot: state.snapshot,
   });
 
+  if (result.action === 'schedule-rollback') {
+    const rollbackPlan = deriveCutoverRollbackPlanFromPhase(state.phase);
+    await upsertPluginCutoverRollbackCheckpoint({
+      pluginId,
+      stage: rollbackPlan.stage,
+      status: execution.executed ? 'running' : 'pending',
+      rollbackEligible: rollbackPlan.rollbackEligible,
+      irreversibleBoundary: rollbackPlan.irreversibleBoundary,
+      operationId: result.operationId,
+      correlationId: result.operationId,
+      reason: rollbackPlan.reason,
+      evidence: {
+        reconciliationAction: result.action,
+        executed: execution.executed,
+      },
+    });
+  }
+
   markPluginStartupReconciliationStateDirty();
 
   return {
@@ -368,12 +397,40 @@ export async function runPluginLifecycleRecoveryScan(options?: {
       });
 
       const durableCutoverState = await readPluginCutoverReconciliationState(plugin.id);
+      const rollbackPlan = deriveCutoverRollbackPlanFromPhase(state.phase);
+      if (cutover.classification === 'rollback-required') {
+        await upsertPluginCutoverRollbackCheckpoint({
+          pluginId: plugin.id,
+          stage: rollbackPlan.stage,
+          status: 'pending',
+          rollbackEligible: rollbackPlan.rollbackEligible,
+          irreversibleBoundary: rollbackPlan.irreversibleBoundary,
+          operationId: reconciliation.operationId,
+          correlationId: reconciliation.operationId,
+          reason: rollbackPlan.reason,
+          evidence: {
+            classification: cutover.classification,
+            reconciliationAction: reconciliation.action,
+          },
+        });
+      }
+      const latestRollbackCheckpoint = await readLatestPluginCutoverRollbackCheckpoint(plugin.id);
       const recoveryCenter = deriveRecoveryCenterPayload({
         pluginId: plugin.id,
         cutover,
         rollbackCompatible: rollbackCompatibility.rollbackCompatible,
         snapshot,
       });
+
+      if (latestRollbackCheckpoint) {
+        recoveryCenter.rollbackStage = latestRollbackCheckpoint.stage;
+        recoveryCenter.rollbackAvailable = latestRollbackCheckpoint.rollbackEligible;
+        recoveryCenter.safeEvidence = {
+          ...recoveryCenter.safeEvidence,
+          rollbackStatus: latestRollbackCheckpoint.status,
+          rollbackCheckpointId: latestRollbackCheckpoint.checkpointId,
+        };
+      }
 
       return {
         pluginId: plugin.id,

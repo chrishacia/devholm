@@ -9,6 +9,8 @@ const writePluginLifecycleTransitionEvent = vi.hoisted(() => vi.fn());
 const upsertPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
 const appendPluginCutoverReconciliationEvent = vi.hoisted(() => vi.fn());
 const reconcileLegacyAndCanonicalPluginState = vi.hoisted(() => vi.fn());
+const upsertPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
+const readLatestPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
 
 vi.mock('@/db', () => ({
   getDb,
@@ -71,6 +73,17 @@ vi.mock('@core/lib/plugin-cutover-legacy-reconciler.server', () => ({
   reconcileLegacyAndCanonicalPluginState,
 }));
 
+vi.mock('@core/db/plugin-cutover-rollback', () => ({
+  deriveCutoverRollbackPlanFromPhase: vi.fn(() => ({
+    stage: 'after-enabled-settings-reconciliation',
+    rollbackEligible: true,
+    irreversibleBoundary: false,
+    reason: 'rollback required',
+  })),
+  upsertPluginCutoverRollbackCheckpoint,
+  readLatestPluginCutoverRollbackCheckpoint,
+}));
+
 import { reconcileSinglePluginLifecycle } from '@core/lib/plugin-lifecycle-recovery-runner.server';
 
 function createDbMock() {
@@ -123,6 +136,8 @@ describe('plugin lifecycle recovery runner execution', () => {
       updatedAt: new Date().toISOString(),
     }));
     appendPluginCutoverReconciliationEvent.mockResolvedValue(undefined);
+    upsertPluginCutoverRollbackCheckpoint.mockResolvedValue(undefined);
+    readLatestPluginCutoverRollbackCheckpoint.mockResolvedValue(null);
     reconcileLegacyAndCanonicalPluginState.mockResolvedValue({
       pluginId: 'url-shortener',
       topology: 'canonical-only',
@@ -200,5 +215,6 @@ describe('plugin lifecycle recovery runner execution', () => {
     expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
     expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(1);
     expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(1);
+    expect(upsertPluginCutoverRollbackCheckpoint).toHaveBeenCalledTimes(1);
   });
 });
