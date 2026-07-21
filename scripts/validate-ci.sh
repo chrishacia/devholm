@@ -46,6 +46,9 @@ echo "==> Generating and validating plugin registry"
 pnpm plugins:generate
 pnpm plugins:check
 
+echo "==> Running first-party marketplace contract export guard"
+pnpm plugins:check:first-party-marketplace-contract
+
 echo "==> Resetting dedicated test schema"
 node --import tsx/esm -e "import knex from 'knex'; const db = knex({ client: 'pg', connection: process.env.DATABASE_URL }); await db.raw('DROP SCHEMA IF EXISTS public CASCADE'); await db.raw('CREATE SCHEMA public'); await db.destroy();"
 

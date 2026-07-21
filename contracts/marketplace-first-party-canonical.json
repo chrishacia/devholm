@@ -1,0 +1,129 @@
+{
+  "schemaVersion": "1",
+  "source": "devholm-generated-first-party-marketplace-contract",
+  "plugins": [
+    {
+      "pluginId": "calendar",
+      "displayName": "Calendar",
+      "version": "0.1.0",
+      "description": "Lifecycle-managed ownership boundary for Calendar surfaces and data.",
+      "permissions": {
+        "permissionKeys": [
+          "plugin:calendar:admin.manage",
+          "plugin:calendar:embed.view",
+          "plugin:calendar:public.book",
+          "plugin:calendar:public.view"
+        ],
+        "scopes": ["admin", "future", "public", "public"],
+        "capabilities": [
+          "calendar.admin-management",
+          "calendar.embed-usage",
+          "calendar.public-booking",
+          "calendar.public-viewing"
+        ]
+      },
+      "surfaces": {
+        "adminPageHrefs": ["/admin/calendar"],
+        "publicRouteExtensionIds": ["calendar:public-routes"],
+        "settingKeys": [
+          "plugin:calendar:baseline-schema-version",
+          "plugin:calendar:lifecycle:data-retention-policy",
+          "plugin:calendar:lifecycle:purge-policy",
+          "plugin:calendar:lifecycle:uninstall-policy"
+        ]
+      },
+      "lifecycle": {
+        "hasAfterInstall": true,
+        "hasAfterUpgrade": true,
+        "hasBeforeDisable": true,
+        "hasBeforeUninstall": true,
+        "hasPurge": true
+      },
+      "migration": {
+        "count": 1
+      },
+      "package": {
+        "subdirectory": "plugins/calendar",
+        "manifestPath": "plugins/calendar/manifest.json"
+      }
+    },
+    {
+      "pluginId": "gallery",
+      "displayName": "Gallery",
+      "version": "0.1.0",
+      "description": "Lifecycle-managed ownership boundary for Gallery surfaces and media references.",
+      "permissions": {
+        "permissionKeys": ["plugin:gallery:admin.manage", "plugin:gallery:public.view"],
+        "scopes": ["admin", "public"],
+        "capabilities": ["gallery.admin-management", "gallery.public-viewing"]
+      },
+      "surfaces": {
+        "adminPageHrefs": ["/admin/gallery"],
+        "publicRouteExtensionIds": ["gallery:public-routes"],
+        "settingKeys": [
+          "plugin:gallery:baseline-schema-version",
+          "plugin:gallery:lifecycle:data-retention-policy",
+          "plugin:gallery:lifecycle:purge-policy",
+          "plugin:gallery:lifecycle:uninstall-policy"
+        ]
+      },
+      "lifecycle": {
+        "hasAfterInstall": true,
+        "hasAfterUpgrade": true,
+        "hasBeforeDisable": true,
+        "hasBeforeUninstall": true,
+        "hasPurge": true
+      },
+      "migration": {
+        "count": 1
+      },
+      "package": {
+        "subdirectory": "plugins/gallery",
+        "manifestPath": "plugins/gallery/manifest.json"
+      }
+    },
+    {
+      "pluginId": "url-shortener",
+      "displayName": "URL Shortener",
+      "version": "0.1.0",
+      "description": "Plugin-owned short-link routing, admin surfaces, and analytics foundation.",
+      "permissions": {
+        "permissionKeys": [
+          "plugin:url-shortener:admin.manage",
+          "plugin:url-shortener:public.redirect"
+        ],
+        "scopes": ["admin", "public"],
+        "capabilities": ["url-shortener.admin-management", "url-shortener.public-routing"]
+      },
+      "surfaces": {
+        "adminPageHrefs": [
+          "/admin/url-shortener/analytics",
+          "/admin/url-shortener/links",
+          "/admin/url-shortener/overview",
+          "/admin/url-shortener/public-submissions",
+          "/admin/url-shortener/settings"
+        ],
+        "publicRouteExtensionIds": ["url-shortener:redirect"],
+        "settingKeys": [
+          "plugin:url-shortener:legacy-prefix-enabled",
+          "plugin:url-shortener:public-creation-mode",
+          "plugin:url-shortener:route-prefix"
+        ]
+      },
+      "lifecycle": {
+        "hasAfterInstall": false,
+        "hasAfterUpgrade": false,
+        "hasBeforeDisable": false,
+        "hasBeforeUninstall": false,
+        "hasPurge": true
+      },
+      "migration": {
+        "count": 1
+      },
+      "package": {
+        "subdirectory": "plugins/url-shortener",
+        "manifestPath": "plugins/url-shortener/manifest.json"
+      }
+    }
+  ]
+}
