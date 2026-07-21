@@ -32,6 +32,35 @@ This document defines startup reconciliation behavior for Phase A migration/reco
 - Unexpected initialization failures are retryable (failure does not poison process cache forever).
 - Recovery scan/reconcile marks startup state dirty to force re-evaluation for subsequent mutation readiness checks.
 
+## Durable cutover reconciliation state
+
+- Recovery scan now persists per-plugin cutover state and audit events using durable tables:
+  - `devholm_plugin_cutover_reconciliation_states`
+  - `devholm_plugin_cutover_reconciliation_events`
+- State includes deterministic phase progression and blocker classification.
+- Every pass writes auditable evidence tied to plugin ID and operation/correlation IDs.
+- Phase mapping currently covers:
+  - inspected
+  - safe-migration-planned
+  - migration-running
+  - canonical-record-established
+  - lifecycle-state-reconciled
+  - canonical-ownership-activated
+  - rollback-pending
+  - recovery-required
+  - manual-intervention-required
+
+## Legacy topology reconciliation
+
+- Recovery scan executes topology reconciliation for each first-party plugin:
+  - legacy-only
+  - canonical-only
+  - legacy-and-canonical
+  - neither
+- Legacy-only path creates canonical lifecycle record preserving enabled/disabled intent.
+- Dual-state disagreement fails closed with manual intervention required.
+- Repeat-run execution is idempotent and preserves plugin-domain data rows.
+
 ## Test-only reset
 
 - API: `resetCanonicalPluginStartupReconciliationForTests()`

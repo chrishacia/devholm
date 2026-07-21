@@ -25,8 +25,10 @@ import {
 } from '@core/lib/plugin-cutover-state-snapshot.server';
 import {
   appendPluginCutoverReconciliationEvent,
+  readPluginCutoverReconciliationState,
   upsertPluginCutoverReconciliationState,
   type PluginCutoverReconciliationPhase,
+  type PluginCutoverReconciliationStateRecord,
 } from '@core/db/plugin-cutover-reconciliation';
 import { reconcileLegacyAndCanonicalPluginState } from '@core/lib/plugin-cutover-legacy-reconciler.server';
 
@@ -38,6 +40,7 @@ export interface PluginLifecycleRecoveryScanResult {
       pluginId: string;
       cutover?: PluginCutoverClassificationResult;
       snapshot?: PluginCutoverStateSnapshot;
+      durableCutoverState?: PluginCutoverReconciliationStateRecord | null;
     }
   >;
 }
@@ -292,11 +295,14 @@ export async function runPluginLifecycleRecoveryScan(options?: {
         > | null,
       });
 
+      const durableCutoverState = await readPluginCutoverReconciliationState(plugin.id);
+
       return {
         pluginId: plugin.id,
         ...reconciliation,
         snapshot: snapshotByPluginId.get(plugin.id),
         cutover,
+        durableCutoverState,
       };
     })
   );

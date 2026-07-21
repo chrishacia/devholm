@@ -67,6 +67,24 @@ describe('admin plugin recovery reconcile route', () => {
             contradictoryState: false,
             contradictionReasons: [],
           },
+          durableCutoverState: {
+            pluginId: 'url-shortener',
+            phase: 'canonical-ownership-activated',
+            operationId: null,
+            correlationId: null,
+            classification: 'already-canonical',
+            blocking: false,
+            reason: 'Already canonical',
+            evidence: {
+              topology: 'canonical-only',
+              actions: ['already-canonical-noop'],
+            },
+            snapshot: null,
+            inspectedAt: '2026-07-20T00:00:00.000Z',
+            phaseUpdatedAt: '2026-07-20T00:00:00.000Z',
+            createdAt: '2026-07-20T00:00:00.000Z',
+            updatedAt: '2026-07-20T00:00:00.000Z',
+          },
         },
       ],
     });
@@ -103,6 +121,7 @@ describe('admin plugin recovery reconcile route', () => {
     expect(initializePluginStartupReconciliation).toHaveBeenCalledTimes(1);
     expect(runPluginLifecycleRecoveryScan).toHaveBeenCalledWith({ limit: 10 });
     expect(body.pluginCount).toBe(1);
+    expect(body.results[0].durableCutoverState.phase).toBe('canonical-ownership-activated');
   });
 
   it('reconciles a single plugin when pluginId is provided', async () => {

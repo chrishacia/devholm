@@ -8,6 +8,7 @@ const determinePluginRollbackCompatibility = vi.hoisted(() => vi.fn());
 const readPluginCutoverStateSnapshots = vi.hoisted(() => vi.fn());
 const upsertPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
 const appendPluginCutoverReconciliationEvent = vi.hoisted(() => vi.fn());
+const readPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
 const reconcileLegacyAndCanonicalPluginState = vi.hoisted(() => vi.fn());
 
 vi.mock('@/db/plugins', () => ({
@@ -34,6 +35,7 @@ vi.mock('@core/lib/plugin-cutover-state-snapshot.server', () => ({
 vi.mock('@core/db/plugin-cutover-reconciliation', () => ({
   upsertPluginCutoverReconciliationState,
   appendPluginCutoverReconciliationEvent,
+  readPluginCutoverReconciliationState,
 }));
 
 vi.mock('@core/lib/plugin-cutover-legacy-reconciler.server', () => ({
@@ -173,6 +175,21 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
       updatedAt: new Date().toISOString(),
     }));
     appendPluginCutoverReconciliationEvent.mockResolvedValue(undefined);
+    readPluginCutoverReconciliationState.mockResolvedValue({
+      pluginId: 'calendar',
+      phase: 'canonical-ownership-activated',
+      operationId: null,
+      correlationId: null,
+      classification: 'already-canonical',
+      blocking: false,
+      reason: 'already canonical',
+      evidence: { topology: 'canonical-only' },
+      snapshot: null,
+      inspectedAt: new Date().toISOString(),
+      phaseUpdatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
     reconcileLegacyAndCanonicalPluginState.mockResolvedValue({
       pluginId: 'calendar',
       topology: 'canonical-only',
