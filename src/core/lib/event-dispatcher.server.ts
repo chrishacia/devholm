@@ -10,7 +10,7 @@
 
 import 'server-only';
 
-import { getDb } from '@/db';
+import { isPluginEnabledForRequest } from '@core/db/plugins-enabled';
 import type { DomainEvent } from '@core/types/events';
 import { getEventRegistry } from '@core/lib/event-registry.server';
 
@@ -19,14 +19,7 @@ import { getEventRegistry } from '@core/lib/event-registry.server';
  * Uses site_settings to determine enablement state.
  */
 async function isPluginEnabled(pluginId: string): Promise<boolean> {
-  const db = getDb();
-
-  const setting = await db('site_settings')
-    .where('key', `plugin:${pluginId}:enabled`)
-    .select('value')
-    .first();
-
-  return setting?.value === 'true';
+  return isPluginEnabledForRequest(pluginId);
 }
 
 /**

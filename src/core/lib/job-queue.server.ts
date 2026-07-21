@@ -7,7 +7,7 @@
 
 import 'server-only';
 
-import { getDb } from '@/db';
+import { isPluginEnabledForRequest } from '@core/db/plugins-enabled';
 import type { JobTypeId, JobHandlerRegistration, BaseJob, JobInstanceId } from '@core/types/jobs';
 import { jobInstanceId as createJobInstanceId } from '@core/types/jobs';
 import { getJobRegistry } from '@core/lib/job-registry.server';
@@ -56,7 +56,6 @@ export async function enqueueJob(
     delayMs?: number;
   }
 ): Promise<void> {
-  const db = getDb();
   const registry = getJobRegistry();
   const handler = registry.getHandler(jobTypeId);
 
@@ -66,12 +65,9 @@ export async function enqueueJob(
 
   // Check if plugin is enabled
   try {
-    const siteSettings = await db('site_settings')
-      .where('key', `plugin:${handler.pluginId}:enabled`)
-      .select('value')
-      .first();
+    const enabled = await isPluginEnabledForRequest(handler.pluginId);
 
-    if (!siteSettings || siteSettings.value !== 'true') {
+    if (!enabled) {
       console.log(`Job skipped: plugin ${handler.pluginId} not enabled for job ${jobTypeId}`);
       return;
     }
