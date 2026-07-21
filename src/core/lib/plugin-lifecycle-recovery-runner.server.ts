@@ -1,4 +1,11 @@
+import { randomUUID } from 'node:crypto';
+import { getDb } from '@/db';
 import { listPluginStates } from '@/db/plugins';
+import {
+  findActivePluginLifecycleOperation,
+  writePluginLifecycleOperationRecord,
+  writePluginLifecycleTransitionEvent,
+} from '@core/db/plugin-lifecycle';
 import {
   reconcilePluginLifecycleState,
   type LifecycleReconciliationResult,
@@ -29,12 +36,104 @@ export interface PluginLifecycleRecoveryScanResult {
   >;
 }
 
+export interface PluginLifecycleRecoveryExecutionResult extends LifecycleReconciliationResult {
+  executed: boolean;
+  executedAt: string | null;
+}
+
+async function applySafeRecoveryAction(
+  pluginId: string,
+  reconciliation: LifecycleReconciliationResult
+): Promise<{ executed: boolean; executedAt: string | null }> {
+  if (
+    reconciliation.action !== 'finalize-proven-success' &&
+    reconciliation.action !== 'take-over-expired-lease'
+  ) {
+    return { executed: false, executedAt: null };
+  }
+
+  const db = getDb();
+  const activeOperation = await findActivePluginLifecycleOperation(pluginId, db);
+  if (!activeOperation) {
+    return { executed: false, executedAt: null };
+  }
+
+  const reconciledAt = new Date().toISOString();
+
+  if (reconciliation.action === 'finalize-proven-success') {
+    await db.transaction(async (trx) => {
+      await writePluginLifecycleOperationRecord(
+        {
+          ...activeOperation,
+          status: 'succeeded',
+          currentPhase: 'completed',
+          updatedAt: reconciledAt,
+          finishedAt: reconciledAt,
+        },
+        trx
+      );
+    });
+
+    return { executed: true, executedAt: reconciledAt };
+  }
+
+  await db.transaction(async (trx) => {
+    await writePluginLifecycleOperationRecord(
+      {
+        ...activeOperation,
+        status: 'interrupted',
+        currentPhase: 'completed',
+        updatedAt: reconciledAt,
+        finishedAt: reconciledAt,
+        error: {
+          code: 'LIFECYCLE_STALE_OPERATION',
+          message: 'Lifecycle lease expired before operation completion.',
+          retryable: true,
+          recoveryClassification: 'reconcile-on-restart',
+        },
+      },
+      trx
+    );
+
+    await writePluginLifecycleTransitionEvent(
+      {
+        schemaVersion: 1,
+        eventId: randomUUID(),
+        operationId: activeOperation.operationId,
+        pluginId: activeOperation.pluginId,
+        transition: activeOperation.action,
+        result: 'failed',
+        actor: activeOperation.actor,
+        correlationId: activeOperation.correlationId,
+        timestamp: reconciledAt,
+        previousState: activeOperation.priorStateSnapshot,
+        nextState: activeOperation.priorStateSnapshot,
+        error: {
+          code: 'LIFECYCLE_STALE_OPERATION',
+          message: 'Lifecycle lease expired before operation completion.',
+          retryable: true,
+          recoveryClassification: 'reconcile-on-restart',
+        },
+      },
+      trx
+    );
+  });
+
+  return { executed: true, executedAt: reconciledAt };
+}
+
 export async function reconcileSinglePluginLifecycle(
   pluginId: string
-): Promise<LifecycleReconciliationResult> {
+): Promise<PluginLifecycleRecoveryExecutionResult> {
   const result = await reconcilePluginLifecycleState(pluginId);
+  const execution = await applySafeRecoveryAction(pluginId, result);
   markPluginStartupReconciliationStateDirty();
-  return result;
+
+  return {
+    ...result,
+    executed: execution.executed,
+    executedAt: execution.executedAt,
+  };
 }
 
 export async function runPluginLifecycleRecoveryScan(options?: {
