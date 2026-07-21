@@ -151,4 +151,20 @@ describe('plugin startup reconciliation guard', () => {
 
     expect(runPluginLifecycleRecoveryScan).toHaveBeenCalledTimes(2);
   });
+
+  it('keeps test reset helper restricted to test environments', () => {
+    const originalVitest = process.env.VITEST;
+    const originalWorker = process.env.VITEST_WORKER_ID;
+    const originalPool = process.env.VITEST_POOL_ID;
+
+    delete process.env.VITEST;
+    delete process.env.VITEST_WORKER_ID;
+    delete process.env.VITEST_POOL_ID;
+
+    expect(() => resetCanonicalPluginStartupReconciliationForTests()).toThrow(/test-only/);
+
+    process.env.VITEST = originalVitest;
+    process.env.VITEST_WORKER_ID = originalWorker;
+    process.env.VITEST_POOL_ID = originalPool;
+  });
 });

@@ -141,4 +141,20 @@ describe('plugin lifecycle recovery runner execution', () => {
     expect(writePluginLifecycleTransitionEvent).not.toHaveBeenCalled();
     expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
   });
+
+  it('treats schedule-rollback as executable recovery path without implicit mutation', async () => {
+    reconcilePluginLifecycleState.mockResolvedValueOnce({
+      action: 'schedule-rollback',
+      reason: 'Expired operation requires rollback path: available.',
+      operationId: 'op-1',
+    });
+
+    const result = await reconcileSinglePluginLifecycle('url-shortener');
+
+    expect(result.action).toBe('schedule-rollback');
+    expect(result.executed).toBe(false);
+    expect(writePluginLifecycleOperationRecord).not.toHaveBeenCalled();
+    expect(writePluginLifecycleTransitionEvent).not.toHaveBeenCalled();
+    expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
+  });
 });

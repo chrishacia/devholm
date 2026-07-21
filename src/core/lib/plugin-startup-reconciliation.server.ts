@@ -134,6 +134,15 @@ export function markPluginStartupReconciliationStateDirty(): void {
 }
 
 export function resetCanonicalPluginStartupReconciliationForTests(): void {
+  const runningUnderVitest =
+    process.env.VITEST === 'true' ||
+    process.env.VITEST_WORKER_ID !== undefined ||
+    process.env.VITEST_POOL_ID !== undefined;
+
+  if (!runningUnderVitest) {
+    throw new Error('resetCanonicalPluginStartupReconciliationForTests is test-only');
+  }
+
   startupReconciliationState = null;
   startupReconciliationInFlight = null;
   startupReconciliationDirty = true;
