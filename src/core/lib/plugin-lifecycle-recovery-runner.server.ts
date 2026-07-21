@@ -12,6 +12,10 @@ import {
   classifyPluginCutoverState,
   type PluginCutoverClassificationResult,
 } from '@core/lib/plugin-cutover-reconciliation-classifier.server';
+import {
+  readPluginCutoverStateSnapshots,
+  type PluginCutoverStateSnapshot,
+} from '@core/lib/plugin-cutover-state-snapshot.server';
 
 export interface PluginLifecycleRecoveryScanResult {
   scannedAt: string;
@@ -20,6 +24,7 @@ export interface PluginLifecycleRecoveryScanResult {
     LifecycleReconciliationResult & {
       pluginId: string;
       cutover?: PluginCutoverClassificationResult;
+      snapshot?: PluginCutoverStateSnapshot;
     }
   >;
 }
@@ -36,6 +41,10 @@ export async function runPluginLifecycleRecoveryScan(options?: {
   limit?: number;
 }): Promise<PluginLifecycleRecoveryScanResult> {
   const pluginStates = await listPluginStates();
+  const cutoverSnapshots = await readPluginCutoverStateSnapshots();
+  const snapshotByPluginId = new Map(
+    cutoverSnapshots.map((snapshot) => [snapshot.pluginId, snapshot])
+  );
   const limit = Math.max(1, Math.min(options?.limit ?? pluginStates.length, 200));
   const selected = pluginStates.slice(0, limit);
 
@@ -50,6 +59,7 @@ export async function runPluginLifecycleRecoveryScan(options?: {
       return {
         pluginId: plugin.id,
         ...reconciliation,
+        snapshot: snapshotByPluginId.get(plugin.id),
         cutover: classifyPluginCutoverState({
           plugin,
           reconciliation,

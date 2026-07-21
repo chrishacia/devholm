@@ -53,6 +53,20 @@ describe('admin plugin recovery reconcile route', () => {
               rollbackCompatible: true,
             },
           },
+          snapshot: {
+            pluginId: 'url-shortener',
+            hasEnabledSetting: true,
+            enabledSettingValue: 'true',
+            hasLifecycleRecord: true,
+            lifecycleState: 'installed',
+            operationStatus: 'idle',
+            installedVersion: '0.1.0',
+            activeLifecycleOperationCount: 0,
+            runningMigrationCheckpointCount: 0,
+            succeededMigrationCount: 3,
+            contradictoryState: false,
+            contradictionReasons: [],
+          },
         },
       ],
     });
@@ -132,6 +146,20 @@ describe('admin plugin recovery reconcile route', () => {
               rollbackCompatible: true,
             },
           },
+          snapshot: {
+            pluginId: 'url-shortener',
+            hasEnabledSetting: true,
+            enabledSettingValue: 'true',
+            hasLifecycleRecord: true,
+            lifecycleState: 'installed',
+            operationStatus: 'idle',
+            installedVersion: '0.1.0',
+            activeLifecycleOperationCount: 1,
+            runningMigrationCheckpointCount: 1,
+            succeededMigrationCount: 3,
+            contradictoryState: false,
+            contradictionReasons: [],
+          },
         },
       ],
     });
@@ -150,6 +178,7 @@ describe('admin plugin recovery reconcile route', () => {
     expect(runPluginLifecycleRecoveryScan).toHaveBeenCalledWith({ limit: 50 });
     expect(body.results[0].action).toBe('require-recovery');
     expect(body.results[0].cutover.classification).toBe('recovery-required');
+    expect(body.results[0].snapshot.pluginId).toBe('url-shortener');
   });
 
   it('returns contradictory legacy states as blocking cutover classifications', async () => {
@@ -177,6 +206,20 @@ describe('admin plugin recovery reconcile route', () => {
               rollbackCompatible: true,
             },
           },
+          snapshot: {
+            pluginId: 'gallery',
+            hasEnabledSetting: true,
+            enabledSettingValue: 'true',
+            hasLifecycleRecord: true,
+            lifecycleState: 'bundled',
+            operationStatus: 'idle',
+            installedVersion: '0.1.0',
+            activeLifecycleOperationCount: 0,
+            runningMigrationCheckpointCount: 0,
+            succeededMigrationCount: 1,
+            contradictoryState: true,
+            contradictionReasons: ['bundled-state-has-installed-version'],
+          },
         },
       ],
     });
@@ -193,6 +236,7 @@ describe('admin plugin recovery reconcile route', () => {
     expect(response.status).toBe(200);
     expect(body.results[0].cutover.blocking).toBe(true);
     expect(body.results[0].cutover.classification).toBe('incompatible-legacy-state');
+    expect(body.results[0].snapshot.contradictoryState).toBe(true);
   });
 
   it('maps initialization failures to safe recovery error response', async () => {
