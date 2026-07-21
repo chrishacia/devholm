@@ -28,6 +28,7 @@ import {
   upsertPluginCutoverReconciliationState,
   type PluginCutoverReconciliationPhase,
 } from '@core/db/plugin-cutover-reconciliation';
+import { reconcileLegacyAndCanonicalPluginState } from '@core/lib/plugin-cutover-legacy-reconciler.server';
 
 export interface PluginLifecycleRecoveryScanResult {
   scannedAt: string;
@@ -242,6 +243,10 @@ export async function runPluginLifecycleRecoveryScan(options?: {
         readInterruptedPluginMigrationCheckpoint(plugin.id),
         determinePluginRollbackCompatibility(plugin.id),
       ]);
+
+      await reconcileLegacyAndCanonicalPluginState(plugin.id, {
+        correlationId: reconciliation.operationId ?? undefined,
+      });
 
       const cutover = classifyPluginCutoverState({
         plugin,

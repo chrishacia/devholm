@@ -8,6 +8,7 @@ const writePluginLifecycleOperationRecord = vi.hoisted(() => vi.fn());
 const writePluginLifecycleTransitionEvent = vi.hoisted(() => vi.fn());
 const upsertPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
 const appendPluginCutoverReconciliationEvent = vi.hoisted(() => vi.fn());
+const reconcileLegacyAndCanonicalPluginState = vi.hoisted(() => vi.fn());
 
 vi.mock('@/db', () => ({
   getDb,
@@ -66,6 +67,10 @@ vi.mock('@core/db/plugin-cutover-reconciliation', () => ({
   appendPluginCutoverReconciliationEvent,
 }));
 
+vi.mock('@core/lib/plugin-cutover-legacy-reconciler.server', () => ({
+  reconcileLegacyAndCanonicalPluginState,
+}));
+
 import { reconcileSinglePluginLifecycle } from '@core/lib/plugin-lifecycle-recovery-runner.server';
 
 function createDbMock() {
@@ -118,6 +123,14 @@ describe('plugin lifecycle recovery runner execution', () => {
       updatedAt: new Date().toISOString(),
     }));
     appendPluginCutoverReconciliationEvent.mockResolvedValue(undefined);
+    reconcileLegacyAndCanonicalPluginState.mockResolvedValue({
+      pluginId: 'url-shortener',
+      topology: 'canonical-only',
+      phase: 'canonical-ownership-activated',
+      blocking: false,
+      reason: 'already canonical',
+      actions: ['already-canonical-noop'],
+    });
   });
 
   it('finalizes proven success operations during explicit recovery execution', async () => {
