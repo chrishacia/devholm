@@ -24,22 +24,43 @@ function buildDbMock(data: {
     if (table === 'site_settings') {
       return {
         select: () => ({
-          where: () => ({
-            andWhere: async () => data.settingsRows,
-          }),
+          where: ({ key }: { key?: string } = {}) => {
+            if (key) {
+              return {
+                first: async () => data.settingsRows.find((row) => row.key === key),
+              };
+            }
+
+            return {
+              andWhere: async () => data.settingsRows,
+            };
+          },
         }),
       };
     }
 
     if (table === 'devholm_plugins') {
       return {
-        select: async () => data.lifecycleRows,
+        select: () => ({
+          where: ({ plugin_id }: { plugin_id?: string } = {}) => ({
+            first: async () =>
+              plugin_id
+                ? data.lifecycleRows.find((row) => row.plugin_id === plugin_id) ?? null
+                : null,
+          }),
+        }),
       };
     }
 
     if (table === 'devholm_plugin_lifecycle_operations') {
       return {
         select: () => ({
+          where: ({ plugin_id }: { plugin_id?: string } = {}) => ({
+            whereIn: async () =>
+              plugin_id
+                ? data.activeOperationRows.filter((row) => row.plugin_id === plugin_id)
+                : data.activeOperationRows,
+          }),
           whereIn: async () => data.activeOperationRows,
         }),
       };
@@ -48,7 +69,12 @@ function buildDbMock(data: {
     if (table === 'devholm_plugin_migration_checkpoints') {
       return {
         select: () => ({
-          where: async () => data.runningCheckpointRows,
+          where: async ({ plugin_id, status }: { plugin_id?: string; status?: string } = {}) =>
+            data.runningCheckpointRows.filter((row) => {
+              const pluginMatch = plugin_id ? row.plugin_id === plugin_id : true;
+              const statusMatch = status ? row.status === status : true;
+              return pluginMatch && statusMatch;
+            }),
         }),
       };
     }
@@ -57,8 +83,11 @@ function buildDbMock(data: {
       return {
         select: () => ({
           count: () => ({
-            where: () => ({
-              groupBy: async () => data.migrationCountRows,
+            where: ({ plugin_id }: { plugin_id?: string } = {}) => ({
+              groupBy: async () =>
+                plugin_id
+                  ? data.migrationCountRows.filter((row) => row.plugin_id === plugin_id)
+                  : data.migrationCountRows,
             }),
           }),
         }),
@@ -103,7 +132,7 @@ describe('plugin cutover state snapshot', () => {
           },
         ],
         activeOperationRows: [{ plugin_id: 'gallery' }, { plugin_id: 'gallery' }],
-        runningCheckpointRows: [{ plugin_id: 'url-shortener' }],
+        runningCheckpointRows: [{ plugin_id: 'url-shortener', status: 'running' }],
         migrationCountRows: [{ plugin_id: 'calendar', count: '4' }],
       })
     );

@@ -47,6 +47,20 @@ vi.mock('@core/db/plugin-migration-checkpoints', () => ({
 
 vi.mock('@core/lib/plugin-cutover-state-snapshot.server', () => ({
   readPluginCutoverStateSnapshots: vi.fn(async () => []),
+  readPluginCutoverStateSnapshot: vi.fn(async () => ({
+    pluginId: 'url-shortener',
+    hasEnabledSetting: true,
+    enabledSettingValue: 'true',
+    hasLifecycleRecord: true,
+    lifecycleState: 'installed',
+    operationStatus: 'idle',
+    installedVersion: '0.1.0',
+    activeLifecycleOperationCount: 0,
+    runningMigrationCheckpointCount: 0,
+    succeededMigrationCount: 0,
+    contradictoryState: false,
+    contradictionReasons: [],
+  })),
 }));
 
 vi.mock('@core/lib/plugin-cutover-reconciliation-classifier.server', () => ({
@@ -91,8 +105,12 @@ vi.mock('@core/db/plugin-cutover-rollback', () => ({
 import { reconcileSinglePluginLifecycle } from '@core/lib/plugin-lifecycle-recovery-runner.server';
 
 function createDbMock() {
+  const trx = {
+    raw: vi.fn(async () => undefined),
+  };
+
   return {
-    transaction: vi.fn(async (callback: (trx: unknown) => Promise<void>) => callback({})),
+    transaction: vi.fn(async (callback: (trx: unknown) => Promise<unknown>) => callback(trx)),
   };
 }
 

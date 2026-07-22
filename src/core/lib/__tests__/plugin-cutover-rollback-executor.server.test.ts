@@ -51,8 +51,10 @@ describe('plugin cutover rollback executor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    const trx = { raw: vi.fn(async () => undefined) };
+
     getDb.mockReturnValue({
-      transaction: async (callback: (trx: unknown) => Promise<void>) => callback({}),
+      transaction: async (callback: (trx: unknown) => Promise<unknown>) => callback(trx),
     });
 
     readPluginCutoverReconciliationState.mockResolvedValue({

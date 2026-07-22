@@ -146,85 +146,105 @@ export async function executePluginCutoverCleanup(
 
   if (!intent) {
     const err = new Error('cleanup execution intent is required');
-    await appendCleanupAudit(db, {
-      pluginId,
-      phase: 'legacy-path-decommissioned',
-      result: 'blocked',
-      classification: 'cleanup-intent-missing',
-      reason: err.message,
-      blocking: true,
-      operationId: options?.operationId ?? null,
-      correlationId: options?.correlationId ?? null,
-      evidence: {
-        cleanupSchemaVersion: null,
-        cleanupPlanVersion: null,
-        cleanupStateFingerprint: null,
-        executionTokenHash,
-      },
-    });
+    try {
+      await appendCleanupAudit(db, {
+        pluginId,
+        phase: 'legacy-path-decommissioned',
+        result: 'blocked',
+        classification: 'cleanup-intent-missing',
+        reason: err.message,
+        blocking: true,
+        operationId: options?.operationId ?? null,
+        correlationId: options?.correlationId ?? null,
+        evidence: {
+          cleanupSchemaVersion: null,
+          cleanupPlanVersion: null,
+          cleanupStateFingerprint: null,
+          executionTokenHash,
+        },
+      });
+    } catch (auditError) {
+      const auditErr = auditError instanceof Error ? auditError : new Error(String(auditError));
+      throw new CleanupAuditPersistenceFailure(err, auditErr);
+    }
     throw err;
   }
 
   if (intent.schemaVersion !== CLEANUP_PLAN_SCHEMA_VERSION) {
     const err = new Error('unsupported-cleanup-plan-schema-version');
-    await appendCleanupAudit(db, {
-      pluginId,
-      phase: 'legacy-path-decommissioned',
-      result: 'blocked',
-      classification: 'cleanup-intent-schema-mismatch',
-      reason: err.message,
-      blocking: true,
-      operationId: options?.operationId ?? null,
-      correlationId: options?.correlationId ?? null,
-      evidence: {
-        cleanupSchemaVersion: intent.schemaVersion,
-        cleanupPlanVersion: intent.planVersion,
-        cleanupStateFingerprint: intent.stateFingerprint,
-        executionTokenHash,
-      },
-    });
+    try {
+      await appendCleanupAudit(db, {
+        pluginId,
+        phase: 'legacy-path-decommissioned',
+        result: 'blocked',
+        classification: 'cleanup-intent-schema-mismatch',
+        reason: err.message,
+        blocking: true,
+        operationId: options?.operationId ?? null,
+        correlationId: options?.correlationId ?? null,
+        evidence: {
+          cleanupSchemaVersion: intent.schemaVersion,
+          cleanupPlanVersion: intent.planVersion,
+          cleanupStateFingerprint: intent.stateFingerprint,
+          executionTokenHash,
+        },
+      });
+    } catch (auditError) {
+      const auditErr = auditError instanceof Error ? auditError : new Error(String(auditError));
+      throw new CleanupAuditPersistenceFailure(err, auditErr);
+    }
     throw err;
   }
 
   if (intent.pluginId !== pluginId) {
     const err = new Error('cleanup execution intent plugin mismatch');
-    await appendCleanupAudit(db, {
-      pluginId,
-      phase: 'legacy-path-decommissioned',
-      result: 'blocked',
-      classification: 'cleanup-intent-plugin-mismatch',
-      reason: err.message,
-      blocking: true,
-      operationId: options?.operationId ?? null,
-      correlationId: options?.correlationId ?? null,
-      evidence: {
-        cleanupSchemaVersion: intent.schemaVersion,
-        cleanupPlanVersion: intent.planVersion,
-        cleanupStateFingerprint: intent.stateFingerprint,
-        executionTokenHash,
-      },
-    });
+    try {
+      await appendCleanupAudit(db, {
+        pluginId,
+        phase: 'legacy-path-decommissioned',
+        result: 'blocked',
+        classification: 'cleanup-intent-plugin-mismatch',
+        reason: err.message,
+        blocking: true,
+        operationId: options?.operationId ?? null,
+        correlationId: options?.correlationId ?? null,
+        evidence: {
+          cleanupSchemaVersion: intent.schemaVersion,
+          cleanupPlanVersion: intent.planVersion,
+          cleanupStateFingerprint: intent.stateFingerprint,
+          executionTokenHash,
+        },
+      });
+    } catch (auditError) {
+      const auditErr = auditError instanceof Error ? auditError : new Error(String(auditError));
+      throw new CleanupAuditPersistenceFailure(err, auditErr);
+    }
     throw err;
   }
 
   if (!intent.executionToken || intent.executionToken.trim().length === 0) {
     const err = new Error('cleanup execution token is required');
-    await appendCleanupAudit(db, {
-      pluginId,
-      phase: 'legacy-path-decommissioned',
-      result: 'blocked',
-      classification: 'cleanup-intent-token-missing',
-      reason: err.message,
-      blocking: true,
-      operationId: options?.operationId ?? null,
-      correlationId: options?.correlationId ?? null,
-      evidence: {
-        cleanupSchemaVersion: intent.schemaVersion,
-        cleanupPlanVersion: intent.planVersion,
-        cleanupStateFingerprint: intent.stateFingerprint,
-        executionTokenHash,
-      },
-    });
+    try {
+      await appendCleanupAudit(db, {
+        pluginId,
+        phase: 'legacy-path-decommissioned',
+        result: 'blocked',
+        classification: 'cleanup-intent-token-missing',
+        reason: err.message,
+        blocking: true,
+        operationId: options?.operationId ?? null,
+        correlationId: options?.correlationId ?? null,
+        evidence: {
+          cleanupSchemaVersion: intent.schemaVersion,
+          cleanupPlanVersion: intent.planVersion,
+          cleanupStateFingerprint: intent.stateFingerprint,
+          executionTokenHash,
+        },
+      });
+    } catch (auditError) {
+      const auditErr = auditError instanceof Error ? auditError : new Error(String(auditError));
+      throw new CleanupAuditPersistenceFailure(err, auditErr);
+    }
     throw err;
   }
 

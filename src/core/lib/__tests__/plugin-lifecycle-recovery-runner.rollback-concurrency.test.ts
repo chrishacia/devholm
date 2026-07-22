@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const getDb = vi.hoisted(() => vi.fn());
 const listPluginStates = vi.hoisted(() => vi.fn());
 const reconcilePluginLifecycleState = vi.hoisted(() => vi.fn());
 const readInterruptedPluginMigrationCheckpoint = vi.hoisted(() => vi.fn());
 const determinePluginRollbackCompatibility = vi.hoisted(() => vi.fn());
 const readPluginCutoverStateSnapshots = vi.hoisted(() => vi.fn());
+const readPluginCutoverStateSnapshot = vi.hoisted(() => vi.fn());
 const upsertPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
 const appendPluginCutoverReconciliationEvent = vi.hoisted(() => vi.fn());
 const readPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
@@ -18,6 +20,10 @@ vi.mock('@/db/plugins', () => ({
   listPluginStates,
 }));
 
+vi.mock('@/db', () => ({
+  getDb,
+}));
+
 vi.mock('@core/lib/plugin-lifecycle-reconciler.server', () => ({
   reconcilePluginLifecycleState,
 }));
@@ -29,6 +35,7 @@ vi.mock('@core/db/plugin-migration-checkpoints', () => ({
 
 vi.mock('@core/lib/plugin-cutover-state-snapshot.server', () => ({
   readPluginCutoverStateSnapshots,
+  readPluginCutoverStateSnapshot,
 }));
 
 vi.mock('@core/db/plugin-cutover-reconciliation', () => ({
@@ -84,6 +91,14 @@ describe('plugin lifecycle recovery runner rollback concurrency', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    const trx = {
+      raw: vi.fn(async () => undefined),
+    };
+
+    getDb.mockReturnValue({
+      transaction: vi.fn(async (callback: (value: unknown) => Promise<unknown>) => callback(trx)),
+    });
+
     listPluginStates.mockResolvedValue([
       {
         id: 'url-shortener',
@@ -122,6 +137,20 @@ describe('plugin lifecycle recovery runner rollback concurrency', () => {
       reason: 'compatible',
     });
     readPluginCutoverStateSnapshots.mockResolvedValue([]);
+    readPluginCutoverStateSnapshot.mockResolvedValue({
+      pluginId: 'url-shortener',
+      hasEnabledSetting: true,
+      enabledSettingValue: 'true',
+      hasLifecycleRecord: true,
+      lifecycleState: 'installed',
+      operationStatus: 'idle',
+      installedVersion: '0.1.0',
+      activeLifecycleOperationCount: 0,
+      runningMigrationCheckpointCount: 0,
+      succeededMigrationCount: 0,
+      contradictoryState: false,
+      contradictionReasons: [],
+    });
     upsertPluginCutoverReconciliationState.mockResolvedValue({
       pluginId: 'url-shortener',
       phase: 'rollback-pending',

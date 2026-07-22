@@ -22,6 +22,8 @@ This matrix tracks implementation/evidence status for Issue #103 acceptance crit
 
 - Tombstone is the default cleanup policy.
 - Durable cleanup replay protection now uses persisted token-hash claim/completion state and has PostgreSQL replay/race evidence.
-- Shared per-plugin lifecycle coordination helper now gates cleanup/rollback/legacy reconciliation/decommission and recovery single-plugin mutation writes.
+- Shared per-plugin lifecycle coordination helper now gates cleanup/rollback/legacy reconciliation/decommission and recovery mutation writes.
+- Rollback/cutover mutation writers now use transaction-scoped advisory locks (same transaction connection) to avoid session-vs-transaction self-deadlock.
+- Recovery scan per-plugin authoritative writes now execute inside one transaction + advisory lock boundary instead of fragmented uncoordinated writes.
 - Cleanup request/ineligible/error auditing now uses distinct intent classifications and fails closed when mandatory audit persistence fails.
 - Remaining work is verification-heavy (expanded race/restart matrix, migration upgrade/down, bypass inventory closure, full validation/security governance), not major new architecture.

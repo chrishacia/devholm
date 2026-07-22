@@ -531,4 +531,114 @@ describe('plugin cutover cleanup executor', () => {
       })
     ).rejects.toThrow(/cleanup-execution-token-replayed/);
   });
+
+  it('preserves original missing-intent error when rejection audit persistence fails', async () => {
+    appendPluginCutoverReconciliationEvent
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('audit-write-failed'));
+
+    const { executePluginCutoverCleanup } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
+
+    await expect(
+      executePluginCutoverCleanup('url-shortener', {
+        dryRun: false,
+        db: { transaction: vi.fn() } as never,
+      })
+    ).rejects.toThrow(
+      /cleanup execution intent is required; cleanup-audit-persistence-failed: audit-write-failed/
+    );
+  });
+
+  it('does not leak raw execution token in request/rejection audit evidence', async () => {
+    const { executePluginCutoverCleanup } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
+
+    const mkTransactionalDb = () => {
+      const trx = ((tableName: string) => {
+        if (tableName === 'devholm_plugin_cutover_reconciliation_states') {
+          return {
+            insert: vi.fn(() => ({
+              onConflict: vi.fn(() => ({ ignore: vi.fn(async () => undefined) })),
+            })),
+            select: vi.fn(() => ({
+              where: vi.fn(() => ({
+                forUpdate: vi.fn(() => ({ first: vi.fn(async () => null) })),
+                first: vi.fn(async () => null),
+              })),
+            })),
+            where: vi.fn(() => ({
+              whereNull: vi.fn(() => ({ update: vi.fn(async () => 1) })),
+              update: vi.fn(async () => 1),
+            })),
+          };
+        }
+
+        if (tableName === 'site_settings') {
+          return {
+            where: vi.fn(() => ({ del: vi.fn(async () => 0) })),
+            insert: vi.fn(() => ({
+              onConflict: vi.fn(() => ({ merge: vi.fn(async () => undefined) })),
+            })),
+          };
+        }
+
+        throw new Error(`unexpected table ${tableName}`);
+      }) as unknown as ReturnType<typeof vi.fn>;
+
+      Object.assign(trx, {
+        raw: vi.fn(async () => undefined),
+      });
+
+      return Object.assign(
+        ((tableName: string) => {
+          if (tableName === 'devholm_plugin_cutover_reconciliation_states') {
+            return {
+              select: vi.fn(() => ({
+                where: vi.fn(() => ({ first: vi.fn(async () => null) })),
+              })),
+            };
+          }
+
+          throw new Error(`unexpected table ${tableName}`);
+        }) as unknown as ReturnType<typeof vi.fn>,
+        {
+          transaction: async (callback: (trxDb: typeof trx) => Promise<void>) => callback(trx),
+        }
+      ) as never;
+    };
+
+    const sensitiveToken = 'raw-sensitive-token';
+
+    await expect(
+      executePluginCutoverCleanup('url-shortener', {
+        dryRun: false,
+        intent: {
+          pluginId: 'url-shortener',
+          schemaVersion: 2,
+          planVersion: 'stale',
+          stateFingerprint: 'fp-1',
+          executionToken: sensitiveToken,
+        },
+        db: mkTransactionalDb(),
+      })
+    ).rejects.toThrow(/stale-cleanup-plan-version/);
+
+    const requestAudit = appendPluginCutoverReconciliationEvent.mock.calls.find(
+      ([event]) => event.classification === 'cleanup-requested'
+    )?.[0];
+    const rejectionAudit = appendPluginCutoverReconciliationEvent.mock.calls.find(
+      ([event]) => event.classification === 'cleanup-intent-plan-version-stale'
+    )?.[0];
+
+    expect(requestAudit).toBeDefined();
+    expect(rejectionAudit).toBeDefined();
+
+    expect(JSON.stringify(requestAudit)).not.toContain(sensitiveToken);
+    expect(JSON.stringify(rejectionAudit)).not.toContain(sensitiveToken);
+    expect(requestAudit?.evidence?.executionTokenHash).toBeDefined();
+    expect(rejectionAudit?.evidence?.executionTokenHash).toBeDefined();
+  });
 });

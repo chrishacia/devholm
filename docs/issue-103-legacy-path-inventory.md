@@ -54,5 +54,7 @@ Do not remove a legacy path until each listed consumer is switched to a proven c
   - Recovery scan now records rollback checkpoints for rollback-required classifications and surfaces stage/availability metadata.
 - Cleanup/race coordination hardening:
   - Added shared lifecycle coordination helper (`src/core/lib/plugin-lifecycle-coordination.server.ts`) and wired cleanup, rollback executor, legacy reconciler, legacy decommissioner, and recovery single-plugin execution paths to the same advisory-lock namespace.
+  - Repaired P0 rollback self-deadlock by moving rollback/cutover mutation writers to transaction-scoped advisory lock ownership on the same transaction connection that performs protected reads/writes.
+  - Recovery scan per-plugin authoritative state/checkpoint/event writes now execute in one transaction + advisory lock boundary (`runPluginLifecycleRecoveryScan`) instead of fragmented uncoordinated write fragments.
   - Added static invariant coverage (`src/core/lib/__tests__/plugin-cutover-coordination-invariant.test.ts`) to detect future writer paths bypassing the coordination boundary.
-  - Added PostgreSQL race evidence (`plugin-cutover-tombstone-non-recreation-postgres.integration.test.ts`) showing cleanup intent is rejected as stale when rollback state transitions while cleanup is queued behind the shared lock.
+  - Added PostgreSQL race evidence (`plugin-cutover-lock-coordination-postgres.integration.test.ts`) proving direct rollback and schedule-rollback paths avoid self-deadlock, and that cleanup intent is rejected as stale when real rollback transitions while cleanup is queued behind the shared lock.

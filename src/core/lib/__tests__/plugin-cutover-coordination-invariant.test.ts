@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 type GuardExpectation = {
   file: string;
   requiredPatterns: RegExp[];
+  forbiddenPatterns?: RegExp[];
 };
 
 const expectations: GuardExpectation[] = [
@@ -14,19 +15,23 @@ const expectations: GuardExpectation[] = [
   },
   {
     file: 'src/core/lib/plugin-cutover-rollback-executor.server.ts',
-    requiredPatterns: [/withPluginLifecycleSessionLock\(/],
+    requiredPatterns: [/acquirePluginLifecycleTransactionLock\(/, /db\.transaction\(async \(trx\)/],
+    forbiddenPatterns: [/withPluginLifecycleSessionLock\(/],
   },
   {
     file: 'src/core/lib/plugin-cutover-legacy-reconciler.server.ts',
-    requiredPatterns: [/withPluginLifecycleSessionLock\(/],
+    requiredPatterns: [/acquirePluginLifecycleTransactionLock\(/, /db\.transaction\(async \(trx\)/],
+    forbiddenPatterns: [/withPluginLifecycleSessionLock\(/],
   },
   {
     file: 'src/core/lib/plugin-cutover-legacy-decommission.server.ts',
-    requiredPatterns: [/withPluginLifecycleSessionLock\(/],
+    requiredPatterns: [/acquirePluginLifecycleTransactionLock\(/, /db\.transaction\(async \(trx\)/],
+    forbiddenPatterns: [/withPluginLifecycleSessionLock\(/],
   },
   {
     file: 'src/core/lib/plugin-lifecycle-recovery-runner.server.ts',
-    requiredPatterns: [/withPluginLifecycleSessionLock\(/],
+    requiredPatterns: [/executePluginCutoverRollback\(/],
+    forbiddenPatterns: [/withPluginLifecycleSessionLock\(/],
   },
 ];
 
@@ -40,6 +45,10 @@ describe('cutover coordination invariant', () => {
 
       for (const pattern of entry.requiredPatterns) {
         expect(source, `${entry.file} missing ${pattern}`).toMatch(pattern);
+      }
+
+      for (const pattern of entry.forbiddenPatterns ?? []) {
+        expect(source, `${entry.file} should not include ${pattern}`).not.toMatch(pattern);
       }
     }
   });

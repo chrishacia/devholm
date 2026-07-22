@@ -7,6 +7,8 @@ import {
   readInterruptedPluginMigrationCheckpoint,
 } from '@core/db/plugin-migration-checkpoints';
 import { evaluateRollbackAvailability } from '@core/lib/plugin-lifecycle-rollback-evaluator.server';
+import { getDb } from '@/db';
+import type { Knex } from 'knex';
 
 export type LifecycleReconciliationAction =
   | 'none'
@@ -38,9 +40,10 @@ function isLeaseExpired(leaseExpiresAt?: string): boolean {
 }
 
 export async function reconcilePluginLifecycleState(
-  pluginId: string
+  pluginId: string,
+  db: Knex = getDb()
 ): Promise<LifecycleReconciliationResult> {
-  const activeOperation = await findActivePluginLifecycleOperation(pluginId);
+  const activeOperation = await findActivePluginLifecycleOperation(pluginId, db);
   if (!activeOperation) {
     return {
       action: 'none',
@@ -49,8 +52,8 @@ export async function reconcilePluginLifecycleState(
     };
   }
 
-  const latestEvent = await readLatestPluginLifecycleTransitionEventRecord(pluginId);
-  const interruptedMigration = await readInterruptedPluginMigrationCheckpoint(pluginId);
+  const latestEvent = await readLatestPluginLifecycleTransitionEventRecord(pluginId, db);
+  const interruptedMigration = await readInterruptedPluginMigrationCheckpoint(pluginId, db);
 
   if (!isLeaseExpired(activeOperation.leaseExpiresAt)) {
     return {
@@ -79,7 +82,7 @@ export async function reconcilePluginLifecycleState(
     };
   }
 
-  const rollbackCompatibility = await determinePluginRollbackCompatibility(pluginId);
+  const rollbackCompatibility = await determinePluginRollbackCompatibility(pluginId, db);
   const rollbackEvaluation = evaluateRollbackAvailability({
     currentDeploymentRef: 'unknown-current',
     targetDeploymentRef: 'unknown-target',

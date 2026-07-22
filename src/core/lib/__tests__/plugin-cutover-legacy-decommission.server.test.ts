@@ -64,8 +64,12 @@ describe('plugin cutover legacy decommission', () => {
       throw new Error(`unexpected table ${tableName}`);
     }) as unknown as ReturnType<typeof vi.fn>;
 
+    Object.assign(trx, {
+      raw: vi.fn(async () => undefined),
+    });
+
     const db = {
-      transaction: async (callback: (trxDb: typeof trx) => Promise<void>) => callback(trx),
+      transaction: async (callback: (trxDb: typeof trx) => Promise<unknown>) => callback(trx),
     };
 
     const { logicallyDecommissionLegacyPluginState } = await import(
@@ -103,7 +107,10 @@ describe('plugin cutover legacy decommission', () => {
     );
 
     const result = await logicallyDecommissionLegacyPluginState('url-shortener', {
-      db: { transaction: vi.fn() } as never,
+      db: {
+        transaction: async (callback: (trxDb: { raw: () => Promise<void> }) => Promise<unknown>) =>
+          callback({ raw: async () => undefined }),
+      } as never,
     });
 
     expect(result.applied).toBe(false);

@@ -12,10 +12,7 @@ import { getBundledPluginManifests } from '@core/lib/plugin-registry.server';
 import { getInstalledPlugin, upsertPluginLedgerRecord } from '@core/db/plugin-lifecycle';
 import { buildPluginCutoverRollbackExecutionPlan } from './plugin-cutover-rollback-planner.server';
 import { legacyCleanupMarkerKeys } from './plugin-cutover-cleanup-planner.server';
-import {
-  acquirePluginLifecycleTransactionLock,
-  withPluginLifecycleSessionLock,
-} from '@core/lib/plugin-lifecycle-coordination.server';
+import { acquirePluginLifecycleTransactionLock } from '@core/lib/plugin-lifecycle-coordination.server';
 
 export interface PluginCutoverRollbackExecutionResult {
   pluginId: string;
@@ -75,10 +72,30 @@ export async function executePluginCutoverRollback(
   options?: { operationId?: string | null; correlationId?: string | null; db?: Knex }
 ): Promise<PluginCutoverRollbackExecutionResult> {
   const db = options?.db ?? getDb();
-  return withPluginLifecycleSessionLock(
-    pluginId,
-    async () => {
-      const plan = await buildPluginCutoverRollbackExecutionPlan(pluginId, db);
+  const manifest = manifestForPlugin(pluginId);
+  if (!manifest) {
+    return {
+      pluginId,
+      executed: false,
+      stage: 'after-enabled-settings-reconciliation',
+      status: 'failed',
+      reason: 'missing bundled manifest for rollback',
+      attemptCount: 1,
+      checkpointId: null,
+    };
+  }
+
+  let checkpointId: string | null = null;
+  let attemptCount = 1;
+  let stage: PluginCutoverRollbackStage = 'after-enabled-settings-reconciliation';
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await acquirePluginLifecycleTransactionLock(pluginId, trx);
+
+      const plan = await buildPluginCutoverRollbackExecutionPlan(pluginId, trx);
+      stage = plan.stage;
+      attemptCount = plan.attemptCount;
 
       const checkpoint = await upsertPluginCutoverRollbackCheckpoint(
         {
@@ -97,8 +114,9 @@ export async function executePluginCutoverRollback(
           reason: plan.blockingReason ?? 'rollback execution planned',
           evidence: plan.evidenceSnapshot,
         },
-        db
+        trx
       );
+      checkpointId = checkpoint.checkpointId;
 
       if (!plan.shouldExecute) {
         await appendPluginCutoverReconciliationEvent(
@@ -116,198 +134,164 @@ export async function executePluginCutoverRollback(
               checkpointId: checkpoint.checkpointId,
             },
           },
-          db
+          trx
         );
 
         return {
           pluginId,
           executed: false,
           stage: plan.stage,
-          status: 'blocked',
+          status: 'blocked' as const,
           reason: plan.blockingReason ?? 'rollback execution blocked',
           attemptCount: plan.attemptCount,
           checkpointId: checkpoint.checkpointId,
         };
       }
 
-      const manifest = manifestForPlugin(pluginId);
-      if (!manifest) {
-        await upsertPluginCutoverRollbackCheckpoint(
-          {
-            pluginId,
-            stage: plan.stage,
-            status: 'failed',
-            attemptCount: plan.attemptCount,
-            rollbackEligible: false,
-            irreversibleBoundary: plan.irreversibleBoundary,
-            operationId: options?.operationId ?? null,
-            correlationId: options?.correlationId ?? null,
-            reason: 'missing bundled manifest for rollback',
-            evidence: { checkpointId: checkpoint.checkpointId },
-            completedAt: new Date().toISOString(),
-          },
-          db
-        );
+      const inverse = await applyStageInverseAction({
+        pluginId,
+        stage: plan.stage,
+        db: trx,
+      });
 
-        return {
-          pluginId,
-          executed: false,
-          stage: plan.stage,
-          status: 'failed',
-          reason: 'missing bundled manifest for rollback',
-          attemptCount: plan.attemptCount,
-          checkpointId: checkpoint.checkpointId,
-        };
-      }
+      if (
+        plan.stage === 'before-legacy-decommission' ||
+        plan.stage === 'after-legacy-decommission-initiation'
+      ) {
+        const keys = legacyCleanupMarkerKeys(pluginId);
 
-      try {
-        await db.transaction(async (trx) => {
-          await acquirePluginLifecycleTransactionLock(pluginId, trx);
-          const inverse = await applyStageInverseAction({
-            pluginId,
-            stage: plan.stage,
-            db: trx,
+        await trx('site_settings')
+          .insert({
+            key: keys.enabled,
+            value: inverse.enabled ? 'true' : 'false',
+            type: 'boolean',
+            category: 'plugins',
+            description: `${pluginId} legacy compatibility enabled state`,
+            updated_at: new Date(),
+          })
+          .onConflict('key')
+          .merge({
+            value: inverse.enabled ? 'true' : 'false',
+            updated_at: new Date(),
           });
 
-          if (
-            plan.stage === 'before-legacy-decommission' ||
-            plan.stage === 'after-legacy-decommission-initiation'
-          ) {
-            const keys = legacyCleanupMarkerKeys(pluginId);
+        await trx('site_settings').where({ key: keys.tombstoned }).del();
+      }
 
-            await trx('site_settings')
-              .insert({
-                key: keys.enabled,
-                value: inverse.enabled ? 'true' : 'false',
-                type: 'boolean',
-                category: 'plugins',
-                description: `${pluginId} legacy compatibility enabled state`,
-                updated_at: new Date(),
-              })
-              .onConflict('key')
-              .merge({
-                value: inverse.enabled ? 'true' : 'false',
-                updated_at: new Date(),
-              });
+      await upsertPluginLedgerRecord(
+        {
+          manifest,
+          state: inverse.lifecycleState,
+          operationStatus: 'idle',
+          enabled: inverse.enabled,
+          installedVersion: inverse.lifecycleState === 'bundled' ? null : manifest.version,
+          installedAt: inverse.lifecycleState === 'bundled' ? null : new Date(),
+          upgradedAt: null,
+          disabledAt: inverse.enabled ? null : new Date(),
+          lastError: null,
+        },
+        trx
+      );
 
-            await trx('site_settings').where({ key: keys.tombstoned }).del();
-          }
-
-          await upsertPluginLedgerRecord(
-            {
-              manifest,
-              state: inverse.lifecycleState,
-              operationStatus: 'idle',
-              enabled: inverse.enabled,
-              installedVersion: inverse.lifecycleState === 'bundled' ? null : manifest.version,
-              installedAt: inverse.lifecycleState === 'bundled' ? null : new Date(),
-              upgradedAt: null,
-              disabledAt: inverse.enabled ? null : new Date(),
-              lastError: null,
-            },
-            trx
-          );
-
-          await upsertPluginCutoverReconciliationState(
-            {
-              pluginId,
-              phase: 'settings-data-preserved',
-              operationId: options?.operationId ?? null,
-              correlationId: options?.correlationId ?? null,
-              classification: 'rollback-executed',
-              blocking: false,
-              reason: 'Rollback inverse action executed successfully.',
-              evidence: {
-                stage: plan.stage,
-                checkpointId: checkpoint.checkpointId,
-                legacyDecommissioned: false,
-              },
-            },
-            trx
-          );
-
-          await appendPluginCutoverReconciliationEvent(
-            {
-              pluginId,
-              phase: 'settings-data-preserved',
-              result: 'applied',
-              operationId: options?.operationId ?? null,
-              correlationId: options?.correlationId ?? null,
-              classification: 'rollback-executed',
-              blocking: false,
-              reason: 'Rollback inverse action executed successfully.',
-              evidence: {
-                stage: plan.stage,
-                checkpointId: checkpoint.checkpointId,
-              },
-            },
-            trx
-          );
-
-          await upsertPluginCutoverRollbackCheckpoint(
-            {
-              pluginId,
-              stage: plan.stage,
-              status: 'succeeded',
-              attemptCount: plan.attemptCount,
-              rollbackEligible: true,
-              irreversibleBoundary: false,
-              operationId: options?.operationId ?? null,
-              correlationId: options?.correlationId ?? null,
-              reason: 'rollback succeeded',
-              evidence: {
-                stage: plan.stage,
-                checkpointId: checkpoint.checkpointId,
-                lifecycleState: inverse.lifecycleState,
-                enabled: inverse.enabled,
-              },
-              completedAt: new Date().toISOString(),
-            },
-            trx
-          );
-        });
-
-        return {
+      await upsertPluginCutoverReconciliationState(
+        {
           pluginId,
-          executed: true,
+          phase: 'settings-data-preserved',
+          operationId: options?.operationId ?? null,
+          correlationId: options?.correlationId ?? null,
+          classification: 'rollback-executed',
+          blocking: false,
+          reason: 'Rollback inverse action executed successfully.',
+          evidence: {
+            stage: plan.stage,
+            checkpointId: checkpoint.checkpointId,
+            legacyDecommissioned: false,
+          },
+        },
+        trx
+      );
+
+      await appendPluginCutoverReconciliationEvent(
+        {
+          pluginId,
+          phase: 'settings-data-preserved',
+          result: 'applied',
+          operationId: options?.operationId ?? null,
+          correlationId: options?.correlationId ?? null,
+          classification: 'rollback-executed',
+          blocking: false,
+          reason: 'Rollback inverse action executed successfully.',
+          evidence: {
+            stage: plan.stage,
+            checkpointId: checkpoint.checkpointId,
+          },
+        },
+        trx
+      );
+
+      await upsertPluginCutoverRollbackCheckpoint(
+        {
+          pluginId,
           stage: plan.stage,
           status: 'succeeded',
+          attemptCount: plan.attemptCount,
+          rollbackEligible: true,
+          irreversibleBoundary: false,
+          operationId: options?.operationId ?? null,
+          correlationId: options?.correlationId ?? null,
           reason: 'rollback succeeded',
-          attemptCount: plan.attemptCount,
-          checkpointId: checkpoint.checkpointId,
-        };
-      } catch (error) {
-        await upsertPluginCutoverRollbackCheckpoint(
-          {
-            pluginId,
+          evidence: {
             stage: plan.stage,
-            status: 'failed',
-            attemptCount: plan.attemptCount,
-            rollbackEligible: true,
-            irreversibleBoundary: false,
-            operationId: options?.operationId ?? null,
-            correlationId: options?.correlationId ?? null,
-            reason: error instanceof Error ? error.message : String(error),
-            evidence: {
-              stage: plan.stage,
-              checkpointId: checkpoint.checkpointId,
-            },
-            completedAt: new Date().toISOString(),
+            checkpointId: checkpoint.checkpointId,
+            lifecycleState: inverse.lifecycleState,
+            enabled: inverse.enabled,
           },
-          db
-        );
+          completedAt: new Date().toISOString(),
+        },
+        trx
+      );
 
-        return {
-          pluginId,
-          executed: false,
-          stage: plan.stage,
-          status: 'failed',
-          reason: error instanceof Error ? error.message : String(error),
-          attemptCount: plan.attemptCount,
-          checkpointId: checkpoint.checkpointId,
-        };
-      }
-    },
-    db
-  );
+      return {
+        pluginId,
+        executed: true,
+        stage: plan.stage,
+        status: 'succeeded' as const,
+        reason: 'rollback succeeded',
+        attemptCount: plan.attemptCount,
+        checkpointId: checkpoint.checkpointId,
+      };
+    });
+
+    return result;
+  } catch (error) {
+    await upsertPluginCutoverRollbackCheckpoint(
+      {
+        pluginId,
+        stage,
+        status: 'failed',
+        attemptCount,
+        rollbackEligible: true,
+        irreversibleBoundary: false,
+        operationId: options?.operationId ?? null,
+        correlationId: options?.correlationId ?? null,
+        reason: error instanceof Error ? error.message : String(error),
+        evidence: {
+          stage,
+          checkpointId,
+        },
+        completedAt: new Date().toISOString(),
+      },
+      db
+    );
+
+    return {
+      pluginId,
+      executed: false,
+      stage,
+      status: 'failed',
+      reason: error instanceof Error ? error.message : String(error),
+      attemptCount,
+      checkpointId,
+    };
+  }
 }

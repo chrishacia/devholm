@@ -47,11 +47,15 @@ function makeDb(legacyValue: string | null) {
     };
   });
 
+  const trx = Object.assign(tableFactory, {
+    raw: vi.fn(async () => undefined),
+  });
+
   (
     tableFactory as unknown as {
-      transaction: (cb: (trx: unknown) => Promise<void>) => Promise<void>;
+      transaction: (cb: (trx: unknown) => Promise<unknown>) => Promise<unknown>;
     }
-  ).transaction = async (cb) => cb({});
+  ).transaction = async (cb) => cb(trx);
 
   return tableFactory;
 }

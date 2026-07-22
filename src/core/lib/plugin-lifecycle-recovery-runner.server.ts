@@ -20,7 +20,7 @@ import {
   type PluginCutoverClassificationResult,
 } from '@core/lib/plugin-cutover-reconciliation-classifier.server';
 import {
-  readPluginCutoverStateSnapshots,
+  readPluginCutoverStateSnapshot,
   type PluginCutoverStateSnapshot,
 } from '@core/lib/plugin-cutover-state-snapshot.server';
 import {
@@ -39,7 +39,7 @@ import { executePluginCutoverRollback } from '@core/lib/plugin-cutover-rollback-
 import { reconcileLegacyAndCanonicalPluginState } from '@core/lib/plugin-cutover-legacy-reconciler.server';
 import { logicallyDecommissionLegacyPluginState } from '@core/lib/plugin-cutover-legacy-decommission.server';
 import { buildPluginCutoverCleanupPlan } from '@core/lib/plugin-cutover-cleanup-planner.server';
-import { withPluginLifecycleSessionLock } from '@core/lib/plugin-lifecycle-coordination.server';
+import { acquirePluginLifecycleTransactionLock } from '@core/lib/plugin-lifecycle-coordination.server';
 
 export interface PluginLifecycleRecoveryScanResult {
   scannedAt: string;
@@ -273,195 +273,208 @@ async function applySafeRecoveryAction(
 export async function reconcileSinglePluginLifecycle(
   pluginId: string
 ): Promise<PluginLifecycleRecoveryExecutionResult> {
-  return withPluginLifecycleSessionLock(pluginId, async () => {
-    const result = await reconcilePluginLifecycleState(pluginId);
-    const execution = await applySafeRecoveryAction(pluginId, result);
+  const result = await reconcilePluginLifecycleState(pluginId);
+  const execution = await applySafeRecoveryAction(pluginId, result);
 
-    const phase = toDurableCutoverPhase({
-      action: result.action,
-      executed: execution.executed,
-    });
-    const state = await upsertPluginCutoverReconciliationState({
-      pluginId,
-      phase,
-      operationId: result.operationId,
-      blocking:
-        result.action === 'require-recovery' ||
-        result.action === 'manual-intervention-required' ||
-        result.action === 'schedule-rollback',
-      classification: result.action,
-      reason: result.reason,
-      evidence: {
-        executed: execution.executed,
-        executedAt: execution.executedAt,
-        reconciliationAction: result.action,
-      },
-    });
-
-    await appendPluginCutoverReconciliationEvent({
-      pluginId,
-      phase: state.phase,
-      result: execution.executed ? 'applied' : state.blocking ? 'blocked' : 'noop',
-      operationId: result.operationId,
-      correlationId: result.operationId,
-      classification: state.classification,
-      blocking: state.blocking,
-      reason: state.reason,
-      evidence: state.evidence,
-      snapshot: state.snapshot,
-    });
-
-    if (result.action === 'schedule-rollback') {
-      const rollbackResult = await executePluginCutoverRollback(pluginId, {
-        operationId: result.operationId,
-        correlationId: result.operationId,
-      });
-
-      execution.executed = rollbackResult.executed;
-      execution.executedAt = rollbackResult.executed
-        ? new Date().toISOString()
-        : execution.executedAt;
-    }
-
-    markPluginStartupReconciliationStateDirty();
-
-    return {
-      ...result,
+  const phase = toDurableCutoverPhase({
+    action: result.action,
+    executed: execution.executed,
+  });
+  const state = await upsertPluginCutoverReconciliationState({
+    pluginId,
+    phase,
+    operationId: result.operationId,
+    blocking:
+      result.action === 'require-recovery' ||
+      result.action === 'manual-intervention-required' ||
+      result.action === 'schedule-rollback',
+    classification: result.action,
+    reason: result.reason,
+    evidence: {
       executed: execution.executed,
       executedAt: execution.executedAt,
-    };
+      reconciliationAction: result.action,
+    },
   });
+
+  await appendPluginCutoverReconciliationEvent({
+    pluginId,
+    phase: state.phase,
+    result: execution.executed ? 'applied' : state.blocking ? 'blocked' : 'noop',
+    operationId: result.operationId,
+    correlationId: result.operationId,
+    classification: state.classification,
+    blocking: state.blocking,
+    reason: state.reason,
+    evidence: state.evidence,
+    snapshot: state.snapshot,
+  });
+
+  if (result.action === 'schedule-rollback') {
+    const rollbackResult = await executePluginCutoverRollback(pluginId, {
+      operationId: result.operationId,
+      correlationId: result.operationId,
+    });
+
+    execution.executed = rollbackResult.executed;
+    execution.executedAt = rollbackResult.executed
+      ? new Date().toISOString()
+      : execution.executedAt;
+  }
+
+  markPluginStartupReconciliationStateDirty();
+
+  return {
+    ...result,
+    executed: execution.executed,
+    executedAt: execution.executedAt,
+  };
 }
 
 export async function runPluginLifecycleRecoveryScan(options?: {
   limit?: number;
 }): Promise<PluginLifecycleRecoveryScanResult> {
+  const db = getDb();
   const pluginStates = await listPluginStates();
-  const cutoverSnapshots = await readPluginCutoverStateSnapshots();
-  const snapshotByPluginId = new Map(
-    cutoverSnapshots.map((snapshot) => [snapshot.pluginId, snapshot])
-  );
   const limit = Math.max(1, Math.min(options?.limit ?? pluginStates.length, 200));
   const selected = pluginStates.slice(0, limit);
 
   const results = await Promise.all(
     selected.map(async (plugin) => {
-      const reconciliation = await reconcilePluginLifecycleState(plugin.id);
-      const [interruptedCheckpoint, rollbackCompatibility] = await Promise.all([
-        readInterruptedPluginMigrationCheckpoint(plugin.id),
-        determinePluginRollbackCompatibility(plugin.id),
-      ]);
+      return db.transaction(async (trx) => {
+        await acquirePluginLifecycleTransactionLock(plugin.id, trx);
 
-      await reconcileLegacyAndCanonicalPluginState(plugin.id, {
-        correlationId: reconciliation.operationId ?? undefined,
-      });
+        const reconciliation = await reconcilePluginLifecycleState(plugin.id, trx);
+        const [interruptedCheckpoint, rollbackCompatibility] = await Promise.all([
+          readInterruptedPluginMigrationCheckpoint(plugin.id, trx),
+          determinePluginRollbackCompatibility(plugin.id, trx),
+        ]);
 
-      const cutover = classifyPluginCutoverState({
-        plugin,
-        reconciliation,
-        hasInterruptedMigrationCheckpoint: interruptedCheckpoint !== null,
-        rollbackCompatible: rollbackCompatibility.rollbackCompatible,
-      });
-
-      let legacyDecommissioned = false;
-      if (
-        reconciliation.action === 'none' &&
-        !cutover.blocking &&
-        cutover.classification === 'already-canonical'
-      ) {
-        const decommission = await logicallyDecommissionLegacyPluginState(plugin.id, {
-          operationId: reconciliation.operationId,
-          correlationId: reconciliation.operationId,
+        await reconcileLegacyAndCanonicalPluginState(plugin.id, {
+          correlationId: reconciliation.operationId ?? undefined,
+          db: trx,
         });
-        legacyDecommissioned = decommission.applied;
-      }
 
-      const phase = toDurableCutoverPhase({
-        action: reconciliation.action,
-        classification: cutover.classification,
-        blocking: cutover.blocking,
-      });
+        const cutover = classifyPluginCutoverState({
+          plugin,
+          reconciliation,
+          hasInterruptedMigrationCheckpoint: interruptedCheckpoint !== null,
+          rollbackCompatible: rollbackCompatibility.rollbackCompatible,
+        });
 
-      const snapshot = snapshotByPluginId.get(plugin.id);
+        let legacyDecommissioned = false;
+        if (
+          reconciliation.action === 'none' &&
+          !cutover.blocking &&
+          cutover.classification === 'already-canonical'
+        ) {
+          const decommission = await logicallyDecommissionLegacyPluginState(plugin.id, {
+            operationId: reconciliation.operationId,
+            correlationId: reconciliation.operationId,
+            db: trx,
+          });
+          legacyDecommissioned = decommission.applied;
+        }
 
-      const state = await upsertPluginCutoverReconciliationState({
-        pluginId: plugin.id,
-        phase,
-        operationId: reconciliation.operationId,
-        correlationId: reconciliation.operationId,
-        classification: cutover.classification,
-        blocking: cutover.blocking,
-        reason: cutover.reason,
-        evidence: cutover.evidence,
-        snapshot: (snapshot ?? null) as unknown as Record<string, unknown> | null,
-      });
+        const phase = toDurableCutoverPhase({
+          action: reconciliation.action,
+          classification: cutover.classification,
+          blocking: cutover.blocking,
+        });
 
-      await appendPluginCutoverReconciliationEvent({
-        pluginId: plugin.id,
-        phase: state.phase,
-        result: cutover.blocking ? 'blocked' : 'noop',
-        operationId: reconciliation.operationId,
-        correlationId: reconciliation.operationId,
-        classification: cutover.classification,
-        blocking: cutover.blocking,
-        reason: cutover.reason,
-        evidence: cutover.evidence,
-        snapshot: (snapshot ?? null) as unknown as Record<string, unknown> | null,
-      });
+        const snapshot = await readPluginCutoverStateSnapshot(plugin.id, trx);
 
-      const durableCutoverState = await readPluginCutoverReconciliationState(plugin.id);
-      const rollbackPlan = deriveCutoverRollbackPlanFromPhase(state.phase);
-      if (cutover.classification === 'rollback-required') {
-        await upsertPluginCutoverRollbackCheckpoint({
-          pluginId: plugin.id,
-          stage: rollbackPlan.stage,
-          status: 'pending',
-          rollbackEligible: rollbackPlan.rollbackEligible,
-          irreversibleBoundary: rollbackPlan.irreversibleBoundary,
-          operationId: reconciliation.operationId,
-          correlationId: reconciliation.operationId,
-          reason: rollbackPlan.reason,
-          evidence: {
+        const state = await upsertPluginCutoverReconciliationState(
+          {
+            pluginId: plugin.id,
+            phase,
+            operationId: reconciliation.operationId,
+            correlationId: reconciliation.operationId,
             classification: cutover.classification,
-            reconciliationAction: reconciliation.action,
+            blocking: cutover.blocking,
+            reason: cutover.reason,
+            evidence: cutover.evidence,
+            snapshot: snapshot as unknown as Record<string, unknown>,
           },
-        });
-      }
-      const latestRollbackCheckpoint = await readLatestPluginCutoverRollbackCheckpoint(plugin.id);
-      const cleanupPlan = await buildPluginCutoverCleanupPlan(plugin.id);
-      const recoveryCenter = deriveRecoveryCenterPayload({
-        pluginId: plugin.id,
-        cutover,
-        rollbackCompatible: rollbackCompatibility.rollbackCompatible,
-        snapshot,
-      });
+          trx
+        );
 
-      if (latestRollbackCheckpoint) {
-        recoveryCenter.rollbackStage = latestRollbackCheckpoint.stage;
-        recoveryCenter.rollbackAvailable = latestRollbackCheckpoint.rollbackEligible;
+        await appendPluginCutoverReconciliationEvent(
+          {
+            pluginId: plugin.id,
+            phase: state.phase,
+            result: cutover.blocking ? 'blocked' : 'noop',
+            operationId: reconciliation.operationId,
+            correlationId: reconciliation.operationId,
+            classification: cutover.classification,
+            blocking: cutover.blocking,
+            reason: cutover.reason,
+            evidence: cutover.evidence,
+            snapshot: snapshot as unknown as Record<string, unknown>,
+          },
+          trx
+        );
+
+        const durableCutoverState = await readPluginCutoverReconciliationState(plugin.id, trx);
+        const rollbackPlan = deriveCutoverRollbackPlanFromPhase(state.phase);
+        if (cutover.classification === 'rollback-required') {
+          await upsertPluginCutoverRollbackCheckpoint(
+            {
+              pluginId: plugin.id,
+              stage: rollbackPlan.stage,
+              status: 'pending',
+              rollbackEligible: rollbackPlan.rollbackEligible,
+              irreversibleBoundary: rollbackPlan.irreversibleBoundary,
+              operationId: reconciliation.operationId,
+              correlationId: reconciliation.operationId,
+              reason: rollbackPlan.reason,
+              evidence: {
+                classification: cutover.classification,
+                reconciliationAction: reconciliation.action,
+              },
+            },
+            trx
+          );
+        }
+        const latestRollbackCheckpoint = await readLatestPluginCutoverRollbackCheckpoint(
+          plugin.id,
+          trx
+        );
+        const cleanupPlan = await buildPluginCutoverCleanupPlan(plugin.id, trx);
+        const recoveryCenter = deriveRecoveryCenterPayload({
+          pluginId: plugin.id,
+          cutover,
+          rollbackCompatible: rollbackCompatibility.rollbackCompatible,
+          snapshot,
+        });
+
+        if (latestRollbackCheckpoint) {
+          recoveryCenter.rollbackStage = latestRollbackCheckpoint.stage;
+          recoveryCenter.rollbackAvailable = latestRollbackCheckpoint.rollbackEligible;
+          recoveryCenter.safeEvidence = {
+            ...recoveryCenter.safeEvidence,
+            rollbackStatus: latestRollbackCheckpoint.status,
+            rollbackCheckpointId: latestRollbackCheckpoint.checkpointId,
+          };
+        }
+
         recoveryCenter.safeEvidence = {
           ...recoveryCenter.safeEvidence,
-          rollbackStatus: latestRollbackCheckpoint.status,
-          rollbackCheckpointId: latestRollbackCheckpoint.checkpointId,
+          legacyPathLogicallyDecommissioned: legacyDecommissioned,
+          cleanupEligible: cleanupPlan.cleanupEligible,
+          cleanupBlockers: cleanupPlan.blockers,
+          cleanupMode: cleanupPlan.mode,
         };
-      }
 
-      recoveryCenter.safeEvidence = {
-        ...recoveryCenter.safeEvidence,
-        legacyPathLogicallyDecommissioned: legacyDecommissioned,
-        cleanupEligible: cleanupPlan.cleanupEligible,
-        cleanupBlockers: cleanupPlan.blockers,
-        cleanupMode: cleanupPlan.mode,
-      };
-
-      return {
-        pluginId: plugin.id,
-        ...reconciliation,
-        snapshot,
-        cutover,
-        durableCutoverState,
-        recoveryCenter,
-      };
+        return {
+          pluginId: plugin.id,
+          ...reconciliation,
+          snapshot,
+          cutover,
+          durableCutoverState,
+          recoveryCenter,
+        };
+      });
     })
   );
 
