@@ -39,6 +39,7 @@ import { executePluginCutoverRollback } from '@core/lib/plugin-cutover-rollback-
 import { reconcileLegacyAndCanonicalPluginState } from '@core/lib/plugin-cutover-legacy-reconciler.server';
 import { logicallyDecommissionLegacyPluginState } from '@core/lib/plugin-cutover-legacy-decommission.server';
 import { buildPluginCutoverCleanupPlan } from '@core/lib/plugin-cutover-cleanup-planner.server';
+import { withPluginLifecycleSessionLock } from '@core/lib/plugin-lifecycle-coordination.server';
 
 export interface PluginLifecycleRecoveryScanResult {
   scannedAt: string;
@@ -272,62 +273,64 @@ async function applySafeRecoveryAction(
 export async function reconcileSinglePluginLifecycle(
   pluginId: string
 ): Promise<PluginLifecycleRecoveryExecutionResult> {
-  const result = await reconcilePluginLifecycleState(pluginId);
-  const execution = await applySafeRecoveryAction(pluginId, result);
+  return withPluginLifecycleSessionLock(pluginId, async () => {
+    const result = await reconcilePluginLifecycleState(pluginId);
+    const execution = await applySafeRecoveryAction(pluginId, result);
 
-  const phase = toDurableCutoverPhase({
-    action: result.action,
-    executed: execution.executed,
-  });
-  const state = await upsertPluginCutoverReconciliationState({
-    pluginId,
-    phase,
-    operationId: result.operationId,
-    blocking:
-      result.action === 'require-recovery' ||
-      result.action === 'manual-intervention-required' ||
-      result.action === 'schedule-rollback',
-    classification: result.action,
-    reason: result.reason,
-    evidence: {
+    const phase = toDurableCutoverPhase({
+      action: result.action,
       executed: execution.executed,
-      executedAt: execution.executedAt,
-      reconciliationAction: result.action,
-    },
-  });
-
-  await appendPluginCutoverReconciliationEvent({
-    pluginId,
-    phase: state.phase,
-    result: execution.executed ? 'applied' : state.blocking ? 'blocked' : 'noop',
-    operationId: result.operationId,
-    correlationId: result.operationId,
-    classification: state.classification,
-    blocking: state.blocking,
-    reason: state.reason,
-    evidence: state.evidence,
-    snapshot: state.snapshot,
-  });
-
-  if (result.action === 'schedule-rollback') {
-    const rollbackResult = await executePluginCutoverRollback(pluginId, {
+    });
+    const state = await upsertPluginCutoverReconciliationState({
+      pluginId,
+      phase,
       operationId: result.operationId,
-      correlationId: result.operationId,
+      blocking:
+        result.action === 'require-recovery' ||
+        result.action === 'manual-intervention-required' ||
+        result.action === 'schedule-rollback',
+      classification: result.action,
+      reason: result.reason,
+      evidence: {
+        executed: execution.executed,
+        executedAt: execution.executedAt,
+        reconciliationAction: result.action,
+      },
     });
 
-    execution.executed = rollbackResult.executed;
-    execution.executedAt = rollbackResult.executed
-      ? new Date().toISOString()
-      : execution.executedAt;
-  }
+    await appendPluginCutoverReconciliationEvent({
+      pluginId,
+      phase: state.phase,
+      result: execution.executed ? 'applied' : state.blocking ? 'blocked' : 'noop',
+      operationId: result.operationId,
+      correlationId: result.operationId,
+      classification: state.classification,
+      blocking: state.blocking,
+      reason: state.reason,
+      evidence: state.evidence,
+      snapshot: state.snapshot,
+    });
 
-  markPluginStartupReconciliationStateDirty();
+    if (result.action === 'schedule-rollback') {
+      const rollbackResult = await executePluginCutoverRollback(pluginId, {
+        operationId: result.operationId,
+        correlationId: result.operationId,
+      });
 
-  return {
-    ...result,
-    executed: execution.executed,
-    executedAt: execution.executedAt,
-  };
+      execution.executed = rollbackResult.executed;
+      execution.executedAt = rollbackResult.executed
+        ? new Date().toISOString()
+        : execution.executedAt;
+    }
+
+    markPluginStartupReconciliationStateDirty();
+
+    return {
+      ...result,
+      executed: execution.executed,
+      executedAt: execution.executedAt,
+    };
+  });
 }
 
 export async function runPluginLifecycleRecoveryScan(options?: {

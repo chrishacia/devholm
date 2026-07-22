@@ -498,4 +498,164 @@ postgresDescribe('plugin cutover tombstone non-recreation PostgreSQL integration
     await dbClientA.destroy();
     await dbClientB.destroy();
   });
+
+  it('rejects stale cleanup intent when rollback state transitions while cleanup waits on shared coordination lock', async () => {
+    const { executePluginCutoverCleanup } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
+    const { computePluginCutoverCleanupPlanVersion } = await import(
+      '@core/lib/plugin-cutover-cleanup-contract.server'
+    );
+    const { buildPluginCutoverCleanupPlan } = await import(
+      '@core/lib/plugin-cutover-cleanup-planner.server'
+    );
+    const { upsertPluginLedgerRecord } = await import('@core/db/plugin-lifecycle');
+    const { getBundledPluginManifests } = await import('@core/lib/plugin-registry.server');
+
+    const manifest = getBundledPluginManifests().find((entry) => entry.id === 'url-shortener');
+    if (!manifest) {
+      throw new Error('missing url-shortener manifest');
+    }
+
+    await upsertPluginLedgerRecord(
+      {
+        manifest,
+        state: 'installed',
+        operationStatus: 'idle',
+        enabled: true,
+        installedVersion: manifest.version,
+        installedAt: new Date(),
+        upgradedAt: null,
+        disabledAt: null,
+        lastError: null,
+      },
+      integrationDb
+    );
+
+    await integrationDb('site_settings').insert([
+      {
+        key: 'plugin:url-shortener:enabled',
+        value: 'true',
+        type: 'boolean',
+        category: 'plugins',
+        description: 'legacy enabled key',
+        updated_at: new Date(),
+      },
+      {
+        key: 'plugin:url-shortener:legacy-state-decommissioned-at',
+        value: new Date().toISOString(),
+        type: 'string',
+        category: 'plugins',
+        description: 'logical decommission marker',
+        updated_at: new Date(),
+      },
+    ]);
+
+    await integrationDb('devholm_plugin_cutover_reconciliation_states').insert({
+      plugin_id: 'url-shortener',
+      phase: 'legacy-path-decommissioned',
+      operation_id: null,
+      correlation_id: null,
+      classification: 'legacy-logically-decommissioned',
+      blocking: false,
+      reason: 'ready for cleanup',
+      evidence: JSON.stringify({ ready: true }),
+      snapshot: null,
+      inspected_at: new Date(),
+      phase_updated_at: new Date(),
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    const originalPlan = await buildPluginCutoverCleanupPlan('url-shortener', integrationDb);
+
+    const lockerClient = createIndependentClient();
+    const cleanupClient = createIndependentClient();
+
+    let releaseLock: (() => void) | undefined;
+    const holdLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+
+    let signalLockHeld: (() => void) | undefined;
+    const lockHeld = new Promise<void>((resolve) => {
+      signalLockHeld = resolve;
+    });
+
+    const lockHolder = lockerClient.transaction(async (trx) => {
+      await trx.raw('select pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
+        'devholm.plugin.lifecycle',
+        'url-shortener',
+      ]);
+
+      signalLockHeld?.();
+      await holdLock;
+
+      await trx('devholm_plugin_cutover_rollback_checkpoints').insert({
+        checkpoint_id: 'cp-race-lock-proof-1',
+        plugin_id: 'url-shortener',
+        stage: 'after-enabled-settings-reconciliation',
+        status: 'running',
+        attempt_count: 1,
+        rollback_eligible: true,
+        irreversible_boundary: false,
+        operation_id: 'op-race-lock-proof-1',
+        correlation_id: 'corr-race-lock-proof-1',
+        reason: 'rollback started while cleanup was queued',
+        evidence: JSON.stringify({ source: 'race-proof' }),
+        started_at: new Date(),
+        completed_at: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+    });
+
+    await lockHeld;
+
+    let cleanupSettled = false;
+    const cleanupAttempt = executePluginCutoverCleanup('url-shortener', {
+      dryRun: false,
+      db: cleanupClient,
+      intent: {
+        pluginId: 'url-shortener',
+        schemaVersion: 2,
+        planVersion: computePluginCutoverCleanupPlanVersion(originalPlan),
+        stateFingerprint: originalPlan.stateFingerprint,
+        executionToken: 'cleanup-token-race-rollback-stale-proof',
+      },
+    }).finally(() => {
+      cleanupSettled = true;
+    });
+
+    await Promise.resolve();
+    expect(cleanupSettled).toBe(false);
+
+    if (releaseLock) {
+      releaseLock();
+    }
+    await lockHolder;
+
+    await expect(cleanupAttempt).rejects.toThrow(
+      /stale-cleanup-plan-version|cleanup-state-fingerprint-mismatch/
+    );
+
+    const legacyEnabledSetting = await integrationDb('site_settings')
+      .where({ key: 'plugin:url-shortener:enabled' })
+      .first();
+    expect(legacyEnabledSetting).toBeDefined();
+
+    const staleEvents = await integrationDb('devholm_plugin_cutover_reconciliation_events')
+      .where({ plugin_id: 'url-shortener', result: 'blocked' })
+      .orderBy('id', 'desc');
+    expect(
+      staleEvents.some(
+        (row) =>
+          row.classification === 'cleanup-intent-plan-version-stale' ||
+          row.classification === 'cleanup-intent-fingerprint-stale'
+      )
+    ).toBe(true);
+
+    await lockerClient.destroy();
+    await cleanupClient.destroy();
+  });
 });

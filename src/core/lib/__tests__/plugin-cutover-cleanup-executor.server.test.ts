@@ -279,8 +279,18 @@ describe('plugin cutover cleanup executor', () => {
     expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         pluginId: 'url-shortener',
+        result: 'noop',
+        classification: 'cleanup-requested',
+        blocking: false,
+      }),
+      expect.anything()
+    );
+    expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pluginId: 'url-shortener',
         result: 'blocked',
-        classification: 'cleanup-intent-rejected',
+        classification: 'cleanup-intent-missing',
+        blocking: true,
       }),
       expect.anything()
     );

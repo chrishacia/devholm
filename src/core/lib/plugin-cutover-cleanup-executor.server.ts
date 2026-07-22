@@ -15,8 +15,7 @@ import {
   computePluginCutoverCleanupPlanVersion,
   type PluginCutoverCleanupExecutionIntent,
 } from './plugin-cutover-cleanup-contract.server';
-
-const LIFECYCLE_LOCK_NAMESPACE = 'devholm.plugin.lifecycle';
+import { acquirePluginLifecycleTransactionLock } from '@core/lib/plugin-lifecycle-coordination.server';
 
 class CleanupPlanIneligibleError extends Error {
   readonly blockers: string[];
@@ -27,12 +26,24 @@ class CleanupPlanIneligibleError extends Error {
   }
 }
 
+class CleanupAuditPersistenceFailure extends Error {
+  readonly originalError: Error;
+  readonly auditError: Error;
+
+  constructor(originalError: Error, auditError: Error) {
+    super(`${originalError.message}; cleanup-audit-persistence-failed: ${auditError.message}`);
+    this.name = 'CleanupAuditPersistenceFailure';
+    this.originalError = originalError;
+    this.auditError = auditError;
+  }
+}
+
 async function appendCleanupAudit(
   db: Knex,
   input: {
     pluginId: string;
     phase: 'legacy-path-decommissioned' | 'cleanup-completed';
-    result: 'applied' | 'blocked' | 'failed';
+    result: 'applied' | 'noop' | 'blocked' | 'failed';
     classification: string;
     reason: string;
     blocking: boolean;
@@ -119,7 +130,7 @@ export async function executePluginCutoverCleanup(
   await appendCleanupAudit(db, {
     pluginId,
     phase: 'legacy-path-decommissioned',
-    result: 'blocked',
+    result: 'noop',
     classification: 'cleanup-requested',
     reason: 'cleanup execution requested',
     blocking: false,
@@ -139,7 +150,7 @@ export async function executePluginCutoverCleanup(
       pluginId,
       phase: 'legacy-path-decommissioned',
       result: 'blocked',
-      classification: 'cleanup-intent-rejected',
+      classification: 'cleanup-intent-missing',
       reason: err.message,
       blocking: true,
       operationId: options?.operationId ?? null,
@@ -160,7 +171,7 @@ export async function executePluginCutoverCleanup(
       pluginId,
       phase: 'legacy-path-decommissioned',
       result: 'blocked',
-      classification: 'cleanup-intent-rejected',
+      classification: 'cleanup-intent-schema-mismatch',
       reason: err.message,
       blocking: true,
       operationId: options?.operationId ?? null,
@@ -181,7 +192,7 @@ export async function executePluginCutoverCleanup(
       pluginId,
       phase: 'legacy-path-decommissioned',
       result: 'blocked',
-      classification: 'cleanup-intent-rejected',
+      classification: 'cleanup-intent-plugin-mismatch',
       reason: err.message,
       blocking: true,
       operationId: options?.operationId ?? null,
@@ -202,7 +213,7 @@ export async function executePluginCutoverCleanup(
       pluginId,
       phase: 'legacy-path-decommissioned',
       result: 'blocked',
-      classification: 'cleanup-intent-rejected',
+      classification: 'cleanup-intent-token-missing',
       reason: err.message,
       blocking: true,
       operationId: options?.operationId ?? null,
@@ -222,10 +233,7 @@ export async function executePluginCutoverCleanup(
 
   try {
     await db.transaction(async (trx) => {
-      await trx.raw('select pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
-        LIFECYCLE_LOCK_NAMESPACE,
-        pluginId,
-      ]);
+      await acquirePluginLifecycleTransactionLock(pluginId, trx);
 
       // Ensure there is a durable state row we can atomically claim against.
       await trx('devholm_plugin_cutover_reconciliation_states')
@@ -414,10 +422,7 @@ export async function executePluginCutoverCleanup(
         });
       } catch (auditError) {
         const auditErr = auditError instanceof Error ? auditError : new Error(String(auditError));
-        console.error('cleanup audit persistence failed for ineligible execution', {
-          pluginId,
-          auditError: auditErr.message,
-        });
+        throw new CleanupAuditPersistenceFailure(err, auditErr);
       }
     } else {
       const blockedKnownError =
@@ -440,7 +445,19 @@ export async function executePluginCutoverCleanup(
               ? 'cleanup-token-replay-rejected'
               : err.message === 'cleanup-execution-claim-conflict'
                 ? 'cleanup-claim-conflict-rejected'
-                : 'cleanup-intent-rejected'
+                : err.message === 'stale-cleanup-plan-version'
+                  ? 'cleanup-intent-plan-version-stale'
+                  : err.message === 'cleanup-state-fingerprint-mismatch'
+                    ? 'cleanup-intent-fingerprint-stale'
+                    : err.message === 'cleanup execution intent is required'
+                      ? 'cleanup-intent-missing'
+                      : err.message === 'unsupported-cleanup-plan-schema-version'
+                        ? 'cleanup-intent-schema-mismatch'
+                        : err.message === 'cleanup execution intent plugin mismatch'
+                          ? 'cleanup-intent-plugin-mismatch'
+                          : err.message === 'cleanup execution token is required'
+                            ? 'cleanup-intent-token-missing'
+                            : 'cleanup-intent-rejected'
             : 'cleanup-transaction-failed',
           reason: err.message,
           blocking: true,
@@ -455,11 +472,7 @@ export async function executePluginCutoverCleanup(
         });
       } catch (auditError) {
         const auditErr = auditError instanceof Error ? auditError : new Error(String(auditError));
-        console.error('cleanup audit persistence failed after cleanup error', {
-          pluginId,
-          originalError: err.message,
-          auditError: auditErr.message,
-        });
+        throw new CleanupAuditPersistenceFailure(err, auditErr);
       }
 
       throw err;

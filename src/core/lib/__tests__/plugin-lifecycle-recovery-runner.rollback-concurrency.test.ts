@@ -12,6 +12,7 @@ const reconcileLegacyAndCanonicalPluginState = vi.hoisted(() => vi.fn());
 const upsertPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
 const readLatestPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
 const markPluginStartupReconciliationStateDirty = vi.hoisted(() => vi.fn());
+const buildPluginCutoverCleanupPlan = vi.hoisted(() => vi.fn());
 
 vi.mock('@/db/plugins', () => ({
   listPluginStates,
@@ -71,6 +72,10 @@ vi.mock('@core/lib/plugin-cutover-reconciliation-classifier.server', () => ({
 
 vi.mock('@core/lib/plugin-startup-reconciliation.server', () => ({
   markPluginStartupReconciliationStateDirty,
+}));
+
+vi.mock('@core/lib/plugin-cutover-cleanup-planner.server', () => ({
+  buildPluginCutoverCleanupPlan,
 }));
 
 import { runPluginLifecycleRecoveryScan } from '@core/lib/plugin-lifecycle-recovery-runner.server';
@@ -173,6 +178,52 @@ describe('plugin lifecycle recovery runner rollback concurrency', () => {
       completedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+    });
+    buildPluginCutoverCleanupPlan.mockResolvedValue({
+      pluginId: 'url-shortener',
+      mode: 'tombstone',
+      cleanupEligible: false,
+      blockers: ['rollback-in-progress'],
+      rollbackAvailable: true,
+      irreversibleBoundary: false,
+      hasLegacyEnabledSetting: true,
+      hasLogicalDecommissionMarker: true,
+      hasCleanupTombstoneMarker: false,
+      proposedChanges: ['delete-legacy-enabled-setting', 'write-legacy-tombstone-marker'],
+      excludedDomainDataTables: [],
+      stateBinding: {
+        pluginId: 'url-shortener',
+        canonicalIdentity: {
+          lifecycleState: 'installed',
+          installedVersion: '0.1.0',
+          bundledVersion: '0.1.0',
+          enabled: true,
+          manifestChecksum: null,
+          updatedAtIso: null,
+        },
+        legacyIdentity: {
+          hasLegacyEnabledSetting: true,
+          hasLogicalDecommissionMarker: true,
+          hasCleanupTombstoneMarker: false,
+        },
+        cutoverIdentity: {
+          phase: 'legacy-path-decommissioned',
+          classification: 'legacy-logically-decommissioned',
+          blocking: false,
+          updatedAtIso: null,
+        },
+        rollbackIdentity: {
+          status: 'running',
+          rollbackEligible: true,
+          irreversibleBoundary: false,
+          attemptCount: 1,
+        },
+        operationIdentity: {
+          hasActiveOperation: false,
+          activeOperationId: null,
+        },
+      },
+      stateFingerprint: 'fp-rollback-concurrency',
     });
   });
 
