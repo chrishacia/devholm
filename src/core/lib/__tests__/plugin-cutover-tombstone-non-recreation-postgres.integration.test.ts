@@ -12,6 +12,15 @@ const postgresDescribe = shouldRunPostgresIntegration ? describe.sequential : de
 let adminDb: Knex;
 let integrationDb: Knex;
 let integrationDbName = '';
+let integrationDbUrl = '';
+
+function createIndependentClient(): Knex {
+  return knex({
+    client: 'pg',
+    connection: integrationDbUrl,
+    pool: { min: 0, max: 1 },
+  });
+}
 
 function requireBaseDatabaseUrl(): string {
   if (!configuredTestDbUrl) {
@@ -57,7 +66,7 @@ postgresDescribe('plugin cutover tombstone non-recreation PostgreSQL integration
   beforeAll(async () => {
     const baseDatabaseUrl = requireBaseDatabaseUrl();
     integrationDbName = `${getDatabaseName(baseDatabaseUrl)}${TEST_DB_SUFFIX}`;
-    const integrationDbUrl = withDatabaseName(baseDatabaseUrl, integrationDbName);
+    integrationDbUrl = withDatabaseName(baseDatabaseUrl, integrationDbName);
 
     const adminUrl = withDatabaseName(baseDatabaseUrl, 'postgres');
     adminDb = knex({ client: 'pg', connection: adminUrl, pool: { min: 0, max: 2 } });
@@ -324,29 +333,48 @@ postgresDescribe('plugin cutover tombstone non-recreation PostgreSQL integration
       })
     ).resolves.toBeDefined();
 
-    vi.resetModules();
-
-    const { executePluginCutoverCleanup: executeAfterReset } = await import(
+    const reconstructedClient = createIndependentClient();
+    const { executePluginCutoverCleanup: executeAfterReconstruction } = await import(
       '@core/lib/plugin-cutover-cleanup-executor.server'
     );
-    const { buildPluginCutoverCleanupPlan: buildPlanAfterReset } = await import(
+    const { buildPluginCutoverCleanupPlan: buildPlanAfterReconstruction } = await import(
       '@core/lib/plugin-cutover-cleanup-planner.server'
     );
-    const planAfterReset = await buildPlanAfterReset('url-shortener', integrationDb);
+    const planAfterReconstruction = await buildPlanAfterReconstruction(
+      'url-shortener',
+      reconstructedClient
+    );
 
     await expect(
-      executeAfterReset('url-shortener', {
+      executeAfterReconstruction('url-shortener', {
         dryRun: false,
-        db: integrationDb,
+        db: reconstructedClient,
         intent: {
           pluginId: 'url-shortener',
           schemaVersion: 2,
-          planVersion: computePluginCutoverCleanupPlanVersion(planAfterReset),
-          stateFingerprint: planAfterReset.stateFingerprint,
+          planVersion: computePluginCutoverCleanupPlanVersion(planAfterReconstruction),
+          stateFingerprint: planAfterReconstruction.stateFingerprint,
           executionToken: replayToken,
         },
       })
     ).rejects.toThrow(/cleanup-execution-token-replayed/);
+
+    await reconstructedClient.destroy();
+
+    const replayRejectedEvents = await integrationDb('devholm_plugin_cutover_reconciliation_events')
+      .where({ plugin_id: 'url-shortener', result: 'blocked' })
+      .orderBy('id', 'desc');
+
+    expect(replayRejectedEvents.length).toBeGreaterThan(0);
+    expect(String(replayRejectedEvents[0]?.classification ?? '')).toContain('cleanup-token-replay');
+
+    const stateRow = await integrationDb('devholm_plugin_cutover_reconciliation_states')
+      .where({ plugin_id: 'url-shortener' })
+      .first();
+    const serializedState = JSON.stringify(stateRow ?? {});
+    const serializedEvents = JSON.stringify(replayRejectedEvents);
+    expect(serializedState).not.toContain(replayToken);
+    expect(serializedEvents).not.toContain(replayToken);
   });
 
   it('allows exactly one winner for concurrent same-token cleanup attempts', async () => {
@@ -420,10 +448,13 @@ postgresDescribe('plugin cutover tombstone non-recreation PostgreSQL integration
     const plan = await buildPluginCutoverCleanupPlan('url-shortener', integrationDb);
     const sharedToken = 'cleanup-token-race-proof';
 
-    const attempt = () =>
+    const dbClientA = createIndependentClient();
+    const dbClientB = createIndependentClient();
+
+    const attemptA = () =>
       executePluginCutoverCleanup('url-shortener', {
         dryRun: false,
-        db: integrationDb,
+        db: dbClientA,
         intent: {
           pluginId: 'url-shortener',
           schemaVersion: 2,
@@ -433,7 +464,20 @@ postgresDescribe('plugin cutover tombstone non-recreation PostgreSQL integration
         },
       });
 
-    const [first, second] = await Promise.allSettled([attempt(), attempt()]);
+    const attemptB = () =>
+      executePluginCutoverCleanup('url-shortener', {
+        dryRun: false,
+        db: dbClientB,
+        intent: {
+          pluginId: 'url-shortener',
+          schemaVersion: 2,
+          planVersion: computePluginCutoverCleanupPlanVersion(plan),
+          stateFingerprint: plan.stateFingerprint,
+          executionToken: sharedToken,
+        },
+      });
+
+    const [first, second] = await Promise.allSettled([attemptA(), attemptB()]);
     const outcomes = [first, second];
     const fulfilled = outcomes.filter((result) => result.status === 'fulfilled');
     const rejected = outcomes.filter((result) => result.status === 'rejected');
@@ -443,5 +487,15 @@ postgresDescribe('plugin cutover tombstone non-recreation PostgreSQL integration
 
     const rejectionReason = String((rejected[0] as PromiseRejectedResult).reason ?? '');
     expect(rejectionReason).toMatch(/cleanup-execution-(claim-conflict|token-replayed)/);
+
+    const blockedEvents = await integrationDb('devholm_plugin_cutover_reconciliation_events')
+      .where({ plugin_id: 'url-shortener', result: 'blocked' })
+      .orderBy('id', 'desc');
+    expect(blockedEvents.length).toBeGreaterThan(0);
+    const blockedSerialized = JSON.stringify(blockedEvents);
+    expect(blockedSerialized).not.toContain(sharedToken);
+
+    await dbClientA.destroy();
+    await dbClientB.destroy();
   });
 });

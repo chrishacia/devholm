@@ -16,6 +16,35 @@ import {
   type PluginCutoverCleanupExecutionIntent,
 } from './plugin-cutover-cleanup-contract.server';
 
+async function appendCleanupRejectionAudit(
+  db: Knex,
+  input: {
+    pluginId: string;
+    phase: 'legacy-path-decommissioned' | 'cleanup-completed';
+    result: 'blocked' | 'failed';
+    classification: string;
+    reason: string;
+    operationId?: string | null;
+    correlationId?: string | null;
+    evidence?: Record<string, unknown>;
+  }
+): Promise<void> {
+  await appendPluginCutoverReconciliationEvent(
+    {
+      pluginId: input.pluginId,
+      phase: input.phase,
+      result: input.result,
+      operationId: input.operationId ?? null,
+      correlationId: input.correlationId ?? null,
+      classification: input.classification,
+      blocking: true,
+      reason: input.reason,
+      evidence: input.evidence ?? null,
+    },
+    db
+  );
+}
+
 function isReplayState(
   row: {
     cleanup_execution_token_hash?: string | null;
@@ -67,15 +96,35 @@ export async function executePluginCutoverCleanup(
       pluginId,
       mode: 'tombstone',
       dryRun: true,
-      cleanupEligible: true,
+      cleanupEligible: plan.cleanupEligible,
       executed: false,
-      blockers: [],
+      blockers: plan.blockers,
       affectedRows: 0,
     };
   }
 
-  assertCleanupExecutionIntentMatchesPlan(options?.intent, plan, plan.stateFingerprint);
-  const planVersion = computePluginCutoverCleanupPlanVersion(plan);
+  let planVersion = '';
+  try {
+    assertCleanupExecutionIntentMatchesPlan(options?.intent, plan, plan.stateFingerprint);
+    planVersion = computePluginCutoverCleanupPlanVersion(plan);
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    await appendCleanupRejectionAudit(db, {
+      pluginId,
+      phase: 'legacy-path-decommissioned',
+      result: 'blocked',
+      classification: 'cleanup-intent-rejected',
+      reason: err.message,
+      operationId: options?.operationId ?? null,
+      correlationId: options?.correlationId ?? null,
+      evidence: {
+        cleanupSchemaVersion: options?.intent?.schemaVersion ?? null,
+        cleanupPlanVersion: options?.intent?.planVersion ?? null,
+        cleanupStateFingerprint: options?.intent?.stateFingerprint ?? null,
+      },
+    });
+    throw err;
+  }
 
   const durableReplayState = await db('devholm_plugin_cutover_reconciliation_states')
     .select('cleanup_execution_token_hash', 'cleanup_executed_at')
@@ -83,6 +132,21 @@ export async function executePluginCutoverCleanup(
     .first();
 
   if (isReplayState(durableReplayState ?? {}, executionTokenHash)) {
+    await appendCleanupRejectionAudit(db, {
+      pluginId,
+      phase: 'cleanup-completed',
+      result: 'blocked',
+      classification: 'cleanup-token-replay-rejected',
+      reason: 'cleanup-execution-token-replayed',
+      operationId: options?.operationId ?? null,
+      correlationId: options?.correlationId ?? null,
+      evidence: {
+        cleanupSchemaVersion: CLEANUP_PLAN_SCHEMA_VERSION,
+        cleanupPlanVersion: planVersion,
+        cleanupStateFingerprint: plan.stateFingerprint,
+        executionTokenHash,
+      },
+    });
     throw new Error('cleanup-execution-token-replayed');
   }
 
@@ -101,129 +165,158 @@ export async function executePluginCutoverCleanup(
   const keys = legacyCleanupMarkerKeys(pluginId);
   let affectedRows = 0;
 
-  await db.transaction(async (trx) => {
-    // Ensure there is a durable state row we can atomically claim against.
-    await trx('devholm_plugin_cutover_reconciliation_states')
-      .insert({
-        plugin_id: pluginId,
-        phase: 'legacy-path-decommissioned',
-        operation_id: options?.operationId ?? null,
-        correlation_id: options?.correlationId ?? null,
-        classification: 'cleanup-claim-initialized',
-        blocking: false,
-        reason: 'cleanup execution claim initialized',
-        evidence: null,
-        snapshot: null,
-        cleanup_schema_version: null,
-        cleanup_state_fingerprint: null,
-        cleanup_plan_version: null,
-        cleanup_execution_token_hash: null,
-        cleanup_executed_at: null,
-        inspected_at: new Date(),
-        phase_updated_at: new Date(),
-        created_at: new Date(),
-        updated_at: new Date(),
-      })
-      .onConflict('plugin_id')
-      .ignore();
+  await db
+    .transaction(async (trx) => {
+      // Ensure there is a durable state row we can atomically claim against.
+      await trx('devholm_plugin_cutover_reconciliation_states')
+        .insert({
+          plugin_id: pluginId,
+          phase: 'legacy-path-decommissioned',
+          operation_id: options?.operationId ?? null,
+          correlation_id: options?.correlationId ?? null,
+          classification: 'cleanup-claim-initialized',
+          blocking: false,
+          reason: 'cleanup execution claim initialized',
+          evidence: null,
+          snapshot: null,
+          cleanup_schema_version: null,
+          cleanup_state_fingerprint: null,
+          cleanup_plan_version: null,
+          cleanup_execution_token_hash: null,
+          cleanup_executed_at: null,
+          inspected_at: new Date(),
+          phase_updated_at: new Date(),
+          created_at: new Date(),
+          updated_at: new Date(),
+        })
+        .onConflict('plugin_id')
+        .ignore();
 
-    const claimCount = await trx('devholm_plugin_cutover_reconciliation_states')
-      .where({ plugin_id: pluginId })
-      .whereNull('cleanup_execution_token_hash')
-      .update({
-        cleanup_schema_version: CLEANUP_PLAN_SCHEMA_VERSION,
-        cleanup_state_fingerprint: plan.stateFingerprint,
-        cleanup_plan_version: planVersion,
-        cleanup_execution_token_hash: executionTokenHash,
-        cleanup_executed_at: null,
-        updated_at: new Date(),
-      });
-
-    if (!claimCount) {
-      const state = await trx('devholm_plugin_cutover_reconciliation_states')
-        .select('cleanup_execution_token_hash', 'cleanup_executed_at')
+      const claimCount = await trx('devholm_plugin_cutover_reconciliation_states')
         .where({ plugin_id: pluginId })
-        .first();
+        .whereNull('cleanup_execution_token_hash')
+        .update({
+          cleanup_schema_version: CLEANUP_PLAN_SCHEMA_VERSION,
+          cleanup_state_fingerprint: plan.stateFingerprint,
+          cleanup_plan_version: planVersion,
+          cleanup_execution_token_hash: executionTokenHash,
+          cleanup_executed_at: null,
+          updated_at: new Date(),
+        });
 
-      if (isReplayState(state ?? {}, executionTokenHash)) {
-        throw new Error('cleanup-execution-token-replayed');
+      if (!claimCount) {
+        const state = await trx('devholm_plugin_cutover_reconciliation_states')
+          .select('cleanup_execution_token_hash', 'cleanup_executed_at')
+          .where({ plugin_id: pluginId })
+          .first();
+
+        if (isReplayState(state ?? {}, executionTokenHash)) {
+          throw new Error('cleanup-execution-token-replayed');
+        }
+
+        throw new Error('cleanup-execution-claim-conflict');
       }
 
-      throw new Error('cleanup-execution-claim-conflict');
-    }
+      if (plan.hasLegacyEnabledSetting) {
+        const deleted = await trx('site_settings').where({ key: keys.enabled }).del();
+        affectedRows += Number(deleted ?? 0);
+      }
 
-    if (plan.hasLegacyEnabledSetting) {
-      const deleted = await trx('site_settings').where({ key: keys.enabled }).del();
-      affectedRows += Number(deleted ?? 0);
-    }
+      await trx('site_settings')
+        .insert({
+          key: keys.tombstoned,
+          value: new Date().toISOString(),
+          type: 'string',
+          category: 'plugins',
+          description: `${pluginId} legacy state tombstone marker`,
+          updated_at: new Date(),
+        })
+        .onConflict('key')
+        .merge({
+          value: new Date().toISOString(),
+          updated_at: new Date(),
+        });
 
-    await trx('site_settings')
-      .insert({
-        key: keys.tombstoned,
-        value: new Date().toISOString(),
-        type: 'string',
-        category: 'plugins',
-        description: `${pluginId} legacy state tombstone marker`,
-        updated_at: new Date(),
-      })
-      .onConflict('key')
-      .merge({
-        value: new Date().toISOString(),
-        updated_at: new Date(),
-      });
+      const state = await upsertPluginCutoverReconciliationState(
+        {
+          pluginId,
+          phase: 'cleanup-completed',
+          operationId: options?.operationId ?? null,
+          correlationId: options?.correlationId ?? null,
+          classification: 'legacy-cleanup-tombstoned',
+          blocking: false,
+          reason: 'Legacy compatibility state tombstoned and runtime authority remains canonical.',
+          evidence: {
+            cleanupSchemaVersion: CLEANUP_PLAN_SCHEMA_VERSION,
+            cleanupMode: 'tombstone',
+            affectedRows,
+            planVersion,
+            stateFingerprint: plan.stateFingerprint,
+            excludedDomainDataTables: plan.excludedDomainDataTables,
+          },
+          cleanupSchemaVersion: CLEANUP_PLAN_SCHEMA_VERSION,
+          cleanupStateFingerprint: plan.stateFingerprint,
+          cleanupPlanVersion: planVersion,
+          cleanupExecutionTokenHash: executionTokenHash,
+          cleanupExecutedAt: new Date().toISOString(),
+        },
+        trx
+      );
 
-    const state = await upsertPluginCutoverReconciliationState(
-      {
+      await trx('devholm_plugin_cutover_reconciliation_states')
+        .where({ plugin_id: pluginId })
+        .update({
+          cleanup_schema_version: CLEANUP_PLAN_SCHEMA_VERSION,
+          cleanup_state_fingerprint: plan.stateFingerprint,
+          cleanup_plan_version: planVersion,
+          cleanup_execution_token_hash: executionTokenHash,
+          cleanup_executed_at: new Date(),
+          updated_at: new Date(),
+        });
+
+      await appendPluginCutoverReconciliationEvent(
+        {
+          pluginId,
+          phase: state.phase,
+          result: 'applied',
+          operationId: options?.operationId ?? null,
+          correlationId: options?.correlationId ?? null,
+          classification: state.classification,
+          blocking: false,
+          reason: state.reason ?? 'Cleanup tombstone applied',
+          evidence: state.evidence,
+        },
+        trx
+      );
+    })
+    .catch(async (error: unknown) => {
+      const err = error instanceof Error ? error : new Error(String(error));
+      const blockedKnownError =
+        err.message === 'cleanup-execution-token-replayed' ||
+        err.message === 'cleanup-execution-claim-conflict';
+
+      await appendCleanupRejectionAudit(db, {
         pluginId,
-        phase: 'cleanup-completed',
+        phase: blockedKnownError ? 'legacy-path-decommissioned' : 'cleanup-completed',
+        result: blockedKnownError ? 'blocked' : 'failed',
+        classification: blockedKnownError
+          ? err.message === 'cleanup-execution-token-replayed'
+            ? 'cleanup-token-replay-rejected'
+            : 'cleanup-claim-conflict-rejected'
+          : 'cleanup-transaction-failed',
+        reason: err.message,
         operationId: options?.operationId ?? null,
         correlationId: options?.correlationId ?? null,
-        classification: 'legacy-cleanup-tombstoned',
-        blocking: false,
-        reason: 'Legacy compatibility state tombstoned and runtime authority remains canonical.',
         evidence: {
           cleanupSchemaVersion: CLEANUP_PLAN_SCHEMA_VERSION,
-          cleanupMode: 'tombstone',
-          affectedRows,
-          planVersion,
-          stateFingerprint: plan.stateFingerprint,
-          excludedDomainDataTables: plan.excludedDomainDataTables,
+          cleanupPlanVersion: planVersion,
+          cleanupStateFingerprint: plan.stateFingerprint,
+          executionTokenHash,
         },
-        cleanupSchemaVersion: CLEANUP_PLAN_SCHEMA_VERSION,
-        cleanupStateFingerprint: plan.stateFingerprint,
-        cleanupPlanVersion: planVersion,
-        cleanupExecutionTokenHash: executionTokenHash,
-        cleanupExecutedAt: new Date().toISOString(),
-      },
-      trx
-    );
-
-    await trx('devholm_plugin_cutover_reconciliation_states')
-      .where({ plugin_id: pluginId })
-      .update({
-        cleanup_schema_version: CLEANUP_PLAN_SCHEMA_VERSION,
-        cleanup_state_fingerprint: plan.stateFingerprint,
-        cleanup_plan_version: planVersion,
-        cleanup_execution_token_hash: executionTokenHash,
-        cleanup_executed_at: new Date(),
-        updated_at: new Date(),
       });
 
-    await appendPluginCutoverReconciliationEvent(
-      {
-        pluginId,
-        phase: state.phase,
-        result: 'applied',
-        operationId: options?.operationId ?? null,
-        correlationId: options?.correlationId ?? null,
-        classification: state.classification,
-        blocking: false,
-        reason: state.reason ?? 'Cleanup tombstone applied',
-        evidence: state.evidence,
-      },
-      trx
-    );
-  });
+      throw err;
+    });
 
   return {
     pluginId,

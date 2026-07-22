@@ -110,6 +110,107 @@ describe('plugin cutover cleanup executor', () => {
     expect(upsertPluginCutoverReconciliationState).not.toHaveBeenCalled();
   });
 
+  it('reports ineligible dry-run blockers without mutation or claim attempts', async () => {
+    buildPluginCutoverCleanupPlan.mockResolvedValueOnce({
+      pluginId: 'url-shortener',
+      mode: 'tombstone',
+      cleanupEligible: false,
+      blockers: ['legacy-not-logically-decommissioned'],
+      rollbackAvailable: true,
+      irreversibleBoundary: false,
+      hasLegacyEnabledSetting: true,
+      hasLogicalDecommissionMarker: false,
+      hasCleanupTombstoneMarker: false,
+      proposedChanges: [],
+      excludedDomainDataTables: ['u_url_shortener_links'],
+      stateBinding: {
+        pluginId: 'url-shortener',
+        canonicalIdentity: {
+          lifecycleState: 'installed',
+          installedVersion: '0.1.0',
+          bundledVersion: '0.1.0',
+          enabled: true,
+          manifestChecksum: null,
+          updatedAtIso: null,
+        },
+        legacyIdentity: {
+          hasLegacyEnabledSetting: true,
+          hasLogicalDecommissionMarker: false,
+          hasCleanupTombstoneMarker: false,
+        },
+        cutoverIdentity: {
+          phase: 'canonical-ownership-activated',
+          classification: 'legacy-still-authoritative',
+          blocking: true,
+          updatedAtIso: null,
+        },
+        rollbackIdentity: {
+          status: 'succeeded',
+          rollbackEligible: true,
+          irreversibleBoundary: false,
+          attemptCount: 1,
+        },
+        operationIdentity: {
+          hasActiveOperation: false,
+          activeOperationId: null,
+        },
+      },
+      stateFingerprint: 'fp-ineligible',
+    });
+
+    const transactionSpy = vi.fn();
+    const db = Object.assign(
+      vi.fn(() => {
+        throw new Error('dry-run should not query durable claim state');
+      }),
+      { transaction: transactionSpy }
+    ) as never;
+
+    const { executePluginCutoverCleanup } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
+
+    const result = await executePluginCutoverCleanup('url-shortener', {
+      dryRun: true,
+      db,
+    });
+
+    expect(result.cleanupEligible).toBe(false);
+    expect(result.blockers).toEqual(['legacy-not-logically-decommissioned']);
+    expect(result.executed).toBe(false);
+    expect(transactionSpy).not.toHaveBeenCalled();
+    expect(upsertPluginCutoverReconciliationState).not.toHaveBeenCalled();
+    expect(appendPluginCutoverReconciliationEvent).not.toHaveBeenCalled();
+  });
+
+  it('keeps repeated dry-runs non-mutating and deterministic', async () => {
+    const transactionSpy = vi.fn();
+    const db = Object.assign(
+      vi.fn(() => {
+        throw new Error('dry-run should not query durable claim state');
+      }),
+      { transaction: transactionSpy }
+    ) as never;
+
+    const { executePluginCutoverCleanup } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
+
+    const first = await executePluginCutoverCleanup('url-shortener', {
+      dryRun: true,
+      db,
+    });
+    const second = await executePluginCutoverCleanup('url-shortener', {
+      dryRun: true,
+      db,
+    });
+
+    expect(first).toEqual(second);
+    expect(transactionSpy).not.toHaveBeenCalled();
+    expect(upsertPluginCutoverReconciliationState).not.toHaveBeenCalled();
+    expect(appendPluginCutoverReconciliationEvent).not.toHaveBeenCalled();
+  });
+
   it('rejects non-dry-run cleanup execution when intent is missing or stale', async () => {
     const { executePluginCutoverCleanup } = await import(
       '@core/lib/plugin-cutover-cleanup-executor.server'
@@ -121,6 +222,14 @@ describe('plugin cutover cleanup executor', () => {
         db: { transaction: vi.fn() } as never,
       })
     ).rejects.toThrow(/cleanup execution intent is required/);
+    expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pluginId: 'url-shortener',
+        result: 'blocked',
+        classification: 'cleanup-intent-rejected',
+      }),
+      expect.anything()
+    );
 
     await expect(
       executePluginCutoverCleanup('url-shortener', {
