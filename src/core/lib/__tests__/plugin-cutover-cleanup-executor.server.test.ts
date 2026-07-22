@@ -216,10 +216,64 @@ describe('plugin cutover cleanup executor', () => {
       '@core/lib/plugin-cutover-cleanup-executor.server'
     );
 
+    const mkTransactionalDb = () => {
+      const trx = ((tableName: string) => {
+        if (tableName === 'devholm_plugin_cutover_reconciliation_states') {
+          return {
+            insert: vi.fn(() => ({
+              onConflict: vi.fn(() => ({ ignore: vi.fn(async () => undefined) })),
+            })),
+            select: vi.fn(() => ({
+              where: vi.fn(() => ({
+                forUpdate: vi.fn(() => ({ first: vi.fn(async () => null) })),
+                first: vi.fn(async () => null),
+              })),
+            })),
+            where: vi.fn(() => ({
+              whereNull: vi.fn(() => ({ update: vi.fn(async () => 1) })),
+              update: vi.fn(async () => 1),
+            })),
+          };
+        }
+
+        if (tableName === 'site_settings') {
+          return {
+            where: vi.fn(() => ({ del: vi.fn(async () => 0) })),
+            insert: vi.fn(() => ({
+              onConflict: vi.fn(() => ({ merge: vi.fn(async () => undefined) })),
+            })),
+          };
+        }
+
+        throw new Error(`unexpected table ${tableName}`);
+      }) as unknown as ReturnType<typeof vi.fn>;
+
+      Object.assign(trx, {
+        raw: vi.fn(async () => undefined),
+      });
+
+      return Object.assign(
+        ((tableName: string) => {
+          if (tableName === 'devholm_plugin_cutover_reconciliation_states') {
+            return {
+              select: vi.fn(() => ({
+                where: vi.fn(() => ({ first: vi.fn(async () => null) })),
+              })),
+            };
+          }
+
+          throw new Error(`unexpected table ${tableName}`);
+        }) as unknown as ReturnType<typeof vi.fn>,
+        {
+          transaction: async (callback: (trxDb: typeof trx) => Promise<void>) => callback(trx),
+        }
+      ) as never;
+    };
+
     await expect(
       executePluginCutoverCleanup('url-shortener', {
         dryRun: false,
-        db: { transaction: vi.fn() } as never,
+        db: mkTransactionalDb(),
       })
     ).rejects.toThrow(/cleanup execution intent is required/);
     expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledWith(
@@ -241,7 +295,7 @@ describe('plugin cutover cleanup executor', () => {
           stateFingerprint: 'fp-1',
           executionToken: 'token-stale',
         },
-        db: { transaction: vi.fn() } as never,
+        db: mkTransactionalDb(),
       })
     ).rejects.toThrow(/stale-cleanup-plan-version/);
 
@@ -255,7 +309,7 @@ describe('plugin cutover cleanup executor', () => {
           stateFingerprint: 'fp-1',
           executionToken: 'token-schema-mismatch',
         },
-        db: { transaction: vi.fn() } as never,
+        db: mkTransactionalDb(),
       })
     ).rejects.toThrow(/unsupported-cleanup-plan-schema-version/);
 
@@ -269,7 +323,7 @@ describe('plugin cutover cleanup executor', () => {
           stateFingerprint: 'fp-mismatch',
           executionToken: 'token-fp-mismatch',
         },
-        db: { transaction: vi.fn() } as never,
+        db: mkTransactionalDb(),
       })
     ).rejects.toThrow(/cleanup-state-fingerprint-mismatch/);
   });
@@ -300,13 +354,20 @@ describe('plugin cutover cleanup executor', () => {
             update: vi.fn(async () => 1),
           })),
           select: vi.fn(() => ({
-            where: vi.fn(() => ({ first: vi.fn(async () => cleanupState) })),
+            where: vi.fn(() => ({
+              forUpdate: vi.fn(() => ({ first: vi.fn(async () => cleanupState) })),
+              first: vi.fn(async () => cleanupState),
+            })),
           })),
         };
       }
 
       throw new Error(`unexpected table ${tableName}`);
     }) as unknown as ReturnType<typeof vi.fn>;
+
+    Object.assign(trx, {
+      raw: vi.fn(async () => undefined),
+    });
 
     const db = Object.assign(
       ((tableName: string) => {
@@ -393,13 +454,20 @@ describe('plugin cutover cleanup executor', () => {
             update: vi.fn(async () => 1),
           })),
           select: vi.fn(() => ({
-            where: vi.fn(() => ({ first: vi.fn(async () => cleanupState) })),
+            where: vi.fn(() => ({
+              forUpdate: vi.fn(() => ({ first: vi.fn(async () => cleanupState) })),
+              first: vi.fn(async () => cleanupState),
+            })),
           })),
         };
       }
 
       throw new Error(`unexpected table ${tableName}`);
     }) as unknown as ReturnType<typeof vi.fn>;
+
+    Object.assign(trx, {
+      raw: vi.fn(async () => undefined),
+    });
 
     const tableDb = ((tableName: string) => {
       if (tableName === 'devholm_plugin_cutover_reconciliation_states') {

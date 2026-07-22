@@ -11,19 +11,31 @@ import {
 } from './plugin-cutover-cleanup-planner.server';
 import {
   assertCleanupExecutionIntentMatchesPlan,
-  computePluginCutoverCleanupPlanVersion,
   CLEANUP_PLAN_SCHEMA_VERSION,
+  computePluginCutoverCleanupPlanVersion,
   type PluginCutoverCleanupExecutionIntent,
 } from './plugin-cutover-cleanup-contract.server';
 
-async function appendCleanupRejectionAudit(
+const LIFECYCLE_LOCK_NAMESPACE = 'devholm.plugin.lifecycle';
+
+class CleanupPlanIneligibleError extends Error {
+  readonly blockers: string[];
+
+  constructor(blockers: string[]) {
+    super('cleanup-plan-ineligible');
+    this.blockers = blockers;
+  }
+}
+
+async function appendCleanupAudit(
   db: Knex,
   input: {
     pluginId: string;
     phase: 'legacy-path-decommissioned' | 'cleanup-completed';
-    result: 'blocked' | 'failed';
+    result: 'applied' | 'blocked' | 'failed';
     classification: string;
     reason: string;
+    blocking: boolean;
     operationId?: string | null;
     correlationId?: string | null;
     evidence?: Record<string, unknown>;
@@ -37,7 +49,7 @@ async function appendCleanupRejectionAudit(
       operationId: input.operationId ?? null,
       correlationId: input.correlationId ?? null,
       classification: input.classification,
-      blocking: true,
+      blocking: input.blocking,
       reason: input.reason,
       evidence: input.evidence ?? null,
     },
@@ -87,86 +99,134 @@ export async function executePluginCutoverCleanup(
   const db = options?.db ?? getDb();
   const dryRun = options?.dryRun !== false;
 
-  const plan = await buildPluginCutoverCleanupPlan(pluginId, db);
-  const executionToken = options?.intent?.executionToken ?? '';
-  const executionTokenHash = executionToken ? hashCleanupExecutionToken(executionToken) : null;
-
   if (dryRun) {
+    const dryRunPlan = await buildPluginCutoverCleanupPlan(pluginId, db);
     return {
       pluginId,
       mode: 'tombstone',
       dryRun: true,
-      cleanupEligible: plan.cleanupEligible,
+      cleanupEligible: dryRunPlan.cleanupEligible,
       executed: false,
-      blockers: plan.blockers,
+      blockers: dryRunPlan.blockers,
       affectedRows: 0,
     };
   }
 
-  let planVersion = '';
-  try {
-    assertCleanupExecutionIntentMatchesPlan(options?.intent, plan, plan.stateFingerprint);
-    planVersion = computePluginCutoverCleanupPlanVersion(plan);
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    await appendCleanupRejectionAudit(db, {
+  const intent = options?.intent;
+  const executionToken = intent?.executionToken ?? '';
+  const executionTokenHash = executionToken ? hashCleanupExecutionToken(executionToken) : null;
+
+  await appendCleanupAudit(db, {
+    pluginId,
+    phase: 'legacy-path-decommissioned',
+    result: 'blocked',
+    classification: 'cleanup-requested',
+    reason: 'cleanup execution requested',
+    blocking: false,
+    operationId: options?.operationId ?? null,
+    correlationId: options?.correlationId ?? null,
+    evidence: {
+      cleanupSchemaVersion: intent?.schemaVersion ?? null,
+      cleanupPlanVersion: intent?.planVersion ?? null,
+      cleanupStateFingerprint: intent?.stateFingerprint ?? null,
+      executionTokenHash,
+    },
+  });
+
+  if (!intent) {
+    const err = new Error('cleanup execution intent is required');
+    await appendCleanupAudit(db, {
       pluginId,
       phase: 'legacy-path-decommissioned',
       result: 'blocked',
       classification: 'cleanup-intent-rejected',
       reason: err.message,
+      blocking: true,
       operationId: options?.operationId ?? null,
       correlationId: options?.correlationId ?? null,
       evidence: {
-        cleanupSchemaVersion: options?.intent?.schemaVersion ?? null,
-        cleanupPlanVersion: options?.intent?.planVersion ?? null,
-        cleanupStateFingerprint: options?.intent?.stateFingerprint ?? null,
+        cleanupSchemaVersion: null,
+        cleanupPlanVersion: null,
+        cleanupStateFingerprint: null,
+        executionTokenHash,
       },
     });
     throw err;
   }
 
-  const durableReplayState = await db('devholm_plugin_cutover_reconciliation_states')
-    .select('cleanup_execution_token_hash', 'cleanup_executed_at')
-    .where({ plugin_id: pluginId })
-    .first();
-
-  if (isReplayState(durableReplayState ?? {}, executionTokenHash)) {
-    await appendCleanupRejectionAudit(db, {
+  if (intent.schemaVersion !== CLEANUP_PLAN_SCHEMA_VERSION) {
+    const err = new Error('unsupported-cleanup-plan-schema-version');
+    await appendCleanupAudit(db, {
       pluginId,
-      phase: 'cleanup-completed',
+      phase: 'legacy-path-decommissioned',
       result: 'blocked',
-      classification: 'cleanup-token-replay-rejected',
-      reason: 'cleanup-execution-token-replayed',
+      classification: 'cleanup-intent-rejected',
+      reason: err.message,
+      blocking: true,
       operationId: options?.operationId ?? null,
       correlationId: options?.correlationId ?? null,
       evidence: {
-        cleanupSchemaVersion: CLEANUP_PLAN_SCHEMA_VERSION,
-        cleanupPlanVersion: planVersion,
-        cleanupStateFingerprint: plan.stateFingerprint,
+        cleanupSchemaVersion: intent.schemaVersion,
+        cleanupPlanVersion: intent.planVersion,
+        cleanupStateFingerprint: intent.stateFingerprint,
         executionTokenHash,
       },
     });
-    throw new Error('cleanup-execution-token-replayed');
+    throw err;
   }
 
-  if (!plan.cleanupEligible) {
-    return {
+  if (intent.pluginId !== pluginId) {
+    const err = new Error('cleanup execution intent plugin mismatch');
+    await appendCleanupAudit(db, {
       pluginId,
-      mode: 'tombstone',
-      dryRun,
-      cleanupEligible: false,
-      executed: false,
-      blockers: plan.blockers,
-      affectedRows: 0,
-    };
+      phase: 'legacy-path-decommissioned',
+      result: 'blocked',
+      classification: 'cleanup-intent-rejected',
+      reason: err.message,
+      blocking: true,
+      operationId: options?.operationId ?? null,
+      correlationId: options?.correlationId ?? null,
+      evidence: {
+        cleanupSchemaVersion: intent.schemaVersion,
+        cleanupPlanVersion: intent.planVersion,
+        cleanupStateFingerprint: intent.stateFingerprint,
+        executionTokenHash,
+      },
+    });
+    throw err;
   }
 
-  const keys = legacyCleanupMarkerKeys(pluginId);
-  let affectedRows = 0;
+  if (!intent.executionToken || intent.executionToken.trim().length === 0) {
+    const err = new Error('cleanup execution token is required');
+    await appendCleanupAudit(db, {
+      pluginId,
+      phase: 'legacy-path-decommissioned',
+      result: 'blocked',
+      classification: 'cleanup-intent-rejected',
+      reason: err.message,
+      blocking: true,
+      operationId: options?.operationId ?? null,
+      correlationId: options?.correlationId ?? null,
+      evidence: {
+        cleanupSchemaVersion: intent.schemaVersion,
+        cleanupPlanVersion: intent.planVersion,
+        cleanupStateFingerprint: intent.stateFingerprint,
+        executionTokenHash,
+      },
+    });
+    throw err;
+  }
 
-  await db
-    .transaction(async (trx) => {
+  let affectedRows = 0;
+  let ineligibleBlockers: string[] | null = null;
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw('select pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
+        LIFECYCLE_LOCK_NAMESPACE,
+        pluginId,
+      ]);
+
       // Ensure there is a durable state row we can atomically claim against.
       await trx('devholm_plugin_cutover_reconciliation_states')
         .insert({
@@ -192,6 +252,24 @@ export async function executePluginCutoverCleanup(
         .onConflict('plugin_id')
         .ignore();
 
+      const lockedStateRow = await trx('devholm_plugin_cutover_reconciliation_states')
+        .select('cleanup_execution_token_hash', 'cleanup_executed_at')
+        .where({ plugin_id: pluginId })
+        .forUpdate()
+        .first();
+
+      if (isReplayState(lockedStateRow ?? {}, executionTokenHash)) {
+        throw new Error('cleanup-execution-token-replayed');
+      }
+
+      const plan = await buildPluginCutoverCleanupPlan(pluginId, trx);
+      assertCleanupExecutionIntentMatchesPlan(intent, plan, plan.stateFingerprint);
+      const planVersion = computePluginCutoverCleanupPlanVersion(plan);
+
+      if (!plan.cleanupEligible) {
+        throw new CleanupPlanIneligibleError(plan.blockers);
+      }
+
       const claimCount = await trx('devholm_plugin_cutover_reconciliation_states')
         .where({ plugin_id: pluginId })
         .whereNull('cleanup_execution_token_hash')
@@ -216,6 +294,28 @@ export async function executePluginCutoverCleanup(
 
         throw new Error('cleanup-execution-claim-conflict');
       }
+
+      await appendPluginCutoverReconciliationEvent(
+        {
+          pluginId,
+          phase: 'legacy-path-decommissioned',
+          result: 'applied',
+          operationId: options?.operationId ?? null,
+          correlationId: options?.correlationId ?? null,
+          classification: 'cleanup-claim-acquired',
+          blocking: false,
+          reason: 'cleanup execution claim acquired',
+          evidence: {
+            cleanupSchemaVersion: CLEANUP_PLAN_SCHEMA_VERSION,
+            cleanupPlanVersion: planVersion,
+            cleanupStateFingerprint: plan.stateFingerprint,
+            executionTokenHash,
+          },
+        },
+        trx
+      );
+
+      const keys = legacyCleanupMarkerKeys(pluginId);
 
       if (plan.hasLegacyEnabledSetting) {
         const deleted = await trx('site_settings').where({ key: keys.enabled }).del();
@@ -288,35 +388,95 @@ export async function executePluginCutoverCleanup(
         },
         trx
       );
-    })
-    .catch(async (error: unknown) => {
-      const err = error instanceof Error ? error : new Error(String(error));
+    });
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
+
+    if (err instanceof CleanupPlanIneligibleError) {
+      ineligibleBlockers = err.blockers;
+      try {
+        await appendCleanupAudit(db, {
+          pluginId,
+          phase: 'legacy-path-decommissioned',
+          result: 'blocked',
+          classification: 'cleanup-plan-ineligible',
+          reason: 'cleanup plan is not eligible for execution',
+          blocking: true,
+          operationId: options?.operationId ?? null,
+          correlationId: options?.correlationId ?? null,
+          evidence: {
+            blockers: err.blockers,
+            cleanupSchemaVersion: intent.schemaVersion,
+            cleanupPlanVersion: intent.planVersion,
+            cleanupStateFingerprint: intent.stateFingerprint,
+            executionTokenHash,
+          },
+        });
+      } catch (auditError) {
+        const auditErr = auditError instanceof Error ? auditError : new Error(String(auditError));
+        console.error('cleanup audit persistence failed for ineligible execution', {
+          pluginId,
+          auditError: auditErr.message,
+        });
+      }
+    } else {
       const blockedKnownError =
         err.message === 'cleanup-execution-token-replayed' ||
-        err.message === 'cleanup-execution-claim-conflict';
+        err.message === 'cleanup-execution-claim-conflict' ||
+        err.message === 'stale-cleanup-plan-version' ||
+        err.message === 'cleanup-state-fingerprint-mismatch' ||
+        err.message === 'cleanup execution intent is required' ||
+        err.message === 'unsupported-cleanup-plan-schema-version' ||
+        err.message === 'cleanup execution intent plugin mismatch' ||
+        err.message === 'cleanup execution token is required';
 
-      await appendCleanupRejectionAudit(db, {
-        pluginId,
-        phase: blockedKnownError ? 'legacy-path-decommissioned' : 'cleanup-completed',
-        result: blockedKnownError ? 'blocked' : 'failed',
-        classification: blockedKnownError
-          ? err.message === 'cleanup-execution-token-replayed'
-            ? 'cleanup-token-replay-rejected'
-            : 'cleanup-claim-conflict-rejected'
-          : 'cleanup-transaction-failed',
-        reason: err.message,
-        operationId: options?.operationId ?? null,
-        correlationId: options?.correlationId ?? null,
-        evidence: {
-          cleanupSchemaVersion: CLEANUP_PLAN_SCHEMA_VERSION,
-          cleanupPlanVersion: planVersion,
-          cleanupStateFingerprint: plan.stateFingerprint,
-          executionTokenHash,
-        },
-      });
+      try {
+        await appendCleanupAudit(db, {
+          pluginId,
+          phase: blockedKnownError ? 'legacy-path-decommissioned' : 'cleanup-completed',
+          result: blockedKnownError ? 'blocked' : 'failed',
+          classification: blockedKnownError
+            ? err.message === 'cleanup-execution-token-replayed'
+              ? 'cleanup-token-replay-rejected'
+              : err.message === 'cleanup-execution-claim-conflict'
+                ? 'cleanup-claim-conflict-rejected'
+                : 'cleanup-intent-rejected'
+            : 'cleanup-transaction-failed',
+          reason: err.message,
+          blocking: true,
+          operationId: options?.operationId ?? null,
+          correlationId: options?.correlationId ?? null,
+          evidence: {
+            cleanupSchemaVersion: intent.schemaVersion,
+            cleanupPlanVersion: intent.planVersion,
+            cleanupStateFingerprint: intent.stateFingerprint,
+            executionTokenHash,
+          },
+        });
+      } catch (auditError) {
+        const auditErr = auditError instanceof Error ? auditError : new Error(String(auditError));
+        console.error('cleanup audit persistence failed after cleanup error', {
+          pluginId,
+          originalError: err.message,
+          auditError: auditErr.message,
+        });
+      }
 
       throw err;
-    });
+    }
+  }
+
+  if (ineligibleBlockers) {
+    return {
+      pluginId,
+      mode: 'tombstone',
+      dryRun,
+      cleanupEligible: false,
+      executed: false,
+      blockers: ineligibleBlockers,
+      affectedRows: 0,
+    };
+  }
 
   return {
     pluginId,
