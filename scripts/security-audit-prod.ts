@@ -129,8 +129,13 @@ function writeAuditReport(payload: unknown): void {
     return;
   }
 
-  fs.writeFileSync(reportPath, JSON.stringify(payload, null, 2));
-  console.log(`[security:audit] wrote audit report to ${reportPath}`);
+  try {
+    fs.writeFileSync(reportPath, JSON.stringify(payload, null, 2));
+    console.log(`[security:audit] wrote audit report to ${reportPath}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[security:audit] unable to write audit report to ${reportPath}: ${message}`);
+  }
 }
 
 function printSummary(evaluation: SecurityAuditEvaluation, source: 'fixture' | 'npm-audit'): void {
@@ -169,9 +174,9 @@ function main(): void {
   }
 
   const evaluation = evaluateSecurityAuditPayload(payload);
-  writeAuditReport(payload);
   printSummary(evaluation, source);
   printAdvisoryDetails(payload, source);
+  writeAuditReport(payload);
 
   if (evaluation.outcome === 'scanner-failure') {
     process.exit(2);

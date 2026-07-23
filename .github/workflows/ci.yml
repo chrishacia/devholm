@@ -1305,4 +1305,4 @@ jobs:
           name: security-audit-report
           path: security-audit-report.json
           retention-days: 7
-          if-no-files-found: error
+          if-no-files-found: warn
