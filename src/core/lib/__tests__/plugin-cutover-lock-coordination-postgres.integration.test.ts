@@ -29,6 +29,43 @@ function createTimeoutClient(): Knex {
   return createIndependentClient(parsed.toString());
 }
 
+async function waitForPluginLockWaiters(options: {
+  db: Knex;
+  dbName: string;
+  pluginId: string;
+  expectedCount: number;
+  timeoutMs?: number;
+}): Promise<void> {
+  const deadline = Date.now() + (options.timeoutMs ?? 5000);
+
+  while (Date.now() < deadline) {
+    const probe = await options.db.raw<{ rows: Array<{ waiters: string | number }> }>(
+      `
+        select count(*)::int as waiters
+        from pg_locks l
+        join pg_stat_activity a on a.pid = l.pid
+        where a.datname = ?
+          and l.locktype = 'advisory'
+          and l.granted = false
+          and l.classid = hashtext(?)
+          and l.objid = hashtext(?)
+      `,
+      [options.dbName, 'devholm.plugin.lifecycle', options.pluginId]
+    );
+
+    const waiters = Number(probe.rows[0]?.waiters ?? 0);
+    if (waiters >= options.expectedCount) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+
+  throw new Error(
+    `timed out waiting for ${options.expectedCount} lifecycle lock waiters for ${options.pluginId}`
+  );
+}
+
 function requireBaseDatabaseUrl(): string {
   if (!configuredTestDbUrl) {
     throw new Error(
@@ -177,32 +214,241 @@ postgresDescribe('plugin cutover lock coordination PostgreSQL integration', () =
   });
 
   it('reconcileSinglePluginLifecycle schedule-rollback path completes without deadlock and runs real rollback', async () => {
-    const reconciler = await import('@core/lib/plugin-lifecycle-reconciler.server');
-    const rollback = await import('@core/lib/plugin-cutover-rollback-executor.server');
+    const lifecycleDb = await import('@core/db/plugin-lifecycle');
     const recoveryRunner = await import('@core/lib/plugin-lifecycle-recovery-runner.server');
 
     await seedInstalledPlugin(integrationDb);
 
-    const reconcileSpy = vi.spyOn(reconciler, 'reconcilePluginLifecycleState').mockResolvedValue({
-      action: 'schedule-rollback',
-      reason: 'forced schedule rollback for deadlock regression proof',
-      operationId: 'op-reconcile-schedule-rollback-proof',
+    const now = Date.now();
+    const operationId = 'op-reconcile-schedule-rollback-proof';
+    const startedAt = new Date(now - 60_000).toISOString();
+    const leaseExpiresAt = new Date(now - 30_000).toISOString();
+
+    await lifecycleDb.writePluginLifecycleOperationRecord({
+      schemaVersion: 1,
+      operationId,
+      pluginId: 'url-shortener',
+      action: 'update',
+      status: 'running',
+      actor: 'postgres-integration',
+      leaseOwner: 'postgres-integration',
+      leaseExpiresAt,
+      mutationAuthorityVersion: 'v2',
+      correlationId: operationId,
+      currentPhase: 'executing',
+      startedAt,
+      updatedAt: startedAt,
+      attemptCount: 1,
+      priorStateSnapshot: {
+        installed: true,
+        enabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '0.1.0',
+        bundledVersion: '0.1.0',
+        updatedAt: startedAt,
+      },
+      nextStateSnapshot: {
+        installed: true,
+        enabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'pending_upgrade',
+        installedVersion: '0.2.0',
+        bundledVersion: '0.2.0',
+        updatedAt: startedAt,
+      },
     });
 
-    const rollbackSpy = vi.spyOn(rollback, 'executePluginCutoverRollback');
+    await lifecycleDb.writePluginLifecycleTransitionEvent({
+      schemaVersion: 1,
+      eventId: 'evt-reconcile-schedule-rollback-proof',
+      operationId,
+      pluginId: 'url-shortener',
+      transition: 'update',
+      result: 'failed',
+      actor: 'postgres-integration',
+      correlationId: operationId,
+      timestamp: startedAt,
+      previousState: {
+        installed: true,
+        enabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '0.1.0',
+        bundledVersion: '0.1.0',
+        updatedAt: startedAt,
+      },
+      nextState: {
+        installed: true,
+        enabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'pending_upgrade',
+        installedVersion: '0.2.0',
+        bundledVersion: '0.2.0',
+        updatedAt: startedAt,
+      },
+      pluginVersion: '0.2.0',
+      artifactDigest: 'sha256:rollback-proof',
+      error: {
+        code: 'LIFECYCLE_FORCED_FAILURE',
+        message: 'forced for rollback derivation proof',
+        retryable: true,
+      },
+    });
 
     const result = await recoveryRunner.reconcileSinglePluginLifecycle('url-shortener');
 
     expect(result.action).toBe('schedule-rollback');
-    expect(rollbackSpy).toHaveBeenCalledTimes(1);
+    expect(result.operationId).toBe(operationId);
 
     const checkpoint = await integrationDb('devholm_plugin_cutover_rollback_checkpoints')
       .where({ plugin_id: 'url-shortener' })
+      .orderBy('id', 'desc')
       .first();
     expect(checkpoint).toBeDefined();
+    expect(checkpoint.stage).toBe('after-enabled-settings-reconciliation');
+    expect(['running', 'succeeded']).toContain(checkpoint.status);
+  });
 
-    reconcileSpy.mockRestore();
-    rollbackSpy.mockRestore();
+  it('rollback failure inside reconcileSinglePluginLifecycle persists failure after rollback without self-deadlock', async () => {
+    const lifecycleDb = await import('@core/db/plugin-lifecycle');
+
+    await seedInstalledPlugin(integrationDb);
+
+    const now = Date.now();
+    const operationId = 'op-reconcile-rollback-failure-proof';
+    const startedAt = new Date(now - 120_000).toISOString();
+    const leaseExpiresAt = new Date(now - 60_000).toISOString();
+
+    await lifecycleDb.writePluginLifecycleOperationRecord({
+      schemaVersion: 1,
+      operationId,
+      pluginId: 'url-shortener',
+      action: 'update',
+      status: 'running',
+      actor: 'postgres-integration',
+      leaseOwner: 'postgres-integration',
+      leaseExpiresAt,
+      mutationAuthorityVersion: 'v2',
+      correlationId: operationId,
+      currentPhase: 'executing',
+      startedAt,
+      updatedAt: startedAt,
+      attemptCount: 1,
+      priorStateSnapshot: {
+        installed: true,
+        enabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '0.1.0',
+        bundledVersion: '0.1.0',
+        updatedAt: startedAt,
+      },
+      nextStateSnapshot: {
+        installed: true,
+        enabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'pending_upgrade',
+        installedVersion: '0.2.0',
+        bundledVersion: '0.2.0',
+        updatedAt: startedAt,
+      },
+    });
+
+    await lifecycleDb.writePluginLifecycleTransitionEvent({
+      schemaVersion: 1,
+      eventId: 'evt-reconcile-rollback-failure-proof',
+      operationId,
+      pluginId: 'url-shortener',
+      transition: 'update',
+      result: 'failed',
+      actor: 'postgres-integration',
+      correlationId: operationId,
+      timestamp: startedAt,
+      previousState: {
+        installed: true,
+        enabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '0.1.0',
+        bundledVersion: '0.1.0',
+        updatedAt: startedAt,
+      },
+      nextState: {
+        installed: true,
+        enabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'pending_upgrade',
+        installedVersion: '0.2.0',
+        bundledVersion: '0.2.0',
+        updatedAt: startedAt,
+      },
+      pluginVersion: '0.2.0',
+      artifactDigest: 'sha256:rollback-failure-proof',
+      error: {
+        code: 'LIFECYCLE_FORCED_FAILURE',
+        message: 'forced for rollback failure proof',
+        retryable: true,
+      },
+    });
+
+    vi.resetModules();
+    vi.doMock('@core/db/plugin-lifecycle', async () => {
+      const actual = await vi.importActual<typeof import('@core/db/plugin-lifecycle')>(
+        '@core/db/plugin-lifecycle'
+      );
+
+      return {
+        ...actual,
+        upsertPluginLedgerRecord: vi.fn(async () => {
+          throw new Error('forced rollback mutation failure');
+        }),
+      };
+    });
+
+    try {
+      const recoveryRunner = await import('@core/lib/plugin-lifecycle-recovery-runner.server');
+
+      const result = await Promise.race([
+        recoveryRunner.reconcileSinglePluginLifecycle('url-shortener'),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('reconcile timeout indicates lock deadlock')), 5000);
+        }),
+      ]);
+
+      expect(result.action).toBe('schedule-rollback');
+      expect(result.executed).toBe(false);
+      expect(result.reason).toBe('forced rollback mutation failure');
+    } finally {
+      vi.doUnmock('@core/db/plugin-lifecycle');
+      vi.resetModules();
+    }
+
+    const checkpoints = await integrationDb('devholm_plugin_cutover_rollback_checkpoints')
+      .where({ plugin_id: 'url-shortener' })
+      .orderBy('id', 'asc');
+
+    expect(checkpoints.length).toBeGreaterThan(0);
+    expect(checkpoints.some((row) => row.status === 'running')).toBe(false);
+    expect(checkpoints.some((row) => row.status === 'failed')).toBe(true);
+
+    const lockProbeClient = createIndependentClient();
+    const lockProbe = await lockProbeClient.raw<{ rows: Array<{ got: boolean }> }>(
+      'select pg_try_advisory_xact_lock(hashtext(?), hashtext(?)) as got',
+      ['devholm.plugin.lifecycle', 'url-shortener']
+    );
+    expect(lockProbe.rows[0]?.got).toBe(true);
+    await lockProbeClient.destroy();
+
+    const recoveryRunnerRetry = await import('@core/lib/plugin-lifecycle-recovery-runner.server');
+    const retryResult = await recoveryRunnerRetry.reconcileSinglePluginLifecycle('url-shortener');
+
+    expect(retryResult.action).toBe('schedule-rollback');
+    const latest = await integrationDb('devholm_plugin_cutover_rollback_checkpoints')
+      .where({ plugin_id: 'url-shortener' })
+      .orderBy('id', 'desc')
+      .first();
+    expect(Number(latest.attempt_count)).toBeGreaterThanOrEqual(1);
   });
 
   it('cleanup versus real rollback serializes and rejects stale cleanup intent', async () => {
@@ -286,8 +532,12 @@ postgresDescribe('plugin cutover lock coordination PostgreSQL integration', () =
       operationId: 'op-race-real-rollback',
       correlationId: 'corr-race-real-rollback',
     });
-
-    await Promise.resolve();
+    await waitForPluginLockWaiters({
+      db: adminDb,
+      dbName: integrationDbName,
+      pluginId: 'url-shortener',
+      expectedCount: 1,
+    });
 
     const cleanupPromise = executePluginCutoverCleanup('url-shortener', {
       dryRun: false,
@@ -299,6 +549,12 @@ postgresDescribe('plugin cutover lock coordination PostgreSQL integration', () =
         stateFingerprint: plan.stateFingerprint,
         executionToken: 'cleanup-token-real-rollback-race',
       },
+    });
+    await waitForPluginLockWaiters({
+      db: adminDb,
+      dbName: integrationDbName,
+      pluginId: 'url-shortener',
+      expectedCount: 2,
     });
 
     if (releaseLock) {
@@ -321,5 +577,316 @@ postgresDescribe('plugin cutover lock coordination PostgreSQL integration', () =
     await lockHolder.destroy();
     await rollbackClient.destroy();
     await cleanupClient.destroy();
+  });
+
+  it('cleanup versus logical legacy decommission serializes and rejects stale cleanup intent', async () => {
+    const { executePluginCutoverCleanup } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
+    const { buildPluginCutoverCleanupPlan } = await import(
+      '@core/lib/plugin-cutover-cleanup-planner.server'
+    );
+    const { computePluginCutoverCleanupPlanVersion } = await import(
+      '@core/lib/plugin-cutover-cleanup-contract.server'
+    );
+    const { logicallyDecommissionLegacyPluginState } = await import(
+      '@core/lib/plugin-cutover-legacy-decommission.server'
+    );
+
+    await seedInstalledPlugin(integrationDb);
+    await integrationDb('site_settings').insert({
+      key: 'plugin:url-shortener:enabled',
+      value: 'true',
+      type: 'boolean',
+      category: 'plugins',
+      description: 'legacy enabled key',
+      updated_at: new Date(),
+    });
+
+    const originalPlan = await buildPluginCutoverCleanupPlan('url-shortener', integrationDb);
+
+    const lockHolder = createIndependentClient();
+    const decommissionClient = createIndependentClient();
+    const cleanupClient = createIndependentClient();
+
+    let releaseLock: (() => void) | undefined;
+    const holdLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+
+    let lockHeldSignal: (() => void) | undefined;
+    const lockHeld = new Promise<void>((resolve) => {
+      lockHeldSignal = resolve;
+    });
+
+    const hold = lockHolder.transaction(async (trx) => {
+      await trx.raw('select pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
+        'devholm.plugin.lifecycle',
+        'url-shortener',
+      ]);
+      lockHeldSignal?.();
+      await holdLock;
+    });
+
+    await lockHeld;
+
+    const decommissionPromise = logicallyDecommissionLegacyPluginState('url-shortener', {
+      db: decommissionClient,
+      operationId: 'op-race-legacy-decommission',
+      correlationId: 'corr-race-legacy-decommission',
+    });
+    await waitForPluginLockWaiters({
+      db: adminDb,
+      dbName: integrationDbName,
+      pluginId: 'url-shortener',
+      expectedCount: 1,
+    });
+
+    const cleanupPromise = executePluginCutoverCleanup('url-shortener', {
+      dryRun: false,
+      db: cleanupClient,
+      intent: {
+        pluginId: 'url-shortener',
+        schemaVersion: 2,
+        planVersion: computePluginCutoverCleanupPlanVersion(originalPlan),
+        stateFingerprint: originalPlan.stateFingerprint,
+        executionToken: 'cleanup-token-legacy-decommission-race',
+      },
+    });
+    await waitForPluginLockWaiters({
+      db: adminDb,
+      dbName: integrationDbName,
+      pluginId: 'url-shortener',
+      expectedCount: 2,
+    });
+
+    releaseLock?.();
+    await hold;
+
+    const decommissionResult = await decommissionPromise;
+    expect(decommissionResult.applied).toBe(true);
+
+    await expect(cleanupPromise).rejects.toThrow(
+      /stale-cleanup-plan-version|cleanup-state-fingerprint-mismatch|cleanup-plan-ineligible/
+    );
+
+    const marker = await integrationDb('site_settings')
+      .where({ key: 'plugin:url-shortener:legacy-state-decommissioned-at' })
+      .first();
+    expect(marker).toBeDefined();
+
+    await lockHolder.destroy();
+    await decommissionClient.destroy();
+    await cleanupClient.destroy();
+  });
+
+  it('cleanup versus legacy reconciliation serializes and rejects stale cleanup intent', async () => {
+    const { executePluginCutoverCleanup } = await import(
+      '@core/lib/plugin-cutover-cleanup-executor.server'
+    );
+    const { buildPluginCutoverCleanupPlan } = await import(
+      '@core/lib/plugin-cutover-cleanup-planner.server'
+    );
+    const { computePluginCutoverCleanupPlanVersion } = await import(
+      '@core/lib/plugin-cutover-cleanup-contract.server'
+    );
+    const { reconcileLegacyAndCanonicalPluginState } = await import(
+      '@core/lib/plugin-cutover-legacy-reconciler.server'
+    );
+
+    await integrationDb('site_settings').insert({
+      key: 'plugin:url-shortener:enabled',
+      value: 'true',
+      type: 'boolean',
+      category: 'plugins',
+      description: 'legacy enabled key',
+      updated_at: new Date(),
+    });
+
+    const originalPlan = await buildPluginCutoverCleanupPlan('url-shortener', integrationDb);
+
+    const lockHolder = createIndependentClient();
+    const reconcileClient = createIndependentClient();
+    const cleanupClient = createIndependentClient();
+
+    let releaseLock: (() => void) | undefined;
+    const holdLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+
+    let lockHeldSignal: (() => void) | undefined;
+    const lockHeld = new Promise<void>((resolve) => {
+      lockHeldSignal = resolve;
+    });
+
+    const hold = lockHolder.transaction(async (trx) => {
+      await trx.raw('select pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
+        'devholm.plugin.lifecycle',
+        'url-shortener',
+      ]);
+      lockHeldSignal?.();
+      await holdLock;
+    });
+
+    await lockHeld;
+
+    const reconciliationPromise = reconcileLegacyAndCanonicalPluginState('url-shortener', {
+      db: reconcileClient,
+      correlationId: 'corr-race-legacy-reconciliation',
+    });
+    await waitForPluginLockWaiters({
+      db: adminDb,
+      dbName: integrationDbName,
+      pluginId: 'url-shortener',
+      expectedCount: 1,
+    });
+
+    const cleanupPromise = executePluginCutoverCleanup('url-shortener', {
+      dryRun: false,
+      db: cleanupClient,
+      intent: {
+        pluginId: 'url-shortener',
+        schemaVersion: 2,
+        planVersion: computePluginCutoverCleanupPlanVersion(originalPlan),
+        stateFingerprint: originalPlan.stateFingerprint,
+        executionToken: 'cleanup-token-legacy-reconciliation-race',
+      },
+    });
+    await waitForPluginLockWaiters({
+      db: adminDb,
+      dbName: integrationDbName,
+      pluginId: 'url-shortener',
+      expectedCount: 2,
+    });
+
+    releaseLock?.();
+    await hold;
+
+    const reconciliationResult = await reconciliationPromise;
+    expect(reconciliationResult.topology).toBe('legacy-only');
+    expect(reconciliationResult.phase).toBe('canonical-record-established');
+
+    await expect(cleanupPromise).rejects.toThrow(
+      /stale-cleanup-plan-version|cleanup-state-fingerprint-mismatch|cleanup-plan-ineligible/
+    );
+
+    const canonicalRow = await integrationDb('devholm_plugins')
+      .where({ plugin_id: 'url-shortener' })
+      .first();
+    expect(canonicalRow).toBeDefined();
+
+    await lockHolder.destroy();
+    await reconcileClient.destroy();
+    await cleanupClient.destroy();
+  });
+
+  it('recovery scan classifies using post-lock authoritative row when lifecycle record changes while waiting', async () => {
+    const { runPluginLifecycleRecoveryScan } = await import(
+      '@core/lib/plugin-lifecycle-recovery-runner.server'
+    );
+
+    await seedInstalledPlugin(integrationDb);
+
+    const lockHolder = createIndependentClient();
+    let releaseLock: (() => void) | undefined;
+    const holdLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    let lockHeldSignal: (() => void) | undefined;
+    const lockHeld = new Promise<void>((resolve) => {
+      lockHeldSignal = resolve;
+    });
+
+    const hold = lockHolder.transaction(async (trx) => {
+      await trx.raw('select pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
+        'devholm.plugin.lifecycle',
+        'url-shortener',
+      ]);
+      lockHeldSignal?.();
+      await holdLock;
+    });
+
+    await lockHeld;
+
+    const scanPromise = runPluginLifecycleRecoveryScan();
+    await waitForPluginLockWaiters({
+      db: adminDb,
+      dbName: integrationDbName,
+      pluginId: 'url-shortener',
+      expectedCount: 1,
+    });
+
+    await integrationDb('devholm_plugins').where({ plugin_id: 'url-shortener' }).update({
+      lifecycle_state: 'bundled',
+      operation_status: 'idle',
+      installed_version: null,
+      enabled: false,
+      updated_at: new Date(),
+    });
+
+    releaseLock?.();
+    await hold;
+
+    const scan = await scanPromise;
+    const result = scan.results.find((entry) => entry.pluginId === 'url-shortener');
+    expect(result).toBeDefined();
+    expect(result?.cutover?.classification).not.toBe('already-canonical');
+    expect(result?.durableCutoverState?.classification).toBe(result?.cutover?.classification);
+
+    await lockHolder.destroy();
+  });
+
+  it('recovery scan handles deleted authoritative lifecycle row while waiting without stale canonical classification', async () => {
+    const { runPluginLifecycleRecoveryScan } = await import(
+      '@core/lib/plugin-lifecycle-recovery-runner.server'
+    );
+
+    await seedInstalledPlugin(integrationDb);
+
+    const lockHolder = createIndependentClient();
+    let releaseLock: (() => void) | undefined;
+    const holdLock = new Promise<void>((resolve) => {
+      releaseLock = resolve;
+    });
+    let lockHeldSignal: (() => void) | undefined;
+    const lockHeld = new Promise<void>((resolve) => {
+      lockHeldSignal = resolve;
+    });
+
+    const hold = lockHolder.transaction(async (trx) => {
+      await trx.raw('select pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
+        'devholm.plugin.lifecycle',
+        'url-shortener',
+      ]);
+      lockHeldSignal?.();
+      await holdLock;
+    });
+
+    await lockHeld;
+
+    const scanPromise = runPluginLifecycleRecoveryScan();
+    await waitForPluginLockWaiters({
+      db: adminDb,
+      dbName: integrationDbName,
+      pluginId: 'url-shortener',
+      expectedCount: 1,
+    });
+
+    await integrationDb('devholm_plugins').where({ plugin_id: 'url-shortener' }).del();
+    await integrationDb('site_settings').where({ key: 'plugin:url-shortener:enabled' }).update({
+      value: 'false',
+      updated_at: new Date(),
+    });
+
+    releaseLock?.();
+    await hold;
+
+    const scan = await scanPromise;
+    const result = scan.results.find((entry) => entry.pluginId === 'url-shortener');
+    expect(result).toBeDefined();
+    expect(result?.cutover?.classification).not.toBe('already-canonical');
+    expect(result?.recoveryCenter?.recommendedAction).toBe('run-automatic-reconciliation');
+
+    await lockHolder.destroy();
   });
 });

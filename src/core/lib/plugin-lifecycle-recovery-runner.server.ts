@@ -3,10 +3,12 @@ import { getDb } from '@/db';
 import { listPluginStates } from '@/db/plugins';
 import {
   findActivePluginLifecycleOperation,
+  getInstalledPlugin,
   writePluginLifecycleOperationRecord,
   writePluginLifecycleTransitionEvent,
 } from '@core/db/plugin-lifecycle';
 import {
+  type LifecycleReconciliationAction,
   reconcilePluginLifecycleState,
   type LifecycleReconciliationResult,
 } from '@core/lib/plugin-lifecycle-reconciler.server';
@@ -35,11 +37,17 @@ import {
   readLatestPluginCutoverRollbackCheckpoint,
   upsertPluginCutoverRollbackCheckpoint,
 } from '@core/db/plugin-cutover-rollback';
-import { executePluginCutoverRollback } from '@core/lib/plugin-cutover-rollback-executor.server';
+import {
+  PluginRollbackExecutionError,
+  executePluginCutoverRollback,
+  persistPluginCutoverRollbackFailure,
+} from '@core/lib/plugin-cutover-rollback-executor.server';
 import { reconcileLegacyAndCanonicalPluginState } from '@core/lib/plugin-cutover-legacy-reconciler.server';
 import { logicallyDecommissionLegacyPluginState } from '@core/lib/plugin-cutover-legacy-decommission.server';
 import { buildPluginCutoverCleanupPlan } from '@core/lib/plugin-cutover-cleanup-planner.server';
 import { acquirePluginLifecycleTransactionLock } from '@core/lib/plugin-lifecycle-coordination.server';
+import type { Knex } from 'knex';
+import type { PluginAdminRecord } from '@core/types/plugins';
 
 export interface PluginLifecycleRecoveryScanResult {
   scannedAt: string;
@@ -191,7 +199,8 @@ function deriveRecoveryCenterPayload(input: {
 
 async function applySafeRecoveryAction(
   pluginId: string,
-  reconciliation: LifecycleReconciliationResult
+  reconciliation: LifecycleReconciliationResult,
+  db: Knex
 ): Promise<{ executed: boolean; executedAt: string | null }> {
   if (
     reconciliation.action !== 'finalize-proven-success' &&
@@ -200,7 +209,6 @@ async function applySafeRecoveryAction(
     return { executed: false, executedAt: null };
   }
 
-  const db = getDb();
   const activeOperation = await findActivePluginLifecycleOperation(pluginId, db);
   if (!activeOperation) {
     return { executed: false, executedAt: null };
@@ -209,126 +217,212 @@ async function applySafeRecoveryAction(
   const reconciledAt = new Date().toISOString();
 
   if (reconciliation.action === 'finalize-proven-success') {
-    await db.transaction(async (trx) => {
-      await writePluginLifecycleOperationRecord(
-        {
-          ...activeOperation,
-          status: 'succeeded',
-          currentPhase: 'completed',
-          updatedAt: reconciledAt,
-          finishedAt: reconciledAt,
-        },
-        trx
-      );
-    });
+    await writePluginLifecycleOperationRecord(
+      {
+        ...activeOperation,
+        status: 'succeeded',
+        currentPhase: 'completed',
+        updatedAt: reconciledAt,
+        finishedAt: reconciledAt,
+      },
+      db
+    );
 
     return { executed: true, executedAt: reconciledAt };
   }
 
-  await db.transaction(async (trx) => {
-    await writePluginLifecycleOperationRecord(
-      {
-        ...activeOperation,
-        status: 'interrupted',
-        currentPhase: 'completed',
-        updatedAt: reconciledAt,
-        finishedAt: reconciledAt,
-        error: {
-          code: 'LIFECYCLE_STALE_OPERATION',
-          message: 'Lifecycle lease expired before operation completion.',
-          retryable: true,
-          recoveryClassification: 'reconcile-on-restart',
-        },
+  await writePluginLifecycleOperationRecord(
+    {
+      ...activeOperation,
+      status: 'interrupted',
+      currentPhase: 'completed',
+      updatedAt: reconciledAt,
+      finishedAt: reconciledAt,
+      error: {
+        code: 'LIFECYCLE_STALE_OPERATION',
+        message: 'Lifecycle lease expired before operation completion.',
+        retryable: true,
+        recoveryClassification: 'reconcile-on-restart',
       },
-      trx
-    );
+    },
+    db
+  );
 
-    await writePluginLifecycleTransitionEvent(
-      {
-        schemaVersion: 1,
-        eventId: randomUUID(),
-        operationId: activeOperation.operationId,
-        pluginId: activeOperation.pluginId,
-        transition: activeOperation.action,
-        result: 'failed',
-        actor: activeOperation.actor,
-        correlationId: activeOperation.correlationId,
-        timestamp: reconciledAt,
-        previousState: activeOperation.priorStateSnapshot,
-        nextState: activeOperation.priorStateSnapshot,
-        error: {
-          code: 'LIFECYCLE_STALE_OPERATION',
-          message: 'Lifecycle lease expired before operation completion.',
-          retryable: true,
-          recoveryClassification: 'reconcile-on-restart',
-        },
+  await writePluginLifecycleTransitionEvent(
+    {
+      schemaVersion: 1,
+      eventId: randomUUID(),
+      operationId: activeOperation.operationId,
+      pluginId: activeOperation.pluginId,
+      transition: activeOperation.action,
+      result: 'failed',
+      actor: activeOperation.actor,
+      correlationId: activeOperation.correlationId,
+      timestamp: reconciledAt,
+      previousState: activeOperation.priorStateSnapshot,
+      nextState: activeOperation.priorStateSnapshot,
+      error: {
+        code: 'LIFECYCLE_STALE_OPERATION',
+        message: 'Lifecycle lease expired before operation completion.',
+        retryable: true,
+        recoveryClassification: 'reconcile-on-restart',
       },
-      trx
-    );
-  });
+    },
+    db
+  );
 
   return { executed: true, executedAt: reconciledAt };
+}
+
+function toAuthoritativePluginAdminRecord(input: {
+  candidate: PluginAdminRecord;
+  installed: Awaited<ReturnType<typeof getInstalledPlugin>>;
+  enabledSettingValue: string | null;
+}): PluginAdminRecord {
+  if (input.installed) {
+    const installed =
+      input.installed.lifecycleState === 'installed' ||
+      input.installed.lifecycleState === 'disabled';
+
+    return {
+      ...input.candidate,
+      installed,
+      isEnabled: installed ? input.installed.enabled : false,
+      lifecycleState: input.installed.lifecycleState,
+      operationStatus: input.installed.operationStatus,
+      installedVersion: input.installed.installedVersion,
+      bundledVersion: input.installed.bundledVersion,
+      updatedAt:
+        input.installed.updatedAt ??
+        input.installed.installedAt ??
+        input.installed.upgradedAt ??
+        input.installed.disabledAt,
+    };
+  }
+
+  const settingEnabled = input.enabledSettingValue === 'true' || input.enabledSettingValue === '1';
+
+  return {
+    ...input.candidate,
+    installed: false,
+    isEnabled: settingEnabled,
+    lifecycleState: 'bundled',
+    operationStatus: 'idle',
+    installedVersion: null,
+    bundledVersion: input.candidate.bundledVersion,
+  };
 }
 
 export async function reconcileSinglePluginLifecycle(
   pluginId: string
 ): Promise<PluginLifecycleRecoveryExecutionResult> {
-  const result = await reconcilePluginLifecycleState(pluginId);
-  const execution = await applySafeRecoveryAction(pluginId, result);
+  const db = getDb();
+  let latestReconciliation: LifecycleReconciliationResult | null = null;
+  let latestAction: LifecycleReconciliationAction = 'schedule-rollback';
+  let latestOperationId: string | null = null;
 
-  const phase = toDurableCutoverPhase({
-    action: result.action,
-    executed: execution.executed,
-  });
-  const state = await upsertPluginCutoverReconciliationState({
-    pluginId,
-    phase,
-    operationId: result.operationId,
-    blocking:
-      result.action === 'require-recovery' ||
-      result.action === 'manual-intervention-required' ||
-      result.action === 'schedule-rollback',
-    classification: result.action,
-    reason: result.reason,
-    evidence: {
-      executed: execution.executed,
-      executedAt: execution.executedAt,
-      reconciliationAction: result.action,
-    },
-  });
+  try {
+    const outcome = await db.transaction(async (trx) => {
+      await acquirePluginLifecycleTransactionLock(pluginId, trx);
 
-  await appendPluginCutoverReconciliationEvent({
-    pluginId,
-    phase: state.phase,
-    result: execution.executed ? 'applied' : state.blocking ? 'blocked' : 'noop',
-    operationId: result.operationId,
-    correlationId: result.operationId,
-    classification: state.classification,
-    blocking: state.blocking,
-    reason: state.reason,
-    evidence: state.evidence,
-    snapshot: state.snapshot,
-  });
+      const result = await reconcilePluginLifecycleState(pluginId, trx);
+      latestReconciliation = result;
+      latestAction = result.action;
+      latestOperationId = result.operationId;
+      const execution = await applySafeRecoveryAction(pluginId, result, trx);
 
-  if (result.action === 'schedule-rollback') {
-    const rollbackResult = await executePluginCutoverRollback(pluginId, {
-      operationId: result.operationId,
-      correlationId: result.operationId,
+      const phase = toDurableCutoverPhase({
+        action: result.action,
+        executed: execution.executed,
+      });
+      const state = await upsertPluginCutoverReconciliationState(
+        {
+          pluginId,
+          phase,
+          operationId: result.operationId,
+          blocking:
+            result.action === 'require-recovery' ||
+            result.action === 'manual-intervention-required' ||
+            result.action === 'schedule-rollback',
+          classification: result.action,
+          reason: result.reason,
+          evidence: {
+            executed: execution.executed,
+            executedAt: execution.executedAt,
+            reconciliationAction: result.action,
+          },
+        },
+        trx
+      );
+
+      await appendPluginCutoverReconciliationEvent(
+        {
+          pluginId,
+          phase: state.phase,
+          result: execution.executed ? 'applied' : state.blocking ? 'blocked' : 'noop',
+          operationId: result.operationId,
+          correlationId: result.operationId,
+          classification: state.classification,
+          blocking: state.blocking,
+          reason: state.reason,
+          evidence: state.evidence,
+          snapshot: state.snapshot,
+        },
+        trx
+      );
+
+      if (result.action === 'schedule-rollback') {
+        const rollbackResult = await executePluginCutoverRollback(pluginId, {
+          operationId: result.operationId,
+          correlationId: result.operationId,
+          context: {
+            kind: 'existing-transaction',
+            trx,
+            lockAlreadyHeld: true,
+            failurePersistenceDb: db,
+          },
+        });
+
+        execution.executed = rollbackResult.executed;
+        execution.executedAt = rollbackResult.executed
+          ? new Date().toISOString()
+          : execution.executedAt;
+      }
+
+      return {
+        ...result,
+        executed: execution.executed,
+        executedAt: execution.executedAt,
+      };
     });
 
-    execution.executed = rollbackResult.executed;
-    execution.executedAt = rollbackResult.executed
-      ? new Date().toISOString()
-      : execution.executedAt;
+    markPluginStartupReconciliationStateDirty();
+
+    return outcome;
+  } catch (error) {
+    if (!(error instanceof PluginRollbackExecutionError)) {
+      throw error;
+    }
+
+    try {
+      await persistPluginCutoverRollbackFailure(error.details, db);
+    } catch (persistError) {
+      const secondary =
+        persistError instanceof Error ? persistError : new Error(String(persistError));
+      const primary = error.details.primaryError as Error & { secondaryErrors?: Error[] };
+      primary.secondaryErrors = [...(primary.secondaryErrors ?? []), secondary];
+    }
+
+    markPluginStartupReconciliationStateDirty();
+
+    return {
+      action: latestReconciliation ? latestAction : 'schedule-rollback',
+      operationId: latestReconciliation ? latestOperationId : null,
+      reason: error.details.primaryError.message,
+      executed: false,
+      executedAt: null,
+    };
   }
-
-  markPluginStartupReconciliationStateDirty();
-
-  return {
-    ...result,
-    executed: execution.executed,
-    executedAt: execution.executedAt,
-  };
 }
 
 export async function runPluginLifecycleRecoveryScan(options?: {
@@ -350,13 +444,31 @@ export async function runPluginLifecycleRecoveryScan(options?: {
           determinePluginRollbackCompatibility(plugin.id, trx),
         ]);
 
+        const [installed, legacyEnabledSettingRow] = await Promise.all([
+          getInstalledPlugin(plugin.id, trx),
+          trx('site_settings')
+            .select('value')
+            .where({ key: `plugin:${plugin.id}:enabled` })
+            .first(),
+        ]);
+
         await reconcileLegacyAndCanonicalPluginState(plugin.id, {
           correlationId: reconciliation.operationId ?? undefined,
           db: trx,
         });
 
+        const snapshot = await readPluginCutoverStateSnapshot(plugin.id, trx);
+
+        const authoritativePlugin = toAuthoritativePluginAdminRecord({
+          candidate: plugin,
+          installed,
+          enabledSettingValue: legacyEnabledSettingRow
+            ? String(legacyEnabledSettingRow.value ?? '')
+            : null,
+        });
+
         const cutover = classifyPluginCutoverState({
-          plugin,
+          plugin: authoritativePlugin,
           reconciliation,
           hasInterruptedMigrationCheckpoint: interruptedCheckpoint !== null,
           rollbackCompatible: rollbackCompatibility.rollbackCompatible,
@@ -381,8 +493,6 @@ export async function runPluginLifecycleRecoveryScan(options?: {
           classification: cutover.classification,
           blocking: cutover.blocking,
         });
-
-        const snapshot = await readPluginCutoverStateSnapshot(plugin.id, trx);
 
         const state = await upsertPluginCutoverReconciliationState(
           {

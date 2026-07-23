@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getDb = vi.hoisted(() => vi.fn());
 const listPluginStates = vi.hoisted(() => vi.fn());
+const getInstalledPlugin = vi.hoisted(() => vi.fn());
 const reconcilePluginLifecycleState = vi.hoisted(() => vi.fn());
 const markPluginStartupReconciliationStateDirty = vi.hoisted(() => vi.fn());
 const readInterruptedPluginMigrationCheckpoint = vi.hoisted(() => vi.fn());
@@ -27,6 +28,13 @@ vi.mock('@/db', () => ({
 
 vi.mock('@core/lib/plugin-lifecycle-reconciler.server', () => ({
   reconcilePluginLifecycleState,
+}));
+
+vi.mock('@core/db/plugin-lifecycle', () => ({
+  getInstalledPlugin,
+  findActivePluginLifecycleOperation: vi.fn(async () => null),
+  writePluginLifecycleOperationRecord: vi.fn(async () => undefined),
+  writePluginLifecycleTransitionEvent: vi.fn(async () => undefined),
 }));
 
 vi.mock('@core/lib/plugin-startup-reconciliation.server', () => ({
@@ -81,9 +89,15 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    const trx = {
-      raw: vi.fn(async () => undefined),
-    };
+    const first = vi.fn(async () => ({ value: 'true' }));
+    const where = vi.fn(() => ({ first }));
+    const select = vi.fn(() => ({ where }));
+    const trx = Object.assign(
+      vi.fn(() => ({ select })),
+      {
+        raw: vi.fn(async () => undefined),
+      }
+    );
 
     getDb.mockReturnValue({
       transaction: vi.fn(async (callback: (value: unknown) => Promise<unknown>) => callback(trx)),
@@ -164,8 +178,42 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
 
     determinePluginRollbackCompatibility
       .mockResolvedValueOnce({ rollbackCompatible: true, reason: 'compatible' })
-      .mockResolvedValueOnce({ rollbackCompatible: true, reason: 'compatible' })
+      .mockResolvedValueOnce({ rollbackCompatible: false, reason: 'incompatible' })
       .mockResolvedValue({ rollbackCompatible: true, reason: 'compatible' });
+
+    getInstalledPlugin.mockImplementation(async (pluginId: string) => {
+      if (pluginId === 'calendar') {
+        return {
+          pluginId: 'calendar',
+          bundledVersion: '0.1.0',
+          installedVersion: '0.1.0',
+          enabled: true,
+          lifecycleState: 'installed',
+          operationStatus: 'idle',
+          installedAt: null,
+          upgradedAt: null,
+          disabledAt: null,
+          updatedAt: null,
+          lastError: null,
+          manifestChecksum: null,
+        };
+      }
+
+      return {
+        pluginId: 'gallery',
+        bundledVersion: '0.1.0',
+        installedVersion: '0.1.0',
+        enabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedAt: null,
+        upgradedAt: null,
+        disabledAt: null,
+        updatedAt: null,
+        lastError: null,
+        manifestChecksum: null,
+      };
+    });
 
     readPluginCutoverStateSnapshots.mockResolvedValue([
       {
@@ -318,7 +366,7 @@ describe('plugin lifecycle recovery runner cutover behavior', () => {
     const single = await reconcileSinglePluginLifecycle('calendar');
 
     expect(single.action).toBeTruthy();
-    expect(reconcilePluginLifecycleState).toHaveBeenCalledWith('calendar');
+    expect(reconcilePluginLifecycleState).toHaveBeenCalledWith('calendar', expect.any(Function));
     expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
     expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(1);
     expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(1);

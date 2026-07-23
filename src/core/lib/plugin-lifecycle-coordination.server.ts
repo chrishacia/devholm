@@ -7,6 +7,27 @@ type PluginSessionLockMetadata = {
   ownerPid: number;
 };
 
+function normalizeError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function attachSecondaryErrors(primary: Error, secondary: Error[]): Error {
+  if (secondary.length === 0) {
+    return primary;
+  }
+
+  const existing =
+    (primary as Error & { secondaryErrors?: Error[] }).secondaryErrors?.slice() ?? [];
+
+  (primary as Error & { secondaryErrors?: Error[] }).secondaryErrors = [...existing, ...secondary];
+
+  if (!(primary as Error & { cause?: unknown }).cause) {
+    (primary as Error & { cause?: unknown }).cause = secondary[0];
+  }
+
+  return primary;
+}
+
 export async function withPluginLifecycleSessionLock<T>(
   pluginId: string,
   work: (metadata: PluginSessionLockMetadata) => Promise<T>,
@@ -17,6 +38,10 @@ export async function withPluginLifecycleSessionLock<T>(
   }
 
   const connection = await db.client.acquireConnection();
+  let lockAcquired = false;
+  let workResult: T | undefined;
+  let primaryError: Error | null = null;
+  const secondaryErrors: Error[] = [];
 
   try {
     if (typeof db.raw !== 'function') {
@@ -29,17 +54,22 @@ export async function withPluginLifecycleSessionLock<T>(
         pluginId,
       ])
       .connection(connection);
+    lockAcquired = true;
 
     const backendPidResult = await db
       .raw<{ rows?: Array<{ pid: number }> }>('select pg_backend_pid() as pid')
       .connection(connection);
-    const ownerPid = backendPidResult?.rows?.[0]?.pid ?? process.pid;
-    if (!Number.isInteger(ownerPid) || ownerPid <= 0) {
+    const ownerPid = backendPidResult?.rows?.[0]?.pid;
+    if (typeof ownerPid !== 'number' || !Number.isInteger(ownerPid) || ownerPid <= 0) {
       throw new Error('failed to resolve lifecycle lock backend pid');
     }
 
-    return await work({ ownerPid });
-  } finally {
+    workResult = await work({ ownerPid });
+  } catch (error) {
+    primaryError = normalizeError(error);
+  }
+
+  if (lockAcquired) {
     try {
       const unlockResult = await db
         .raw('select pg_advisory_unlock(hashtext(?), hashtext(?))', [
@@ -52,10 +82,32 @@ export async function withPluginLifecycleSessionLock<T>(
       if (!unlocked) {
         throw new Error(`failed to release lifecycle advisory lock for plugin ${pluginId}`);
       }
-    } finally {
-      await db.client.releaseConnection(connection);
+    } catch (error) {
+      const unlockError = normalizeError(error);
+      if (primaryError) {
+        secondaryErrors.push(unlockError);
+      } else {
+        primaryError = unlockError;
+      }
     }
   }
+
+  try {
+    await db.client.releaseConnection(connection);
+  } catch (error) {
+    const releaseError = normalizeError(error);
+    if (primaryError) {
+      secondaryErrors.push(releaseError);
+    } else {
+      primaryError = releaseError;
+    }
+  }
+
+  if (primaryError) {
+    throw attachSecondaryErrors(primaryError, secondaryErrors);
+  }
+
+  return workResult as T;
 }
 
 export async function acquirePluginLifecycleTransactionLock(

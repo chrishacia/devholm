@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getDb = vi.hoisted(() => vi.fn());
 const listPluginStates = vi.hoisted(() => vi.fn());
+const getInstalledPlugin = vi.hoisted(() => vi.fn());
 const reconcilePluginLifecycleState = vi.hoisted(() => vi.fn());
 const readInterruptedPluginMigrationCheckpoint = vi.hoisted(() => vi.fn());
 const determinePluginRollbackCompatibility = vi.hoisted(() => vi.fn());
@@ -26,6 +27,13 @@ vi.mock('@/db', () => ({
 
 vi.mock('@core/lib/plugin-lifecycle-reconciler.server', () => ({
   reconcilePluginLifecycleState,
+}));
+
+vi.mock('@core/db/plugin-lifecycle', () => ({
+  getInstalledPlugin,
+  findActivePluginLifecycleOperation: vi.fn(async () => null),
+  writePluginLifecycleOperationRecord: vi.fn(async () => undefined),
+  writePluginLifecycleTransitionEvent: vi.fn(async () => undefined),
 }));
 
 vi.mock('@core/db/plugin-migration-checkpoints', () => ({
@@ -91,9 +99,15 @@ describe('plugin lifecycle recovery runner rollback concurrency', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    const trx = {
-      raw: vi.fn(async () => undefined),
-    };
+    const first = vi.fn(async () => ({ value: 'true' }));
+    const where = vi.fn(() => ({ first }));
+    const select = vi.fn(() => ({ where }));
+    const trx = Object.assign(
+      vi.fn(() => ({ select })),
+      {
+        raw: vi.fn(async () => undefined),
+      }
+    );
 
     getDb.mockReturnValue({
       transaction: vi.fn(async (callback: (value: unknown) => Promise<unknown>) => callback(trx)),
@@ -135,6 +149,20 @@ describe('plugin lifecycle recovery runner rollback concurrency', () => {
     determinePluginRollbackCompatibility.mockResolvedValue({
       rollbackCompatible: true,
       reason: 'compatible',
+    });
+    getInstalledPlugin.mockResolvedValue({
+      pluginId: 'url-shortener',
+      bundledVersion: '0.1.0',
+      installedVersion: '0.1.0',
+      enabled: true,
+      lifecycleState: 'installed',
+      operationStatus: 'idle',
+      installedAt: null,
+      upgradedAt: null,
+      disabledAt: null,
+      updatedAt: null,
+      lastError: null,
+      manifestChecksum: null,
     });
     readPluginCutoverStateSnapshots.mockResolvedValue([]);
     readPluginCutoverStateSnapshot.mockResolvedValue({
