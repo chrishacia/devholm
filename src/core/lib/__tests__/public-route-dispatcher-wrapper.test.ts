@@ -5,6 +5,11 @@ const runIsolatedPublicRouteMatch = vi.hoisted(() => vi.fn());
 const runIsolatedPublicRouteHandle = vi.hoisted(() => vi.fn());
 const extensionMatch = vi.hoisted(() => vi.fn());
 const extensionHandle = vi.hoisted(() => vi.fn());
+const isPluginEnabledForRequest = vi.hoisted(() => vi.fn());
+
+vi.mock('@core/db/plugins-enabled', () => ({
+  isPluginEnabledForRequest,
+}));
 
 vi.mock('@core/lib/plugin-capability-sandbox.server', () => ({
   evaluatePluginSandboxAccess: vi.fn(async () => ({
@@ -65,6 +70,7 @@ function makeRequest(pathname: string): NextRequest {
 
 describe('resolvePublicRouteExtension wrapper regressions', () => {
   beforeEach(() => {
+    isPluginEnabledForRequest.mockResolvedValue(true);
     runIsolatedPublicRouteMatch.mockReset();
     runIsolatedPublicRouteHandle.mockReset();
     extensionMatch.mockClear();
@@ -114,6 +120,7 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
     const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
 
     expect(runIsolatedPublicRouteMatch).toHaveBeenCalledTimes(1);
+    expect(isPluginEnabledForRequest).toHaveBeenCalledWith('url-shortener');
     expect(resolution.type).toBe('match');
     if (resolution.type === 'match') {
       expect(resolution.response.headers.get('x-middleware-rewrite')).toContain(
@@ -287,5 +294,15 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
     const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
 
     expect(resolution.type).toBe('error');
+  });
+
+  it('skips public route extension execution when plugin is disabled', async () => {
+    isPluginEnabledForRequest.mockResolvedValue(false);
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(resolution.type).toBe('no-match');
+    expect(runIsolatedPublicRouteMatch).not.toHaveBeenCalled();
+    expect(extensionHandle).not.toHaveBeenCalled();
   });
 });
