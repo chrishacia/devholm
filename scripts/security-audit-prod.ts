@@ -8,6 +8,21 @@ import {
 } from '../src/core/lib/security-audit-policy';
 
 const AUDIT_FIXTURE_ENV = 'DEVHOLM_SECURITY_AUDIT_FIXTURE';
+const AUDIT_REPORT_OUTPUT_ENV = 'DEVHOLM_SECURITY_AUDIT_REPORT_PATH';
+
+interface AdvisoryFinding {
+  version?: unknown;
+  paths?: unknown;
+}
+
+interface AdvisoryRecord {
+  module_name?: unknown;
+  severity?: unknown;
+  patched_versions?: unknown;
+  github_advisory_id?: unknown;
+  id?: unknown;
+  findings?: unknown;
+}
 
 function loadAuditPayloadFromFixture(filePath: string): unknown {
   if (!fs.existsSync(filePath)) {
@@ -43,6 +58,79 @@ function runPnpmAuditJson(): {
     exitCode: result.status ?? 1,
     stderr,
   };
+}
+
+function toStringValue(value: unknown, fallback = 'unknown'): string {
+  if (typeof value === 'string' && value.trim()) {
+    return value;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return fallback;
+}
+
+function firstPathFromFindings(findings: unknown): string {
+  if (!Array.isArray(findings) || findings.length === 0) {
+    return 'unknown';
+  }
+
+  const firstFinding = findings[0] as AdvisoryFinding;
+  if (!Array.isArray(firstFinding.paths) || firstFinding.paths.length === 0) {
+    return 'unknown';
+  }
+
+  const firstPath = firstFinding.paths[0];
+  return typeof firstPath === 'string' && firstPath.trim() ? firstPath : 'unknown';
+}
+
+function installedVersionFromFindings(findings: unknown): string {
+  if (!Array.isArray(findings) || findings.length === 0) {
+    return 'unknown';
+  }
+
+  const firstFinding = findings[0] as AdvisoryFinding;
+  return toStringValue(firstFinding.version);
+}
+
+function printAdvisoryDetails(payload: unknown, source: 'fixture' | 'npm-audit'): void {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return;
+  }
+
+  const advisories = (payload as { advisories?: unknown }).advisories;
+  if (!advisories || typeof advisories !== 'object' || Array.isArray(advisories)) {
+    return;
+  }
+
+  for (const advisory of Object.values(advisories as Record<string, AdvisoryRecord>)) {
+    const severity = toStringValue(advisory.severity).toLowerCase();
+    if (severity === 'info') {
+      continue;
+    }
+
+    const advisoryId = toStringValue(advisory.github_advisory_id, toStringValue(advisory.id));
+    const moduleName = toStringValue(advisory.module_name);
+    const installedVersion = installedVersionFromFindings(advisory.findings);
+    const patchedRange = toStringValue(advisory.patched_versions);
+    const dependencyPath = firstPathFromFindings(advisory.findings);
+
+    console.error(
+      `[security:audit] source=${source} advisory=${advisoryId} package=${moduleName} installed=${installedVersion} severity=${severity} patched=${patchedRange} path=${dependencyPath}`
+    );
+  }
+}
+
+function writeAuditReport(payload: unknown): void {
+  const reportPath = process.env[AUDIT_REPORT_OUTPUT_ENV];
+  if (!reportPath) {
+    return;
+  }
+
+  fs.writeFileSync(reportPath, JSON.stringify(payload, null, 2));
+  console.log(`[security:audit] wrote audit report to ${reportPath}`);
 }
 
 function printSummary(evaluation: SecurityAuditEvaluation, source: 'fixture' | 'npm-audit'): void {
@@ -81,7 +169,9 @@ function main(): void {
   }
 
   const evaluation = evaluateSecurityAuditPayload(payload);
+  writeAuditReport(payload);
   printSummary(evaluation, source);
+  printAdvisoryDetails(payload, source);
 
   if (evaluation.outcome === 'scanner-failure') {
     process.exit(2);

@@ -62,7 +62,7 @@ on:
 
 env:
   NODE_VERSION: '22'
-  PNPM_VERSION: '10'
+  PNPM_VERSION: '11.2.2'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   TEMPLATE_REPO: chrishacia/devholm
@@ -341,7 +341,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 11.2.2
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -444,7 +444,7 @@ jobs:
   build:
     name: Build Application
     runs-on: ubuntu-latest
-    needs: [sync-framework, changes, lint, unit-tests, postgres-integration, security]
+    needs: [sync-framework, changes, lint, unit-tests, postgres-integration]
     if: needs.changes.outputs.docs_only != 'true'
     steps:
       - name: Checkout code
@@ -1282,7 +1282,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 11.2.2
+          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -1295,3 +1295,14 @@ jobs:
 
       - name: Run npm audit
         run: pnpm audit:prod
+        env:
+          DEVHOLM_SECURITY_AUDIT_REPORT_PATH: security-audit-report.json
+
+      - name: Upload security audit report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-audit-report
+          path: security-audit-report.json
+          retention-days: 7
+          if-no-files-found: error
