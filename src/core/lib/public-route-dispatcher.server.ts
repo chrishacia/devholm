@@ -8,6 +8,7 @@
 import type { NextRequest } from 'next/server';
 import { publicRouteExtensions } from '@user/extensions/public-routes';
 import { getReservedRoutes } from '@core/lib/reserved-routes.server';
+import { isPluginEnabledForRequest } from '@core/db/plugins-enabled';
 import type { ExtensionHelpers } from '@core/types/extensions.server';
 import type { PublicRouteMatchContext } from '@core/lib/public-route-match-context.server';
 import {
@@ -155,7 +156,7 @@ function withIsolationBoundary(extension: (typeof publicRouteExtensions)[number]
 export function createPublicRouteDispatcherDependencies(): PublicRouteDispatcherDependencies {
   return {
     extensions: publicRouteExtensions.map(withIsolationBoundary),
-    isPluginEnabled: async () => true,
+    isPluginEnabled: isPluginEnabledForRequest,
     authorizeExtension: async (extension) => {
       const decision = await evaluatePluginSandboxAccess({
         pluginId: extension.pluginId,

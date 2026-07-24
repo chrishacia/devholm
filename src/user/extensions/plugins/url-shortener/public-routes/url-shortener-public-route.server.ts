@@ -7,10 +7,38 @@ import {
 } from '@user/extensions/plugins/url-shortener/constants';
 import { NextResponse } from 'next/server';
 import type { UrlShortenerMatchState } from '@user/extensions/plugins/url-shortener/types';
+import { disabledUrlShortenerPluginResponse } from '@user/extensions/plugins/url-shortener/public-routes/url-shortener-redirect.server';
 import { shortCodeSchema } from '@user/extensions/plugins/url-shortener/validation/schemas';
 
 function splitPath(pathname: string): string[] {
   return pathname.split('/').filter(Boolean);
+}
+
+function matchUrlShortenerPath(pathname: string): UrlShortenerMatchState | null {
+  const safePrefix = URL_SHORTENER_DEFAULT_PREFIX;
+
+  const prefixSegments = splitPath(safePrefix);
+  const pathSegments = splitPath(pathname);
+
+  if (pathSegments.length !== prefixSegments.length + 1) {
+    return null;
+  }
+
+  for (let i = 0; i < prefixSegments.length; i += 1) {
+    if (pathSegments[i] !== prefixSegments[i]) {
+      return null;
+    }
+  }
+
+  const code = pathSegments[pathSegments.length - 1];
+  if (!code || !shortCodeSchema.safeParse(code).success) {
+    return null;
+  }
+
+  return {
+    code,
+    prefix: safePrefix,
+  };
 }
 
 export const urlShortenerPublicRouteExtension: PublicRouteExtension<UrlShortenerMatchState> = {
@@ -25,30 +53,7 @@ export const urlShortenerPublicRouteExtension: PublicRouteExtension<UrlShortener
       'URL shortener route claim executes in plugin extension runtime and rewrites to node API.',
   },
   async match(pathname) {
-    const safePrefix = URL_SHORTENER_DEFAULT_PREFIX;
-
-    const prefixSegments = splitPath(safePrefix);
-    const pathSegments = splitPath(pathname);
-
-    if (pathSegments.length !== prefixSegments.length + 1) {
-      return null;
-    }
-
-    for (let i = 0; i < prefixSegments.length; i += 1) {
-      if (pathSegments[i] !== prefixSegments[i]) {
-        return null;
-      }
-    }
-
-    const code = pathSegments[pathSegments.length - 1];
-    if (!code || !shortCodeSchema.safeParse(code).success) {
-      return null;
-    }
-
-    return {
-      code,
-      prefix: safePrefix,
-    };
+    return matchUrlShortenerPath(pathname);
   },
   async handle(match, request) {
     // Keep proxy path Edge-safe: hand off redirect/data work to a Node route handler.
@@ -57,5 +62,12 @@ export const urlShortenerPublicRouteExtension: PublicRouteExtension<UrlShortener
       request.url
     );
     return NextResponse.rewrite(rewriteUrl);
+  },
+  async matchDisabled(pathname) {
+    // Disabled mode keeps namespace ownership identical to enabled matching.
+    return matchUrlShortenerPath(pathname);
+  },
+  async handleDisabled() {
+    return disabledUrlShortenerPluginResponse();
   },
 };

@@ -121,7 +121,7 @@ describe('url shortener public route extension', () => {
     expect(emptyPrefix).toBeNull();
   });
 
-  it('is skipped by dispatcher when plugin is disabled', async () => {
+  it('returns managed disabled response for owned routes when plugin is disabled', async () => {
     const result = await dispatchPublicRoute('/s/abc123', mockRequest('/s/abc123'), {
       extensions: [urlShortenerPublicRouteExtension],
       isPluginEnabled: async () => false,
@@ -145,7 +145,15 @@ describe('url shortener public route extension', () => {
       }),
     });
 
-    expect(result).toEqual({ type: 'no-match' });
+    expect(result.type).toBe('match');
+    if (result.type === 'match') {
+      expect(result.response.status).toBe(404);
+      await expect(result.response.json()).resolves.toEqual({
+        error: 'URL Shortener plugin is disabled',
+        code: 'PLUGIN_DISABLED',
+        message: 'Short-link redirects are unavailable until the plugin is re-enabled.',
+      });
+    }
   });
 
   it('rewrites /s/<code> requests to the Node public API route', async () => {

@@ -178,6 +178,33 @@ export interface PublicRouteExtension<TMatch = unknown> {
     request: NextRequest,
     helpers: ExtensionHelpers
   ): Promise<Response> | Response;
+
+  /**
+   * Optional disabled-state matcher.
+   *
+   * When provided together with handleDisabled(), the dispatcher will still allow
+   * this extension to claim its route namespace while plugin runtime is disabled.
+   * This preserves deterministic managed responses for owned routes instead of
+   * falling through to unrelated application routes.
+   */
+  matchDisabled?(
+    pathname: string,
+    request: NextRequest,
+    context: PublicRouteMatchContext
+  ): Promise<TMatch | null> | TMatch | null;
+
+  /**
+   * Optional disabled-state handler.
+   *
+   * Called only when plugin runtime is disabled and the disabled matcher claims
+   * the path. Implementations should return a managed response and must not
+   * execute normal enabled-route side effects.
+   */
+  handleDisabled?(
+    match: TMatch,
+    request: NextRequest,
+    helpers: ExtensionHelpers
+  ): Promise<Response> | Response;
 }
 
 /**

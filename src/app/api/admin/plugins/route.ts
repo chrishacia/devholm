@@ -4,6 +4,7 @@ import { verifyAdmin } from '@/lib/auth-helpers';
 import { listPluginStates } from '@/db/plugins';
 import { orchestratePluginLifecycleMutation } from '@core/lib/plugin-lifecycle-orchestrator.server';
 import { PluginLifecycleError, mapUnknownLifecycleError } from '@core/lib/plugin-lifecycle-errors';
+import { ensurePluginStartupReadyForMutation } from '@core/lib/plugin-startup-reconciliation.server';
 
 const updateSchema = z.object({
   pluginId: z.string().min(1).max(120),
@@ -56,6 +57,9 @@ export async function PATCH(request: NextRequest) {
       (typeof token.sub === 'string' && token.sub) ||
       (typeof token.name === 'string' && token.name) ||
       undefined;
+
+    await ensurePluginStartupReadyForMutation();
+
     const idempotencyKey = request.headers.get('x-idempotency-key')?.trim() || undefined;
     const correlationId = request.headers.get('x-correlation-id')?.trim() || undefined;
 
@@ -107,6 +111,9 @@ export async function POST(request: NextRequest) {
       (typeof token.sub === 'string' && token.sub) ||
       (typeof token.name === 'string' && token.name) ||
       undefined;
+
+    await ensurePluginStartupReadyForMutation();
+
     const idempotencyKey = request.headers.get('x-idempotency-key')?.trim() || undefined;
     const correlationId = request.headers.get('x-correlation-id')?.trim() || undefined;
 

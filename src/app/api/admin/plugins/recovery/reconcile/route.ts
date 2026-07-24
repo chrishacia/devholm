@@ -5,6 +5,7 @@ import {
   reconcileSinglePluginLifecycle,
   runPluginLifecycleRecoveryScan,
 } from '@core/lib/plugin-lifecycle-recovery-runner.server';
+import { initializePluginStartupReconciliation } from '@core/lib/plugin-startup-reconciliation.server';
 
 const requestSchema = z.object({
   pluginId: z.string().min(1).max(120).optional(),
@@ -27,6 +28,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    await initializePluginStartupReconciliation();
 
     if (parsed.data.pluginId) {
       const result = await reconcileSinglePluginLifecycle(parsed.data.pluginId);

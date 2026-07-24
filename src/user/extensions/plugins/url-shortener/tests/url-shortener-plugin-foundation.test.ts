@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
+import { vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 import { getDb } from '@/db';
 import { getPluginLock, lockPluginVersion } from '@core/db/plugin-versioning';
@@ -25,6 +26,12 @@ import {
   down as teardownUrlShortenerSchema,
   up as setupUrlShortenerSchema,
 } from '@user/extensions/plugins/url-shortener/db/migrations/20260701010000_url_shortener_foundation';
+
+const isPluginEnabledForRequest = vi.hoisted(() => vi.fn());
+
+vi.mock('@core/db/plugins-enabled', () => ({
+  isPluginEnabledForRequest,
+}));
 import {
   URL_SHORTENER_ALLOWED_CREATION_MODES,
   URL_SHORTENER_DEFAULT_PREFIX,
@@ -254,6 +261,7 @@ describe('url shortener validation', () => {
   });
 
   it('claims and rewrites /s/<code> through proxy-safe dispatcher', async () => {
+    isPluginEnabledForRequest.mockResolvedValue(true);
     const resolution = await resolvePublicRouteExtension('/s/abc123', mockRequest('/s/abc123'));
 
     expect(resolution.type).toBe('match');
@@ -266,9 +274,23 @@ describe('url shortener validation', () => {
   });
 
   it('does not claim reserved API paths', async () => {
+    isPluginEnabledForRequest.mockResolvedValue(true);
     const resolution = await resolvePublicRouteExtension('/api/health', mockRequest('/api/health'));
 
     expect(resolution.type).toBe('no-match');
+  });
+
+  it('returns managed disabled response for owned route when canonical enablement is disabled', async () => {
+    isPluginEnabledForRequest.mockResolvedValue(false);
+    const resolution = await resolvePublicRouteExtension('/s/abc123', mockRequest('/s/abc123'));
+    expect(resolution.type).toBe('match');
+    if (resolution.type === 'match') {
+      expect(resolution.response.status).toBe(404);
+      await expect(resolution.response.json()).resolves.toMatchObject({
+        code: 'PLUGIN_DISABLED',
+        error: 'URL Shortener plugin is disabled',
+      });
+    }
   });
 
   it('supports generated code, collision rejection, edit, disable, delete, and persistence', async () => {

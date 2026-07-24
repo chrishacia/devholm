@@ -8,6 +8,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createPublicRouteDispatcherDependencies } from '@core/lib/public-route-dispatcher.server';
 
+const isPluginEnabledForRequest = vi.hoisted(() => vi.fn(async () => false));
+
+vi.mock('@core/db/plugins-enabled', () => ({
+  isPluginEnabledForRequest,
+}));
+
 vi.mock('@user/extensions/public-routes', () => ({
   publicRouteExtensions: [],
 }));
@@ -83,10 +89,11 @@ describe('createPublicRouteDispatcherDependencies - Regression Test', () => {
     expect(values).toEqual({});
   });
 
-  it('should treat plugin routes as statically eligible in proxy context', async () => {
+  it('should defer plugin eligibility to canonical runtime authority', async () => {
     const deps = createPublicRouteDispatcherDependencies();
 
-    await expect(deps.isPluginEnabled('url-shortener')).resolves.toBe(true);
+    await expect(deps.isPluginEnabled('url-shortener')).resolves.toBe(false);
+    expect(isPluginEnabledForRequest).toHaveBeenCalledWith('url-shortener');
   });
 
   it('should provide all required dispatcher dependencies', () => {

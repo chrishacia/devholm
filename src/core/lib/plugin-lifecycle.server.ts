@@ -21,6 +21,10 @@ import {
   validatePackageDependencies,
   validateBundledPluginRegistry,
 } from '@core/lib/plugin-registry.server';
+import {
+  LIFECYCLE_LOCK_NAMESPACE,
+  withPluginLifecycleSessionLock,
+} from '@core/lib/plugin-lifecycle-coordination.server';
 import type { DevholmPluginManifest, PluginLifecycleContext } from '@core/types/plugins';
 
 type InstallOptions = {
@@ -39,8 +43,6 @@ type HookExecutionOptions = {
   context: PluginLifecycleContext;
   operationId: string;
 };
-
-const LIFECYCLE_LOCK_NAMESPACE = 'devholm.plugin.lifecycle';
 
 type LifecycleLockContext = {
   ownerPid: number;
@@ -162,23 +164,8 @@ function serializeSettingDefaultValue(
 }
 
 async function setPluginEnabledSetting(pluginId: string, enabled: boolean): Promise<void> {
-  const db = getDb();
-  const now = new Date();
-
-  await db('site_settings')
-    .insert({
-      key: `plugin:${pluginId}:enabled`,
-      value: enabled ? 'true' : 'false',
-      type: 'boolean',
-      category: 'plugins',
-      description: `${pluginId} plugin enabled state`,
-      updated_at: now,
-    })
-    .onConflict('key')
-    .merge({
-      value: enabled ? 'true' : 'false',
-      updated_at: now,
-    });
+  void pluginId;
+  void enabled;
 }
 
 async function ensureManifestSettings(manifest: DevholmPluginManifest): Promise<void> {
@@ -259,44 +246,6 @@ async function ensureDependentsAllowDisable(pluginId: string): Promise<void> {
   }
 }
 
-async function withPluginLifecycleLock<T>(
-  pluginId: string,
-  work: (context: LifecycleLockContext) => Promise<T>
-): Promise<T> {
-  const db = getDb();
-  const connection = await db.client.acquireConnection();
-
-  try {
-    await db
-      .raw('select pg_advisory_lock(hashtext(?), hashtext(?))', [
-        LIFECYCLE_LOCK_NAMESPACE,
-        pluginId,
-      ])
-      .connection(connection);
-
-    const backendPidResult = await db
-      .raw<{ rows?: Array<{ pid: number }> }>('select pg_backend_pid() as pid')
-      .connection(connection);
-    const ownerPid = backendPidResult?.rows?.[0]?.pid ?? process.pid;
-    if (!Number.isInteger(ownerPid) || ownerPid <= 0) {
-      throw new Error('failed to resolve lifecycle lock backend pid');
-    }
-
-    return await work({ ownerPid });
-  } finally {
-    try {
-      await db
-        .raw('select pg_advisory_unlock(hashtext(?), hashtext(?))', [
-          LIFECYCLE_LOCK_NAMESPACE,
-          pluginId,
-        ])
-        .connection(connection);
-    } finally {
-      await db.client.releaseConnection(connection);
-    }
-  }
-}
-
 export async function canDisableOrUninstallPlugin(pluginId: string): Promise<boolean> {
   await ensureDependentsAllowDisable(pluginId);
   return true;
@@ -320,7 +269,7 @@ export async function installPlugin(
 
   validateCompatibilityAndDependencies();
 
-  await withPluginLifecycleLock(pluginId, async (lock) => {
+  await withPluginLifecycleSessionLock(pluginId, async (lock) => {
     await ensureManifestDependenciesAvailable(manifest, { requireEnabled: true });
 
     const existing = await getInstalledPlugin(pluginId);
@@ -374,7 +323,6 @@ export async function installPlugin(
         disabledAt: enabled ? null : existing?.disabledAt ?? null,
         lastError: null,
       });
-      await setPluginEnabledSetting(pluginId, enabled);
     } catch (error) {
       await upsertPluginLedgerRecord({
         manifest,
@@ -387,7 +335,6 @@ export async function installPlugin(
         disabledAt: existing?.disabledAt ?? null,
         lastError: error instanceof Error ? error.message : String(error),
       });
-      await setPluginEnabledSetting(pluginId, existing?.enabled ?? false);
       throw error;
     }
   });
@@ -397,7 +344,7 @@ export async function enablePlugin(pluginId: string, initiatedBy?: string): Prom
   void initiatedBy;
   const manifest = getManifest(pluginId);
 
-  await withPluginLifecycleLock(pluginId, async () => {
+  await withPluginLifecycleSessionLock(pluginId, async () => {
     await ensureManifestDependenciesAvailable(manifest, { requireEnabled: true });
 
     const previous = await getInstalledPlugin(pluginId);
@@ -411,7 +358,6 @@ export async function enablePlugin(pluginId: string, initiatedBy?: string): Prom
     }
 
     try {
-      await setPluginEnabledSetting(pluginId, true);
       await upsertPluginLedgerRecord({
         manifest,
         state: 'installed',
@@ -435,7 +381,6 @@ export async function enablePlugin(pluginId: string, initiatedBy?: string): Prom
         disabledAt: previous.disabledAt,
         lastError: error instanceof Error ? error.message : String(error),
       });
-      await setPluginEnabledSetting(pluginId, previous.enabled);
       throw error;
     }
   });
@@ -445,7 +390,7 @@ export async function upgradePlugin(pluginId: string, initiatedBy?: string): Pro
   const manifest = getManifest(pluginId);
   const operationId = randomUUID();
 
-  await withPluginLifecycleLock(pluginId, async (lock) => {
+  await withPluginLifecycleSessionLock(pluginId, async (lock) => {
     const previous = await getInstalledPlugin(pluginId);
     const canUpgrade =
       previous &&
@@ -523,7 +468,7 @@ export async function disablePlugin(pluginId: string, initiatedBy?: string): Pro
   const manifest = getManifest(pluginId);
   const operationId = randomUUID();
 
-  await withPluginLifecycleLock(pluginId, async () => {
+  await withPluginLifecycleSessionLock(pluginId, async () => {
     const previous = await getInstalledPlugin(pluginId);
     if (!previous || previous.installedVersion === null) {
       throw new Error(`Cannot disable ${pluginId}: plugin is not installed`);
@@ -555,7 +500,6 @@ export async function disablePlugin(pluginId: string, initiatedBy?: string): Pro
         operationId,
       });
 
-      await setPluginEnabledSetting(pluginId, false);
       await upsertPluginLedgerRecord({
         manifest,
         state: 'disabled',
@@ -579,7 +523,6 @@ export async function disablePlugin(pluginId: string, initiatedBy?: string): Pro
         disabledAt: previous.disabledAt,
         lastError: error instanceof Error ? error.message : String(error),
       });
-      await setPluginEnabledSetting(pluginId, previous.enabled);
       throw error;
     }
   });
@@ -589,7 +532,7 @@ export async function uninstallPlugin(pluginId: string, initiatedBy?: string): P
   const manifest = getManifest(pluginId);
   const operationId = randomUUID();
 
-  await withPluginLifecycleLock(pluginId, async () => {
+  await withPluginLifecycleSessionLock(pluginId, async () => {
     const previous = await getInstalledPlugin(pluginId);
     if (!previous || previous.installedVersion === null) {
       throw new Error(`Cannot uninstall ${pluginId}: plugin is not installed`);
@@ -621,7 +564,6 @@ export async function uninstallPlugin(pluginId: string, initiatedBy?: string): P
         operationId,
       });
 
-      await setPluginEnabledSetting(pluginId, false);
       await upsertPluginLedgerRecord({
         manifest,
         state: 'uninstalled',
@@ -645,7 +587,6 @@ export async function uninstallPlugin(pluginId: string, initiatedBy?: string): P
         disabledAt: previous.disabledAt,
         lastError: error instanceof Error ? error.message : String(error),
       });
-      await setPluginEnabledSetting(pluginId, previous.enabled);
       throw error;
     }
   });
@@ -659,7 +600,7 @@ export async function purgePlugin(pluginId: string, options?: PurgeOptions): Pro
     throw new Error(`Purge confirmation required. Re-run purge with confirmPluginId='${pluginId}'`);
   }
 
-  await withPluginLifecycleLock(pluginId, async (lock) => {
+  await withPluginLifecycleSessionLock(pluginId, async (lock) => {
     const previous = await getInstalledPlugin(pluginId);
 
     if (!previous) {
@@ -739,7 +680,6 @@ export async function purgePlugin(pluginId: string, options?: PurgeOptions): Pro
         disabledAt: previous.disabledAt,
         lastError: error instanceof Error ? error.message : String(error),
       });
-      await setPluginEnabledSetting(pluginId, previous.enabled);
       throw error;
     }
   });

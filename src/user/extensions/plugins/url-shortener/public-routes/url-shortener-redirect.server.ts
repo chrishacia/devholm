@@ -5,7 +5,7 @@ import {
   recordUrlShortenerClick,
 } from '@user/extensions/plugins/url-shortener/services/url-shortener-store';
 
-function disabledPluginResponse(): Response {
+export function disabledUrlShortenerPluginResponse(): Response {
   return Response.json(
     {
       error: 'URL Shortener plugin is disabled',
@@ -141,7 +141,7 @@ export async function handleUrlShortenerRedirect(
   request: Request
 ): Promise<Response> {
   if (!(await isPluginEnabledForRequest(URL_SHORTENER_PLUGIN_ID).catch(() => false))) {
-    return disabledPluginResponse();
+    return disabledUrlShortenerPluginResponse();
   }
 
   const link = await getUrlShortenerLinkByCode(code);

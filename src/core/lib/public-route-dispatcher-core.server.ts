@@ -95,11 +95,22 @@ export async function dispatchPublicRoute(
   const collectedMatches: Array<{
     extension: PublicRouteExtension;
     match: unknown;
+    disabled: boolean;
   }> = [];
 
   for (const extension of dependencies.extensions) {
-    // Skip disabled plugins
-    if (extension.pluginId && !(await dependencies.isPluginEnabled(extension.pluginId))) {
+    const pluginEnabled = extension.pluginId
+      ? await dependencies.isPluginEnabled(extension.pluginId)
+      : true;
+
+    const disabledRouteClaimEnabled =
+      !pluginEnabled &&
+      Boolean(extension.pluginId) &&
+      typeof extension.handleDisabled === 'function' &&
+      (typeof extension.matchDisabled === 'function' || typeof extension.match === 'function');
+
+    // Disabled plugins are skipped unless they explicitly declare disabled-route ownership.
+    if (!pluginEnabled && !disabledRouteClaimEnabled) {
       continue;
     }
 
@@ -124,13 +135,19 @@ export async function dispatchPublicRoute(
         }
       }
 
+      const matcher =
+        disabledRouteClaimEnabled && extension.matchDisabled
+          ? extension.matchDisabled
+          : extension.match;
+
       // Call match() - must be side-effect-free
-      const matchResult = await extension.match(pathname, request, matchContext);
+      const matchResult = await matcher(pathname, request, matchContext);
 
       if (matchResult !== null && matchResult !== undefined) {
         collectedMatches.push({
           extension,
           match: matchResult,
+          disabled: disabledRouteClaimEnabled,
         });
         // Continue collecting all matches to detect conflicts
       }
@@ -171,14 +188,16 @@ export async function dispatchPublicRoute(
 
   // Phase 3: Handle exactly one match or return no-match
   if (collectedMatches.length === 1) {
-    const { extension, match } = collectedMatches[0];
+    const { extension, match, disabled } = collectedMatches[0];
 
     try {
       // Phase 3: Call handle() - side effects allowed here
       if (helpers === null) {
         helpers = await dependencies.getHelpers();
       }
-      const response = await extension.handle(match, request, helpers);
+      const response = disabled
+        ? await extension.handleDisabled!(match, request, helpers)
+        : await extension.handle(match, request, helpers);
 
       return {
         type: 'match',

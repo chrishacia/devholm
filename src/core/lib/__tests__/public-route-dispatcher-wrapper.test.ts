@@ -5,6 +5,12 @@ const runIsolatedPublicRouteMatch = vi.hoisted(() => vi.fn());
 const runIsolatedPublicRouteHandle = vi.hoisted(() => vi.fn());
 const extensionMatch = vi.hoisted(() => vi.fn());
 const extensionHandle = vi.hoisted(() => vi.fn());
+const extensionHandleDisabled = vi.hoisted(() => vi.fn());
+const isPluginEnabledForRequest = vi.hoisted(() => vi.fn());
+
+vi.mock('@core/db/plugins-enabled', () => ({
+  isPluginEnabledForRequest,
+}));
 
 vi.mock('@core/lib/plugin-capability-sandbox.server', () => ({
   evaluatePluginSandboxAccess: vi.fn(async () => ({
@@ -45,6 +51,17 @@ vi.mock('@user/extensions/public-routes', () => ({
         return null;
       }),
       handle: extensionHandle.mockImplementation(async () => new Response(null, { status: 204 })),
+      matchDisabled: extensionMatch,
+      handleDisabled: extensionHandleDisabled.mockImplementation(async () =>
+        Response.json(
+          {
+            error: 'URL Shortener plugin is disabled',
+            code: 'PLUGIN_DISABLED',
+            message: 'Short-link redirects are unavailable until the plugin is re-enabled.',
+          },
+          { status: 404 }
+        )
+      ),
     },
   ],
 }));
@@ -65,10 +82,12 @@ function makeRequest(pathname: string): NextRequest {
 
 describe('resolvePublicRouteExtension wrapper regressions', () => {
   beforeEach(() => {
+    isPluginEnabledForRequest.mockResolvedValue(true);
     runIsolatedPublicRouteMatch.mockReset();
     runIsolatedPublicRouteHandle.mockReset();
     extensionMatch.mockClear();
     extensionHandle.mockClear();
+    extensionHandleDisabled.mockClear();
     runIsolatedPublicRouteHandle.mockResolvedValue({
       response: new Response(null, {
         status: 200,
@@ -114,6 +133,7 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
     const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
 
     expect(runIsolatedPublicRouteMatch).toHaveBeenCalledTimes(1);
+    expect(isPluginEnabledForRequest).toHaveBeenCalledWith('url-shortener');
     expect(resolution.type).toBe('match');
     if (resolution.type === 'match') {
       expect(resolution.response.headers.get('x-middleware-rewrite')).toContain(
@@ -287,5 +307,24 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
     const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
 
     expect(resolution.type).toBe('error');
+  });
+
+  it('returns managed disabled response for owned routes when plugin is disabled', async () => {
+    isPluginEnabledForRequest.mockResolvedValue(false);
+
+    const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
+
+    expect(resolution.type).toBe('match');
+    expect(runIsolatedPublicRouteMatch).not.toHaveBeenCalled();
+    expect(extensionHandle).not.toHaveBeenCalled();
+    expect(extensionHandleDisabled).toHaveBeenCalledTimes(1);
+    if (resolution.type === 'match') {
+      expect(resolution.response.status).toBe(404);
+      await expect(resolution.response.json()).resolves.toEqual({
+        error: 'URL Shortener plugin is disabled',
+        code: 'PLUGIN_DISABLED',
+        message: 'Short-link redirects are unavailable until the plugin is re-enabled.',
+      });
+    }
   });
 });

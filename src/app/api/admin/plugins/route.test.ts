@@ -5,6 +5,7 @@ import { PluginLifecycleError } from '@core/lib/plugin-lifecycle-errors';
 const verifyAdmin = vi.hoisted(() => vi.fn());
 const listPluginStates = vi.hoisted(() => vi.fn());
 const orchestratePluginLifecycleMutation = vi.hoisted(() => vi.fn());
+const ensurePluginStartupReadyForMutation = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/auth-helpers', () => ({
   verifyAdmin,
@@ -16,6 +17,10 @@ vi.mock('@/db/plugins', () => ({
 
 vi.mock('@core/lib/plugin-lifecycle-orchestrator.server', () => ({
   orchestratePluginLifecycleMutation,
+}));
+
+vi.mock('@core/lib/plugin-startup-reconciliation.server', () => ({
+  ensurePluginStartupReadyForMutation,
 }));
 
 import { GET, PATCH, POST } from './route';
@@ -96,6 +101,7 @@ describe('admin plugins PATCH route', () => {
     });
     listPluginStates.mockResolvedValue([{ id: 'url-shortener' }]);
     orchestratePluginLifecycleMutation.mockResolvedValue(undefined);
+    ensurePluginStartupReadyForMutation.mockResolvedValue(undefined);
   });
 
   it('delegates enable requests to enablePlugin with initiator identity', async () => {
@@ -107,6 +113,7 @@ describe('admin plugins PATCH route', () => {
 
     const response = await PATCH(request);
     expect(response.status).toBe(200);
+    expect(ensurePluginStartupReadyForMutation).toHaveBeenCalledTimes(1);
     expect(orchestratePluginLifecycleMutation).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'enable',
@@ -125,6 +132,7 @@ describe('admin plugins PATCH route', () => {
 
     const response = await PATCH(request);
     expect(response.status).toBe(200);
+    expect(ensurePluginStartupReadyForMutation).toHaveBeenCalledTimes(1);
     expect(orchestratePluginLifecycleMutation).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'disable',
@@ -179,6 +187,7 @@ describe('admin plugins PATCH route', () => {
 
     const response = await POST(request);
     expect(response.status).toBe(200);
+    expect(ensurePluginStartupReadyForMutation).toHaveBeenCalledTimes(1);
     expect(orchestratePluginLifecycleMutation).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'install',
@@ -225,5 +234,28 @@ describe('admin plugins PATCH route', () => {
 
     expect(response.status).toBe(503);
     expect(body.error).toBe('Lifecycle infrastructure is temporarily unavailable.');
+  });
+
+  it('fails closed for ordinary mutation when startup reconciliation reports recovery required', async () => {
+    ensurePluginStartupReadyForMutation.mockRejectedValue(
+      new PluginLifecycleError({
+        code: 'LIFECYCLE_RECOVERY_REQUIRED',
+        internalDiagnostic:
+          'startup reconciliation blocked by unresolved lifecycle recovery actions',
+      })
+    );
+
+    const request = new NextRequest('http://localhost:3000/api/admin/plugins', {
+      method: 'PATCH',
+      body: JSON.stringify({ pluginId: 'url-shortener', isEnabled: true }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const response = await PATCH(request);
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe('Lifecycle state is ambiguous and requires explicit recovery.');
+    expect(orchestratePluginLifecycleMutation).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,374 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const getDb = vi.hoisted(() => vi.fn());
+const listPluginStates = vi.hoisted(() => vi.fn());
+const getInstalledPlugin = vi.hoisted(() => vi.fn());
+const reconcilePluginLifecycleState = vi.hoisted(() => vi.fn());
+const markPluginStartupReconciliationStateDirty = vi.hoisted(() => vi.fn());
+const readInterruptedPluginMigrationCheckpoint = vi.hoisted(() => vi.fn());
+const determinePluginRollbackCompatibility = vi.hoisted(() => vi.fn());
+const readPluginCutoverStateSnapshots = vi.hoisted(() => vi.fn());
+const readPluginCutoverStateSnapshot = vi.hoisted(() => vi.fn());
+const upsertPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
+const appendPluginCutoverReconciliationEvent = vi.hoisted(() => vi.fn());
+const readPluginCutoverReconciliationState = vi.hoisted(() => vi.fn());
+const reconcileLegacyAndCanonicalPluginState = vi.hoisted(() => vi.fn());
+const upsertPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
+const readLatestPluginCutoverRollbackCheckpoint = vi.hoisted(() => vi.fn());
+const logicallyDecommissionLegacyPluginState = vi.hoisted(() => vi.fn());
+const buildPluginCutoverCleanupPlan = vi.hoisted(() => vi.fn());
+
+vi.mock('@/db/plugins', () => ({
+  listPluginStates,
+}));
+
+vi.mock('@/db', () => ({
+  getDb,
+}));
+
+vi.mock('@core/lib/plugin-lifecycle-reconciler.server', () => ({
+  reconcilePluginLifecycleState,
+}));
+
+vi.mock('@core/db/plugin-lifecycle', () => ({
+  getInstalledPlugin,
+  findActivePluginLifecycleOperation: vi.fn(async () => null),
+  writePluginLifecycleOperationRecord: vi.fn(async () => undefined),
+  writePluginLifecycleTransitionEvent: vi.fn(async () => undefined),
+}));
+
+vi.mock('@core/lib/plugin-startup-reconciliation.server', () => ({
+  markPluginStartupReconciliationStateDirty,
+}));
+
+vi.mock('@core/db/plugin-migration-checkpoints', () => ({
+  readInterruptedPluginMigrationCheckpoint,
+  determinePluginRollbackCompatibility,
+}));
+
+vi.mock('@core/lib/plugin-cutover-state-snapshot.server', () => ({
+  readPluginCutoverStateSnapshots,
+  readPluginCutoverStateSnapshot,
+}));
+
+vi.mock('@core/db/plugin-cutover-reconciliation', () => ({
+  upsertPluginCutoverReconciliationState,
+  appendPluginCutoverReconciliationEvent,
+  readPluginCutoverReconciliationState,
+}));
+
+vi.mock('@core/lib/plugin-cutover-legacy-reconciler.server', () => ({
+  reconcileLegacyAndCanonicalPluginState,
+}));
+
+vi.mock('@core/db/plugin-cutover-rollback', () => ({
+  deriveCutoverRollbackPlanFromPhase: vi.fn(() => ({
+    stage: 'after-enabled-settings-reconciliation',
+    rollbackEligible: true,
+    irreversibleBoundary: false,
+    reason: 'rollback required',
+  })),
+  upsertPluginCutoverRollbackCheckpoint,
+  readLatestPluginCutoverRollbackCheckpoint,
+}));
+
+vi.mock('@core/lib/plugin-cutover-legacy-decommission.server', () => ({
+  logicallyDecommissionLegacyPluginState,
+}));
+
+vi.mock('@core/lib/plugin-cutover-cleanup-planner.server', () => ({
+  buildPluginCutoverCleanupPlan,
+}));
+
+import {
+  runPluginLifecycleRecoveryScan,
+  reconcileSinglePluginLifecycle,
+} from '@core/lib/plugin-lifecycle-recovery-runner.server';
+
+describe('plugin lifecycle recovery runner cutover behavior', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    const first = vi.fn(async () => ({ value: 'true' }));
+    const where = vi.fn(() => ({ first }));
+    const select = vi.fn(() => ({ where }));
+    const trx = Object.assign(
+      vi.fn(() => ({ select })),
+      {
+        raw: vi.fn(async () => undefined),
+      }
+    );
+
+    getDb.mockReturnValue({
+      transaction: vi.fn(async (callback: (value: unknown) => Promise<unknown>) => callback(trx)),
+    });
+
+    listPluginStates.mockResolvedValue([
+      {
+        id: 'calendar',
+        bundled: true,
+        name: 'Calendar',
+        description: null,
+        source: 'user',
+        enabledByDefault: false,
+        adminSurface: null,
+        capabilities: {
+          admin: true,
+          api: true,
+          publicRoutes: true,
+          navigation: true,
+          sitemap: false,
+          embeds: false,
+        },
+        installed: true,
+        isEnabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '0.1.0',
+        bundledVersion: '0.1.0',
+        updatedAt: null,
+      },
+      {
+        id: 'gallery',
+        bundled: true,
+        name: 'Gallery',
+        description: null,
+        source: 'user',
+        enabledByDefault: false,
+        adminSurface: null,
+        capabilities: {
+          admin: true,
+          api: true,
+          publicRoutes: true,
+          navigation: true,
+          sitemap: false,
+          embeds: false,
+        },
+        installed: true,
+        isEnabled: true,
+        lifecycleState: 'bundled',
+        operationStatus: 'idle',
+        installedVersion: '0.1.0',
+        bundledVersion: '0.1.0',
+        updatedAt: null,
+      },
+    ]);
+
+    reconcilePluginLifecycleState
+      .mockResolvedValueOnce({
+        action: 'none',
+        reason: 'No nonterminal lifecycle operation detected.',
+        operationId: null,
+      })
+      .mockResolvedValueOnce({
+        action: 'none',
+        reason: 'No nonterminal lifecycle operation detected.',
+        operationId: null,
+      })
+      .mockResolvedValue({
+        action: 'resume-safe-retry',
+        reason: 'Active operation lease is still valid and may continue safely.',
+        operationId: 'op-1',
+      });
+
+    readInterruptedPluginMigrationCheckpoint
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(null);
+
+    determinePluginRollbackCompatibility
+      .mockResolvedValueOnce({ rollbackCompatible: true, reason: 'compatible' })
+      .mockResolvedValueOnce({ rollbackCompatible: false, reason: 'incompatible' })
+      .mockResolvedValue({ rollbackCompatible: true, reason: 'compatible' });
+
+    getInstalledPlugin.mockImplementation(async (pluginId: string) => {
+      if (pluginId === 'calendar') {
+        return {
+          pluginId: 'calendar',
+          bundledVersion: '0.1.0',
+          installedVersion: '0.1.0',
+          enabled: true,
+          lifecycleState: 'installed',
+          operationStatus: 'idle',
+          installedAt: null,
+          upgradedAt: null,
+          disabledAt: null,
+          updatedAt: null,
+          lastError: null,
+          manifestChecksum: null,
+        };
+      }
+
+      return {
+        pluginId: 'gallery',
+        bundledVersion: '0.1.0',
+        installedVersion: '0.1.0',
+        enabled: true,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedAt: null,
+        upgradedAt: null,
+        disabledAt: null,
+        updatedAt: null,
+        lastError: null,
+        manifestChecksum: null,
+      };
+    });
+
+    readPluginCutoverStateSnapshots.mockResolvedValue([
+      {
+        pluginId: 'calendar',
+        hasEnabledSetting: true,
+        enabledSettingValue: 'true',
+        hasLifecycleRecord: true,
+        lifecycleState: 'installed',
+        operationStatus: 'idle',
+        installedVersion: '0.1.0',
+        activeLifecycleOperationCount: 0,
+        runningMigrationCheckpointCount: 0,
+        succeededMigrationCount: 3,
+        contradictoryState: false,
+        contradictionReasons: [],
+      },
+      {
+        pluginId: 'gallery',
+        hasEnabledSetting: true,
+        enabledSettingValue: 'true',
+        hasLifecycleRecord: true,
+        lifecycleState: 'bundled',
+        operationStatus: 'idle',
+        installedVersion: '0.1.0',
+        activeLifecycleOperationCount: 0,
+        runningMigrationCheckpointCount: 0,
+        succeededMigrationCount: 1,
+        contradictoryState: true,
+        contradictionReasons: ['bundled-state-has-installed-version'],
+      },
+    ]);
+    readPluginCutoverStateSnapshot.mockImplementation(async (pluginId: string) => {
+      if (pluginId === 'calendar') {
+        return {
+          pluginId: 'calendar',
+          hasEnabledSetting: true,
+          enabledSettingValue: 'true',
+          hasLifecycleRecord: true,
+          lifecycleState: 'installed',
+          operationStatus: 'idle',
+          installedVersion: '0.1.0',
+          activeLifecycleOperationCount: 0,
+          runningMigrationCheckpointCount: 0,
+          succeededMigrationCount: 3,
+          contradictoryState: false,
+          contradictionReasons: [],
+        };
+      }
+
+      return {
+        pluginId: 'gallery',
+        hasEnabledSetting: true,
+        enabledSettingValue: 'true',
+        hasLifecycleRecord: true,
+        lifecycleState: 'bundled',
+        operationStatus: 'idle',
+        installedVersion: '0.1.0',
+        activeLifecycleOperationCount: 0,
+        runningMigrationCheckpointCount: 0,
+        succeededMigrationCount: 1,
+        contradictoryState: true,
+        contradictionReasons: ['bundled-state-has-installed-version'],
+      };
+    });
+    upsertPluginCutoverReconciliationState.mockImplementation(async (input) => ({
+      pluginId: input.pluginId,
+      phase: input.phase,
+      operationId: input.operationId ?? null,
+      correlationId: input.correlationId ?? null,
+      classification: input.classification ?? null,
+      blocking: input.blocking,
+      reason: input.reason ?? null,
+      evidence: input.evidence ?? null,
+      snapshot: input.snapshot ?? null,
+      inspectedAt: new Date().toISOString(),
+      phaseUpdatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    appendPluginCutoverReconciliationEvent.mockResolvedValue(undefined);
+    readPluginCutoverReconciliationState.mockResolvedValue({
+      pluginId: 'calendar',
+      phase: 'canonical-ownership-activated',
+      operationId: null,
+      correlationId: null,
+      classification: 'already-canonical',
+      blocking: false,
+      reason: 'already canonical',
+      evidence: { topology: 'canonical-only' },
+      snapshot: null,
+      inspectedAt: new Date().toISOString(),
+      phaseUpdatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    upsertPluginCutoverRollbackCheckpoint.mockResolvedValue(undefined);
+    readLatestPluginCutoverRollbackCheckpoint.mockResolvedValue(null);
+    logicallyDecommissionLegacyPluginState.mockResolvedValue({
+      pluginId: 'calendar',
+      applied: true,
+      reason: 'legacy-logically-decommissioned',
+      decommissionedAt: new Date().toISOString(),
+    });
+    buildPluginCutoverCleanupPlan.mockResolvedValue({
+      pluginId: 'calendar',
+      mode: 'tombstone',
+      cleanupEligible: false,
+      blockers: ['legacy-not-logically-decommissioned'],
+      rollbackAvailable: true,
+      irreversibleBoundary: false,
+      hasLegacyEnabledSetting: false,
+      hasLogicalDecommissionMarker: true,
+      hasCleanupTombstoneMarker: false,
+      proposedChanges: ['write-legacy-tombstone-marker'],
+      excludedDomainDataTables: ['u_url_shortener_links'],
+    });
+    reconcileLegacyAndCanonicalPluginState.mockResolvedValue({
+      pluginId: 'calendar',
+      topology: 'canonical-only',
+      phase: 'canonical-ownership-activated',
+      blocking: false,
+      reason: 'already canonical',
+      actions: ['already-canonical-noop'],
+    });
+  });
+
+  it('returns deterministic cutover + snapshot outputs and marks startup state dirty', async () => {
+    const result = await runPluginLifecycleRecoveryScan({ limit: 2 });
+
+    expect(result.pluginCount).toBe(2);
+    expect(result.results[0]?.pluginId).toBe('calendar');
+    expect(result.results[0]?.cutover?.classification).toBe('already-canonical');
+    expect(result.results[0]?.snapshot?.contradictoryState).toBe(false);
+    expect(result.results[0]?.recoveryCenter?.recommendedAction).toBe('no-action-required');
+
+    expect(result.results[1]?.pluginId).toBe('gallery');
+    expect(result.results[1]?.cutover?.classification).toBe('incompatible-legacy-state');
+    expect(result.results[1]?.snapshot?.contradictoryState).toBe(true);
+    expect(result.results[1]?.recoveryCenter?.automaticRepairAllowed).toBe(false);
+
+    expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
+    expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(2);
+    expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(2);
+    expect(reconcileLegacyAndCanonicalPluginState).toHaveBeenCalledTimes(2);
+    expect(logicallyDecommissionLegacyPluginState).toHaveBeenCalledTimes(1);
+    expect(upsertPluginCutoverRollbackCheckpoint).toHaveBeenCalledTimes(0);
+  });
+
+  it('marks startup state dirty after single-plugin reconciliation', async () => {
+    const single = await reconcileSinglePluginLifecycle('calendar');
+
+    expect(single.action).toBeTruthy();
+    expect(reconcilePluginLifecycleState).toHaveBeenCalledWith('calendar', expect.any(Function));
+    expect(markPluginStartupReconciliationStateDirty).toHaveBeenCalledTimes(1);
+    expect(upsertPluginCutoverReconciliationState).toHaveBeenCalledTimes(1);
+    expect(appendPluginCutoverReconciliationEvent).toHaveBeenCalledTimes(1);
+  });
+});

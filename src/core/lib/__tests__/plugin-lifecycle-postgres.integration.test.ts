@@ -323,7 +323,7 @@ postgresIntegrationDescribe('plugin lifecycle PostgreSQL integration', () => {
     const setting = await integrationDb('site_settings')
       .where({ key: URL_SHORTENER_ENABLEMENT_KEY })
       .first();
-    expect(setting.value).toBe('false');
+    expect(setting).toBeUndefined();
   });
 
   it('7) successful upgrade updates version and timestamp', async () => {
@@ -657,7 +657,6 @@ postgresIntegrationDescribe('plugin lifecycle PostgreSQL integration', () => {
         URL_SHORTENER_ROUTE_PREFIX_KEY,
         URL_SHORTENER_PUBLIC_CREATION_MODE_KEY,
         URL_SHORTENER_LEGACY_PREFIX_ENABLED_KEY,
-        URL_SHORTENER_ENABLEMENT_KEY,
       ])
       .select('key', 'value');
 
@@ -665,7 +664,11 @@ postgresIntegrationDescribe('plugin lifecycle PostgreSQL integration', () => {
     expect(byKey.get(URL_SHORTENER_ROUTE_PREFIX_KEY)).toBe('/s');
     expect(byKey.get(URL_SHORTENER_PUBLIC_CREATION_MODE_KEY)).toBe('admin-only');
     expect(byKey.get(URL_SHORTENER_LEGACY_PREFIX_ENABLED_KEY)).toBe('false');
-    expect(byKey.get(URL_SHORTENER_ENABLEMENT_KEY)).toBe('false');
+
+    const legacyEnablement = await integrationDb('site_settings')
+      .where({ key: URL_SHORTENER_ENABLEMENT_KEY })
+      .first();
+    expect(legacyEnablement).toBeUndefined();
   });
 
   it('16) user setting is preserved during upgrade and missing default is added', async () => {
