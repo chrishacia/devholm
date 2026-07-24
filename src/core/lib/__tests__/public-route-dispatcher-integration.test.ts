@@ -340,6 +340,118 @@ describe('Public Route Dispatcher - Real Integration Tests', () => {
 
       expect(matchSpy).toHaveBeenCalled();
     });
+
+    it('should allow disabled plugin to claim owned route via disabled handlers', async () => {
+      const disabledMatch = vi.fn().mockResolvedValue({ reason: 'disabled-owned-route' });
+      const disabledHandle = vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            error: 'Plugin disabled',
+            code: 'PLUGIN_DISABLED',
+          },
+          { status: 404 }
+        )
+      );
+
+      const disabledOwnedExtension: PublicRouteExtension = {
+        id: 'disabled-owned-ext',
+        pluginId: 'disabled-plugin',
+        match: vi.fn(),
+        handle: vi.fn(),
+        matchDisabled: disabledMatch,
+        handleDisabled: disabledHandle,
+      };
+
+      const resolution = await dispatchPublicRoute('/owned/abc', mockRequest('GET', '/owned/abc'), {
+        extensions: [disabledOwnedExtension],
+        isPluginEnabled: async (pluginId) => pluginId !== 'disabled-plugin',
+        getReservedRoutes: () => new Set(),
+        getHelpers: async () => ({
+          auth: vi.fn(),
+          getDb: vi.fn(),
+          verifyAdmin: vi.fn(),
+        }),
+        createMatchContext: createTestContextFactory(),
+      });
+
+      expect(disabledMatch).toHaveBeenCalledTimes(1);
+      expect(disabledOwnedExtension.match).not.toHaveBeenCalled();
+      expect(disabledHandle).toHaveBeenCalledTimes(1);
+      expect(disabledOwnedExtension.handle).not.toHaveBeenCalled();
+      expect(resolution.type).toBe('match');
+      if (resolution.type === 'match') {
+        expect(resolution.response.status).toBe(404);
+      }
+    });
+
+    it('should return no-match when disabled ownership matcher does not claim path', async () => {
+      const disabledOwnedExtension: PublicRouteExtension = {
+        id: 'disabled-owned-ext',
+        pluginId: 'disabled-plugin',
+        match: vi.fn(),
+        handle: vi.fn(),
+        matchDisabled: vi.fn().mockResolvedValue(null),
+        handleDisabled: vi.fn(),
+      };
+
+      const resolution = await dispatchPublicRoute(
+        '/unowned/path',
+        mockRequest('GET', '/unowned/path'),
+        {
+          extensions: [disabledOwnedExtension],
+          isPluginEnabled: async (pluginId) => pluginId !== 'disabled-plugin',
+          getReservedRoutes: () => new Set(),
+          getHelpers: async () => ({
+            auth: vi.fn(),
+            getDb: vi.fn(),
+            verifyAdmin: vi.fn(),
+          }),
+          createMatchContext: createTestContextFactory(),
+        }
+      );
+
+      expect(resolution.type).toBe('no-match');
+      expect(disabledOwnedExtension.handleDisabled).not.toHaveBeenCalled();
+      expect(disabledOwnedExtension.handle).not.toHaveBeenCalled();
+    });
+
+    it('should detect conflicts between disabled-owned and enabled route claims', async () => {
+      const disabledOwnedExtension: PublicRouteExtension = {
+        id: 'disabled-owned-ext',
+        pluginId: 'disabled-plugin',
+        match: vi.fn(),
+        handle: vi.fn(),
+        matchDisabled: vi.fn().mockResolvedValue({ owner: 'disabled-owned-ext' }),
+        handleDisabled: vi.fn().mockResolvedValue(new Response('disabled-owned')),
+      };
+
+      const enabledExtension: PublicRouteExtension = {
+        id: 'enabled-ext',
+        pluginId: 'enabled-plugin',
+        match: vi.fn().mockResolvedValue({ owner: 'enabled-ext' }),
+        handle: vi.fn().mockResolvedValue(new Response('enabled')),
+      };
+
+      const resolution = await dispatchPublicRoute(
+        '/owned/conflict',
+        mockRequest('GET', '/owned/conflict'),
+        {
+          extensions: [disabledOwnedExtension, enabledExtension],
+          isPluginEnabled: async (pluginId) => pluginId !== 'disabled-plugin',
+          getReservedRoutes: () => new Set(),
+          getHelpers: async () => ({
+            auth: vi.fn(),
+            getDb: vi.fn(),
+            verifyAdmin: vi.fn(),
+          }),
+          createMatchContext: createTestContextFactory(),
+        }
+      );
+
+      expect(resolution.type).toBe('conflict');
+      expect(disabledOwnedExtension.handleDisabled).not.toHaveBeenCalled();
+      expect(enabledExtension.handle).not.toHaveBeenCalled();
+    });
   });
 
   describe('Reserved routes', () => {

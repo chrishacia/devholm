@@ -42,9 +42,16 @@ describe('public route resolution (tests path)', () => {
     expect(resolution.type).toBe('no-match');
   });
 
-  it('fails closed when canonical enablement is disabled', async () => {
+  it('returns managed disabled response when canonical enablement is disabled', async () => {
     isPluginEnabledForRequest.mockResolvedValue(false);
     const resolution = await resolvePublicRouteExtension('/s/abc123', mockRequest('/s/abc123'));
-    expect(resolution.type).toBe('no-match');
+    expect(resolution.type).toBe('match');
+    if (resolution.type === 'match') {
+      expect(resolution.response.status).toBe(404);
+      await expect(resolution.response.json()).resolves.toMatchObject({
+        code: 'PLUGIN_DISABLED',
+        error: 'URL Shortener plugin is disabled',
+      });
+    }
   });
 });

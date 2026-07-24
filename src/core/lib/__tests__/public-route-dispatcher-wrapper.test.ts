@@ -5,6 +5,7 @@ const runIsolatedPublicRouteMatch = vi.hoisted(() => vi.fn());
 const runIsolatedPublicRouteHandle = vi.hoisted(() => vi.fn());
 const extensionMatch = vi.hoisted(() => vi.fn());
 const extensionHandle = vi.hoisted(() => vi.fn());
+const extensionHandleDisabled = vi.hoisted(() => vi.fn());
 const isPluginEnabledForRequest = vi.hoisted(() => vi.fn());
 
 vi.mock('@core/db/plugins-enabled', () => ({
@@ -50,6 +51,17 @@ vi.mock('@user/extensions/public-routes', () => ({
         return null;
       }),
       handle: extensionHandle.mockImplementation(async () => new Response(null, { status: 204 })),
+      matchDisabled: extensionMatch,
+      handleDisabled: extensionHandleDisabled.mockImplementation(async () =>
+        Response.json(
+          {
+            error: 'URL Shortener plugin is disabled',
+            code: 'PLUGIN_DISABLED',
+            message: 'Short-link redirects are unavailable until the plugin is re-enabled.',
+          },
+          { status: 404 }
+        )
+      ),
     },
   ],
 }));
@@ -75,6 +87,7 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
     runIsolatedPublicRouteHandle.mockReset();
     extensionMatch.mockClear();
     extensionHandle.mockClear();
+    extensionHandleDisabled.mockClear();
     runIsolatedPublicRouteHandle.mockResolvedValue({
       response: new Response(null, {
         status: 200,
@@ -296,13 +309,22 @@ describe('resolvePublicRouteExtension wrapper regressions', () => {
     expect(resolution.type).toBe('error');
   });
 
-  it('skips public route extension execution when plugin is disabled', async () => {
+  it('returns managed disabled response for owned routes when plugin is disabled', async () => {
     isPluginEnabledForRequest.mockResolvedValue(false);
 
     const resolution = await resolvePublicRouteExtension('/s/abc123', makeRequest('/s/abc123'));
 
-    expect(resolution.type).toBe('no-match');
+    expect(resolution.type).toBe('match');
     expect(runIsolatedPublicRouteMatch).not.toHaveBeenCalled();
     expect(extensionHandle).not.toHaveBeenCalled();
+    expect(extensionHandleDisabled).toHaveBeenCalledTimes(1);
+    if (resolution.type === 'match') {
+      expect(resolution.response.status).toBe(404);
+      await expect(resolution.response.json()).resolves.toEqual({
+        error: 'URL Shortener plugin is disabled',
+        code: 'PLUGIN_DISABLED',
+        message: 'Short-link redirects are unavailable until the plugin is re-enabled.',
+      });
+    }
   });
 });
