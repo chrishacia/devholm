@@ -60,11 +60,21 @@ export function classifyPluginCutoverState(
     };
   }
 
-  if (reconciliation.action === 'require-recovery' || hasInterruptedMigrationCheckpoint) {
+  if (reconciliation.action === 'require-recovery') {
     return {
       pluginId: plugin.id,
       classification: 'recovery-required',
       reason: reconciliation.reason,
+      blocking: true,
+      evidence: baseEvidence,
+    };
+  }
+
+  if (hasInterruptedMigrationCheckpoint) {
+    return {
+      pluginId: plugin.id,
+      classification: 'recovery-required',
+      reason: 'Interrupted migration checkpoint requires reconciliation.',
       blocking: true,
       evidence: baseEvidence,
     };

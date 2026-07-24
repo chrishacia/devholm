@@ -76,6 +76,25 @@ describe('plugin cutover reconciliation classifier', () => {
     expect(result.blocking).toBe(true);
   });
 
+  it('uses checkpoint-specific reason when checkpoint is blocker but reconciliation reason differs', () => {
+    const result = classifyPluginCutoverState({
+      plugin: plugin({
+        operationStatus: 'idle',
+      }),
+      reconciliation: {
+        action: 'resume-safe-retry',
+        reason: 'Active operation lease is still valid and may continue safely.',
+        operationId: 'op-3',
+      },
+      hasInterruptedMigrationCheckpoint: true,
+      rollbackCompatible: true,
+    });
+
+    expect(result.classification).toBe('recovery-required');
+    expect(result.blocking).toBe(true);
+    expect(result.reason).toBe('Interrupted migration checkpoint requires reconciliation.');
+  });
+
   it('classifies schedule-rollback as blocking rollback-required', () => {
     const result = classifyPluginCutoverState({
       plugin: plugin({}),
