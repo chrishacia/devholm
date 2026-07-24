@@ -37,10 +37,6 @@ export async function isPluginEnabledForRequest(pluginId: string | undefined): P
     return installed && parseBooleanSetting(lifecycleRow.enabled);
   }
 
-  const legacySetting = await db('site_settings')
-    .select('value')
-    .where('key', `plugin:${pluginId}:enabled`)
-    .first();
-
-  return parseBooleanSetting(legacySetting?.value);
+  // Canonical lifecycle row is now the only runtime authority for plugin enablement.
+  return false;
 }

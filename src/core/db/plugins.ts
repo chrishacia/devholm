@@ -22,27 +22,8 @@ function pluginSettingKey(pluginId: string) {
 }
 
 export async function syncPluginDefinitions() {
-  const db = getDb();
-  const definitions = getPluginDefinitions();
-
-  await db.transaction(async (trx) => {
-    for (const definition of definitions) {
-      await trx('site_settings')
-        .insert({
-          key: pluginSettingKey(definition.id),
-          value:
-            definition.source === 'user' || definition.enabledByDefault === false
-              ? 'false'
-              : 'true',
-          type: 'boolean',
-          category: 'plugins',
-          description: `${definition.name} plugin enabled state`,
-          updated_at: new Date(),
-        })
-        .onConflict('key')
-        .ignore();
-    }
-  });
+  // Canonical lifecycle records are now the only runtime write authority for enablement state.
+  // This function remains intentionally no-op for backward compatibility with existing callers.
 }
 
 export async function listPluginStates(): Promise<PluginAdminRecord[]> {

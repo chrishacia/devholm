@@ -4,76 +4,6 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getDb } from '@/db';
-
-// Stateful in-memory mock for site_settings – scoped to this test file only.
-// Must NOT go in setup.ts because that would override the real Knex instance
-// used by src/core/lib/__tests__/plugin-lifecycle-postgres.integration.test.ts.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(globalThis as any).__mockSiteSettings = new Map<
-  string,
-  { key: string; value: string; type: string }
->();
-
-class QueryBuilder {
-  private whereColumn: string | null = null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private whereValue: any = null;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  where(column: string, op: string | any = '=', value?: any): this {
-    if (arguments.length === 2) {
-      this.whereColumn = column;
-      this.whereValue = op;
-    } else {
-      this.whereColumn = column;
-      this.whereValue = value;
-    }
-    return this;
-  }
-
-  select(_cols: string | string[]): this {
-    return this;
-  }
-
-  async first() {
-    if (this.whereColumn === null || this.whereValue === null) return null;
-    if (this.whereColumn === 'key') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = (globalThis as any).__mockSiteSettings.get(this.whereValue);
-      return result || null;
-    }
-    return null;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async insert(data: any) {
-    const items = Array.isArray(data) ? data : [data];
-    for (const item of items) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (globalThis as any).__mockSiteSettings.set(item.key, item);
-    }
-    return this;
-  }
-
-  async del() {
-    if (this.whereColumn === null) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (globalThis as any).__mockSiteSettings.clear();
-    } else if (this.whereColumn === 'key') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (globalThis as any).__mockSiteSettings.delete(this.whereValue);
-    }
-    return this;
-  }
-}
-
-vi.mock('@/db', () => ({
-  getDb: vi.fn(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (_tableName: any) => new QueryBuilder();
-  }),
-}));
 import {
   eventHandlerId,
   eventPayloadVersion,
@@ -88,12 +18,24 @@ import {
 } from '@core/lib/event-registry.server';
 import { dispatchEvent, dispatchEventWithResults } from '@core/lib/event-dispatcher.server';
 
+const isPluginEnabledForRequest = vi.hoisted(() => vi.fn());
+
+vi.mock('@core/db/plugins-enabled', () => ({
+  isPluginEnabledForRequest,
+}));
+
 describe('Event Dispatcher', () => {
+  const enabledPlugins = new Set<string>();
+
   beforeEach(async () => {
     resetEventRegistry();
-    // Clear mock site_settings before each test
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).__mockSiteSettings?.clear();
+    enabledPlugins.clear();
+    isPluginEnabledForRequest.mockImplementation(async (pluginId?: string) => {
+      if (!pluginId) {
+        return true;
+      }
+      return enabledPlugins.has(pluginId);
+    });
   });
 
   afterEach(() => {
@@ -121,12 +63,8 @@ describe('Event Dispatcher', () => {
       handler: handler2,
     });
 
-    // Enable both plugins
-    const db = getDb();
-    await db('site_settings').insert([
-      { key: 'plugin:plugin-1:enabled', value: 'true', type: 'boolean' },
-      { key: 'plugin:plugin-2:enabled', value: 'true', type: 'boolean' },
-    ]);
+    enabledPlugins.add('plugin-1');
+    enabledPlugins.add('plugin-2');
 
     const event: UserCreatedEvent = {
       eventTypeId: StandardEventTypes.USER_CREATED,
@@ -163,14 +101,7 @@ describe('Event Dispatcher', () => {
       handler: handler2,
     });
 
-    // Enable only plugin-1
-    const db = getDb();
-    await db('site_settings').insert({
-      key: 'plugin:plugin-1:enabled',
-      value: 'true',
-      type: 'boolean',
-    });
-    // plugin-2 is not enabled (no entry or value is false)
+    enabledPlugins.add('plugin-1');
 
     const event: UserCreatedEvent = {
       eventTypeId: StandardEventTypes.USER_CREATED,
@@ -217,13 +148,9 @@ describe('Event Dispatcher', () => {
       handler: handler3,
     });
 
-    // Enable all plugins
-    const db = getDb();
-    await db('site_settings').insert([
-      { key: 'plugin:plugin-1:enabled', value: 'true', type: 'boolean' },
-      { key: 'plugin:plugin-2:enabled', value: 'true', type: 'boolean' },
-      { key: 'plugin:plugin-3:enabled', value: 'true', type: 'boolean' },
-    ]);
+    enabledPlugins.add('plugin-1');
+    enabledPlugins.add('plugin-2');
+    enabledPlugins.add('plugin-3');
 
     const event: UserCreatedEvent = {
       eventTypeId: StandardEventTypes.USER_CREATED,
@@ -271,12 +198,8 @@ describe('Event Dispatcher', () => {
       handler: vi.fn(),
     });
 
-    // Enable only plugin-1 and plugin-2
-    const db = getDb();
-    await db('site_settings').insert([
-      { key: 'plugin:plugin-1:enabled', value: 'true', type: 'boolean' },
-      { key: 'plugin:plugin-2:enabled', value: 'true', type: 'boolean' },
-    ]);
+    enabledPlugins.add('plugin-1');
+    enabledPlugins.add('plugin-2');
 
     const event: UserCreatedEvent = {
       eventTypeId: StandardEventTypes.USER_CREATED,
@@ -342,12 +265,7 @@ describe('Event Dispatcher', () => {
       handler: userAuthenticatedHandler,
     });
 
-    const db = getDb();
-    await db('site_settings').insert({
-      key: 'plugin:plugin-1:enabled',
-      value: 'true',
-      type: 'boolean',
-    });
+    enabledPlugins.add('plugin-1');
 
     const userCreatedEvent: UserCreatedEvent = {
       eventTypeId: StandardEventTypes.USER_CREATED,
@@ -371,5 +289,29 @@ describe('Event Dispatcher', () => {
 
     await dispatchEvent(userAuthenticatedEvent);
     expect(userAuthenticatedHandler).toHaveBeenCalledWith(userAuthenticatedEvent);
+  });
+
+  it('fails closed when canonical plugin state is unresolved', async () => {
+    const handler = vi.fn();
+    const registry = new EventRegistry();
+    setEventRegistry(registry);
+
+    registry.register({
+      handlerId: eventHandlerId('unresolved-plugin-handler'),
+      pluginId: 'unresolved-plugin',
+      eventTypeId: StandardEventTypes.USER_CREATED,
+      handler,
+    });
+
+    const event: UserCreatedEvent = {
+      eventTypeId: StandardEventTypes.USER_CREATED,
+      payloadVersion: eventPayloadVersion(1),
+      occurredAt: new Date(),
+      userId: 'user-123',
+      email: 'test@example.com',
+    };
+
+    await dispatchEvent(event);
+    expect(handler).not.toHaveBeenCalled();
   });
 });

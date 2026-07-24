@@ -9,7 +9,18 @@ function createDbMock() {
   const update = vi.fn(async () => 1);
   const where = vi.fn(() => ({ update, first: vi.fn(async () => null), del }));
   const whereIn = vi.fn(() => ({ del }));
-  const raw = vi.fn(() => ({ connection: vi.fn(async () => undefined) }));
+  const raw = vi.fn((query: unknown) => ({
+    connection: vi.fn(async () => {
+      const sql = String(query);
+      if (sql.includes('pg_backend_pid')) {
+        return { rows: [{ pid: 41002 }] };
+      }
+      if (sql.includes('pg_advisory_unlock')) {
+        return { rows: [{ pg_advisory_unlock: true }] };
+      }
+      return { rows: [] };
+    }),
+  }));
 
   const table = vi.fn(() => ({ insert, where, whereIn, update, onConflict, del }));
   const transaction = vi.fn(async (callback) => callback(Object.assign(table, { raw })));

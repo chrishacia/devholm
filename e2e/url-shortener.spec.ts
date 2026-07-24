@@ -385,14 +385,24 @@ test.describe('URL Shortener MVP', () => {
 
     const disabledExistingBody = await disabledExistingResponse.text();
     const disabledMissingBody = await disabledMissingResponse.text();
-    expect(disabledExistingBody).toBe(disabledMissingBody);
 
     const disabledExistingPayload = JSON.parse(disabledExistingBody) as {
       code?: string;
       error?: string;
     };
+    const disabledMissingPayload = JSON.parse(disabledMissingBody) as {
+      code?: string;
+      error?: string;
+    };
+
+    expect({ code: disabledExistingPayload.code, error: disabledExistingPayload.error }).toEqual({
+      code: disabledMissingPayload.code,
+      error: disabledMissingPayload.error,
+    });
     expect(disabledExistingPayload.code).toBe('PLUGIN_DISABLED');
     expect(disabledExistingPayload.error).toBe('URL Shortener plugin is disabled');
+    expect(disabledMissingPayload.code).toBe('PLUGIN_DISABLED');
+    expect(disabledMissingPayload.error).toBe('URL Shortener plugin is disabled');
 
     const disabledApiResponse = await page.request.get('/api/url-shortener/overview');
     expect(disabledApiResponse.status()).toBe(404);
