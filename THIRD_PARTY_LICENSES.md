@@ -23,7 +23,6 @@ DevHolm depends on open-source software distributed under their own licenses.
 
 - Marked - MIT License - Copyright (c) Christopher Jeffrey
 - Sharp - Apache License 2.0 - Copyright (c) Lovell Fuller
-- gray-matter - MIT License - Copyright (c) Jon Schlinkert
 - sanitize-html - MIT License - Copyright (c) Apostrophe Technologies
 - reading-time - MIT License - Copyright (c) Nicolas Gryman
 - Feed - MIT License - Copyright (c) Jean-Philippe Monette
