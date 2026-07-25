@@ -25,7 +25,7 @@ A modern **personal website framework** built with **Next.js 15**, **React 19**,
 
 DevHolm follows a **layered framework model**:
 
-```bash
+```text
 src/core/    ← Framework engine (updated by DevHolm, never touch directly)
 src/user/    ← Your customizations (content, extensions, view overrides)
 src/app/     ← Next.js routing (thin wrappers only)
