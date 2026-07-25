@@ -1,7 +1,7 @@
 # DevHolm
 
 <p align="center">
-  <img src="public/devholm_logo.png" alt="DevHolm logo" width="180" />
+  <img src="public/devholm_logo.png" alt="DevHolm logo" />
 </p>
 
 [![CI/CD Pipeline](https://github.com/chrishacia/devholm/actions/workflows/ci.yml/badge.svg)](https://github.com/chrishacia/devholm/actions/workflows/ci.yml)
@@ -15,8 +15,9 @@
 
 A modern **personal website framework** built with **Next.js 15**, **React 19**, **TypeScript**, **Material UI**, and **PostgreSQL**. DevHolm uses a layered architecture that separates the framework engine from your personalizations — making upgrades safe and non-destructive.
 
-🌐 **Live Example:** [chrishacia.com](https://chrishacia.com)
-💬 **Discord:** [Join the Community](https://discord.gg/8gG5vpN3YP)
+🌐 **Live Examples:** [devholm.com](https://devholm.com) [chrishacia.com](https://chrishacia.com) [frendolsk.com](https://frendolsk.com)
+💬 **Coder Life Community Discord:** [Join the Community](https://discord.gg/8gG5vpN3YP)
+💬 **DevHolm Community Discord:** [Join the Community](https://discord.gg/GcpkhBQaPG)
 
 ---
 
@@ -24,7 +25,7 @@ A modern **personal website framework** built with **Next.js 15**, **React 19**,
 
 DevHolm follows a **layered framework model**:
 
-```
+```text
 src/core/    ← Framework engine (updated by DevHolm, never touch directly)
 src/user/    ← Your customizations (content, extensions, view overrides)
 src/app/     ← Next.js routing (thin wrappers only)
