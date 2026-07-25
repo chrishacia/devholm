@@ -8,7 +8,7 @@ It is written as a practical runbook with explicit checks at each stage.
 
 Install and verify:
 
-- Node.js 20+
+- Node.js 22.12+
 - pnpm 10+
 - Docker Desktop or a local PostgreSQL 16+
 - Git

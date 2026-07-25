@@ -145,7 +145,7 @@ See [docs/cli.md](docs/cli.md).
 
 ### Prerequisites
 
-- **Node.js** 20+
+- **Node.js** 22.12+
 - **pnpm** 9+
 - **PostgreSQL** 15+ (local or Docker)
 

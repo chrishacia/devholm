@@ -6,7 +6,7 @@ For the complete onboarding runbook from first clone to production readiness, st
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22.12+
 - pnpm 10+
 - PostgreSQL 16+ locally, or Docker with `docker compose`
 
