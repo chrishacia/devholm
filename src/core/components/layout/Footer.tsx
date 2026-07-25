@@ -215,55 +215,83 @@ export function Footer() {
             reserved.
           </Typography>
 
-          {/* Powered by DevHolm */}
-          <Box
-            component="a"
-            href="https://github.com/chrishacia/devholm"
-            target="_blank"
-            rel="noopener noreferrer"
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.75,
-              textDecoration: 'none',
-              color: theme.palette.text.secondary,
-              transition: 'all 0.2s ease',
-              px: 1.5,
-              py: 0.5,
-              borderRadius: 1,
-              '&:hover': {
-                color: theme.palette.text.primary,
-                backgroundColor: alpha(theme.palette.primary.main, 0.08),
-              },
-            }}
-          >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Box
+              component="a"
+              href="https://discord.gg/GcpkhBQaPG"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="DevHolm Community Discord"
+              aria-label="DevHolm Community Discord"
               sx={{
-                width: 18,
-                height: 18,
-                borderRadius: '4px',
-                background: 'linear-gradient(135deg, #22C55E 0%, #10B981 50%, #06B6D4 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                flexShrink: 0,
+                textDecoration: 'none',
+                color: theme.palette.text.secondary,
+                transition: 'all 0.2s ease',
+                px: 1.5,
+                py: 0.5,
+                borderRadius: 1,
+                '&:hover': {
+                  color: theme.palette.text.primary,
+                  backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                },
               }}
             >
-              <Typography
+              <DiscordIcon sx={{ fontSize: 18 }} />
+            </Box>
+
+            {/* Powered by DevHolm */}
+            <Box
+              component="a"
+              href="https://github.com/chrishacia/devholm"
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.75,
+                textDecoration: 'none',
+                color: theme.palette.text.secondary,
+                transition: 'all 0.2s ease',
+                px: 1.5,
+                py: 0.5,
+                borderRadius: 1,
+                '&:hover': {
+                  color: theme.palette.text.primary,
+                  backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                },
+              }}
+            >
+              <Box
                 sx={{
-                  fontSize: '8px',
-                  fontWeight: 700,
-                  color: 'white',
-                  lineHeight: 1,
-                  letterSpacing: '-0.02em',
+                  width: 18,
+                  height: 18,
+                  borderRadius: '4px',
+                  background: 'linear-gradient(135deg, #22C55E 0%, #10B981 50%, #06B6D4 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
                 }}
               >
-                DH
+                <Typography
+                  sx={{
+                    fontSize: '8px',
+                    fontWeight: 700,
+                    color: 'white',
+                    lineHeight: 1,
+                    letterSpacing: '-0.02em',
+                  }}
+                >
+                  DH
+                </Typography>
+              </Box>
+              <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                Powered by DevHolm
               </Typography>
             </Box>
-            <Typography variant="caption" sx={{ fontWeight: 500 }}>
-              Powered by DevHolm
-            </Typography>
           </Box>
         </Box>
       </Container>
