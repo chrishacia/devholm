@@ -7,7 +7,8 @@ overrides:
   '@playwright/test': 1.61.1
   js-yaml@3: 3.15.0
   sharp: 0.35.3
-  postcss: 8.5.22
+  postcss: 8.5.23
+  nanoid: 3.3.18
   yaml@1: 1.10.3
 allowBuilds:
   esbuild: true
@@ -30,4 +31,5 @@ minimumReleaseAgeExclude:
   - '@next/swc-win32-x64-msvc@16.2.11'
   - eslint-config-next@16.2.11
   - next@16.2.11
-  - postcss@8.5.22
+  - postcss@8.5.23
+  - nanoid@3.3.18
