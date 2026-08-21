@@ -28,6 +28,7 @@
     "test:coverage": "vitest run --coverage",
     "test:plugin-lifecycle:pg": "PHASE2_REQUIRE_POSTGRES_INTEGRATION=true PHASE2_TEST_DATABASE_URL=${PHASE2_TEST_DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:5432/mysite} vitest run src/core/lib/__tests__/plugin-lifecycle-postgres.integration.test.ts",
     "test:plugin-lifecycle:pg:ci": "PHASE2_REQUIRE_POSTGRES_INTEGRATION=true PHASE2_TEST_DATABASE_URL=${PHASE2_TEST_DATABASE_URL:-postgresql://test:test@127.0.0.1:45433/test} vitest run src/core/lib/__tests__/plugin-lifecycle-postgres.integration.test.ts",
+    "test:postgres:all:ci": "vitest run postgres.integration.test.ts --maxWorkers=1 --fileParallelism=false",
     "test:runtime:gates": "vitest run src/core/lib/__tests__/plugin-lifecycle-hook-contract.test.ts src/core/lib/__tests__/plugin-lifecycle-semantics.test.ts src/core/lib/__tests__/plugin-isolation-protocol.test.ts src/core/lib/__tests__/plugin-isolation-runtime.test.ts src/core/lib/__tests__/plugin-capability-sandbox.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:full": "playwright test --reporter=line",

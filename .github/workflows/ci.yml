@@ -372,7 +372,7 @@ jobs:
   # PostgreSQL Lifecycle & Runtime Gates
   # ===========================================================================
   postgres-integration:
-    name: PostgreSQL Lifecycle & Runtime Gates
+    name: Full PostgreSQL Integration & Runtime Gates
     runs-on: ubuntu-latest
     needs: [sync-framework, changes]
     if: needs.changes.outputs.docs_only != 'true'
@@ -432,8 +432,8 @@ jobs:
       - name: Run bootstrap seeds
         run: pnpm db:seed:bootstrap
 
-      - name: Run PostgreSQL lifecycle integration tests
-        run: pnpm test:plugin-lifecycle:pg:ci
+      - name: Run all PostgreSQL integration tests
+        run: pnpm test:postgres:all:ci
 
       - name: Run lifecycle and runtime gate suites
         run: pnpm test:runtime:gates
