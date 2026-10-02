@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "profile": {
+    "name": "Your Name",
+    "headline": "Full-Stack Developer",
+    "summary": "Replace this profile summary with your own experience highlights.",
+    "category_order": ["frontend", "backend", "databases", "testing", "devops", "cloud", "tools"]
+  },
+  "skills": [
+    {
+      "name": "React",
+      "category": "frontend",
+      "sort_order": 0
+    },
+    {
+      "name": "TypeScript",
+      "category": "frontend",
+      "sort_order": 1
+    },
+    {
+      "name": "Node.js",
+      "category": "backend",
+      "sort_order": 0
+    },
+    {
+      "name": "PostgreSQL",
+      "category": "databases",
+      "sort_order": 0
+    }
+  ],
+  "experiences": [
+    {
+      "title": "Senior Software Engineer",
+      "company": "Example Company",
+      "location": "Remote",
+      "employment_type": "full-time",
+      "start_date": "2022-01-01",
+      "end_date": null,
+      "is_current": true,
+      "description": null,
+      "sort_order": 0,
+      "highlights": [
+        "Led product features across frontend and backend services.",
+        "Improved platform reliability and test coverage."
+      ],
+      "technologies": ["React", "TypeScript", "Node.js", "PostgreSQL"]
+    }
+  ],
+  "education": [
+    {
+      "degree": "Bachelor of Science",
+      "field_of_study": "Computer Science",
+      "school": "State University",
+      "location": null,
+      "start_date": "2015-09-01",
+      "end_date": "2019-05-01",
+      "description": null,
+      "sort_order": 0
+    }
+  ],
+  "certifications": [
+    {
+      "name": "AWS Certified Developer",
+      "issuer": "Amazon Web Services",
+      "issue_date": null,
+      "expiry_date": null,
+      "credential_id": null,
+      "credential_url": null,
+      "sort_order": 0
+    }
+  ],
+  "source_notes": {
+    "source": "Template seed",
+    "date_precision": "Use YYYY-MM-01 for month-level dates when exact day is unknown.",
+    "profile": "Profile fields are rendered from extension config and included here for import validation parity."
+  }
+}

@@ -12,6 +12,14 @@
 
 # Example: tsx src/user/extensions/db/seeds/seed-projects.ts
 
+# Resume bulk replacement workflow:
+
+# Preview only: tsx src/user/extensions/db/seeds/replace-resume.ts
+
+# Apply replacement: tsx src/user/extensions/db/seeds/replace-resume.ts --apply
+
+# Restore from backup: tsx src/user/extensions/db/seeds/replace-resume.ts --restore <backup-file>
+
 #
 
 # If you create true Knex seed files (exporting `seed(knex)`), keep them here too.

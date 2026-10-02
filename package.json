@@ -42,6 +42,8 @@
     "db:seed:bootstrap": "tsx scripts/run-seeds.ts bootstrap",
     "db:seed:demo": "tsx scripts/run-seeds.ts demo",
     "db:seed:user": "tsx scripts/run-seeds.ts user",
+    "resume:replace:preview": "tsx src/user/extensions/db/seeds/replace-resume.ts",
+    "resume:replace:apply": "tsx src/user/extensions/db/seeds/replace-resume.ts --apply",
     "db:setup": "pnpm db:migrate && pnpm db:seed:bootstrap",
     "db:test:up": "bash scripts/test-db-container.sh up",
     "db:test:down": "bash scripts/test-db-container.sh down",

@@ -16,7 +16,6 @@ import {
 import { Download, Email, LinkedIn, GitHub } from '@mui/icons-material';
 import { AuthAwareMainLayout } from '@/components';
 import Link from '@/components/common/Link';
-import { format } from 'date-fns';
 import type { SiteSettings } from '@/hooks/useSiteSettings';
 
 interface Skill {
@@ -56,6 +55,11 @@ interface Certification {
 }
 
 interface ResumeData {
+  profile?: {
+    headline: string;
+    summary: string;
+    category_order: string[];
+  };
   skills: Record<string, Skill[]>;
   experiences: Experience[];
   education: Education[];
@@ -71,10 +75,36 @@ interface ResumePageClientProps {
   settings: SiteSettings;
 }
 
+const monthNames = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+function formatMonthYear(dateValue: string): string {
+  const [yearPart, monthPart] = dateValue.split('-');
+  const monthIndex = Number(monthPart) - 1;
+
+  if (!yearPart || Number.isNaN(monthIndex) || monthIndex < 0 || monthIndex > 11) {
+    return dateValue;
+  }
+
+  return `${monthNames[monthIndex]} ${yearPart}`;
+}
+
 function formatDateRange(startDate: string, endDate: string | null): string {
-  const start = format(new Date(startDate), 'MMM yyyy');
-  const end = endDate ? format(new Date(endDate), 'MMM yyyy') : 'Present';
-  return `${start} – ${end}`;
+  const start = formatMonthYear(startDate);
+  const end = endDate ? formatMonthYear(endDate) : 'Present';
+  return `${start} to ${end}`;
 }
 
 function normalizeResumeSection<T>(section: T[] | undefined | null): T[] {
@@ -100,11 +130,16 @@ export default function ResumePage({ resume, settings }: ResumePageClientProps) 
   const authorEmail = settings?.author?.email || '';
   const linkedIn = settings?.social?.linkedin || '';
   const github = settings?.social?.github || '';
+  const profile = resume?.profile;
   const skills = resume?.skills ?? {};
   const experiences = normalizeResumeSection(resume?.experiences);
   const education = normalizeResumeSection(resume?.education);
   const certifications = normalizeResumeSection(resume?.certifications);
   const resumeFile = resume?.resumeFile ?? null;
+  const orderedCategoryKeys = [
+    ...(profile?.category_order ?? []).filter((key) => Boolean(skills[key])),
+    ...Object.keys(skills).filter((key) => !(profile?.category_order ?? []).includes(key)),
+  ];
 
   return (
     <AuthAwareMainLayout>
@@ -115,8 +150,22 @@ export default function ResumePage({ resume, settings }: ResumePageClientProps) 
             Resume
           </Typography>
           <Typography variant="h6" color="text.secondary" sx={{ mb: 3 }}>
-            {authorName} • Full-Stack Developer
+            {authorName}
           </Typography>
+          {profile?.headline && (
+            <Typography variant="h5" color="text.primary" sx={{ mb: 1, fontWeight: 600 }}>
+              {profile.headline}
+            </Typography>
+          )}
+          {profile?.summary && (
+            <Typography
+              variant="body1"
+              color="text.secondary"
+              sx={{ maxWidth: 880, mx: 'auto', mb: 3 }}
+            >
+              {profile.summary}
+            </Typography>
+          )}
           <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap', mb: 3 }}>
             {resumeFile && (
               <Button variant="contained" startIcon={<Download />} href={resumeFile.url} download>
@@ -170,27 +219,31 @@ export default function ResumePage({ resume, settings }: ResumePageClientProps) 
             Skills
           </Typography>
           <Paper sx={{ p: 3 }}>
-            {Object.entries(skills).map(([category, categorySkills], index) => (
-              <Box key={category} sx={{ mb: index < Object.keys(skills).length - 1 ? 3 : 0 }}>
-                <Typography
-                  variant="subtitle2"
-                  color="text.secondary"
-                  sx={{
-                    mb: 1.5,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    fontSize: '0.75rem',
-                  }}
-                >
-                  {categoryNames[category] || category}
-                </Typography>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {categorySkills.map((skill) => (
-                    <Chip key={skill.id} label={skill.name} size="small" variant="outlined" />
-                  ))}
+            {orderedCategoryKeys.map((category, index) => {
+              const categorySkills = skills[category] ?? [];
+
+              return (
+                <Box key={category} sx={{ mb: index < orderedCategoryKeys.length - 1 ? 3 : 0 }}>
+                  <Typography
+                    variant="subtitle2"
+                    color="text.secondary"
+                    sx={{
+                      mb: 1.5,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      fontSize: '0.75rem',
+                    }}
+                  >
+                    {categoryNames[category] || category}
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    {categorySkills.map((skill) => (
+                      <Chip key={skill.id} label={skill.name} size="small" variant="outlined" />
+                    ))}
+                  </Box>
                 </Box>
-              </Box>
-            ))}
+              );
+            })}
           </Paper>
         </Box>
 

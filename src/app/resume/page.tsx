@@ -4,6 +4,7 @@ import { getFullResume } from '@/db/resume';
 import { fetchSiteSettings } from '@/lib/fetchSiteSettings';
 import SeoExtensionJsonLd from '@/components/seo/SeoExtensionJsonLd';
 import { buildExtendedPageMetadata, getSeoSiteSettings } from '@/lib/seo/metadata';
+import { resumeProfile } from '@user/extensions/resume/profile';
 import { readdir } from 'fs/promises';
 import path from 'path';
 
@@ -58,6 +59,11 @@ export default async function ResumePage() {
 
   // Serialize Date objects to strings for the client component
   const serializedResume = {
+    profile: {
+      headline: resumeProfile.headline,
+      summary: resumeProfile.summary,
+      category_order: resumeProfile.categoryOrder,
+    },
     skills: resumeData.skills ?? {},
     experiences: (resumeData.experiences ?? []).map((exp) => ({
       ...exp,
