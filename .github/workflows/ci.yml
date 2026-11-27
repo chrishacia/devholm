@@ -69,6 +69,18 @@ env:
 
 jobs:
   # ===========================================================================
+  # Production app port must stay on 127.0.0.1 (porkchop lockdown follow-up)
+  # ===========================================================================
+  loopback-bind:
+    name: App port stays on 127.0.0.1
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Fail if the production bind is rewritten to 0.0.0.0
+        run: bash tests/check-loopback-bind.sh
+
+  # ===========================================================================
   # Sync Framework Update (manual update flow)
   # ===========================================================================
   sync-framework:
@@ -974,7 +986,8 @@ jobs:
               image: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:latest
               restart: unless-stopped
               ports:
-                - "${APP_PORT_VALUE}:3000"
+                # Loopback only. nginx on the host proxies in. Never 0.0.0.0.
+                - "127.0.0.1:${APP_PORT_VALUE}:3000"
               environment:
                 - NODE_ENV=production
                 - NEXT_PUBLIC_APP_URL=${{ steps.deploy_inputs.outputs.site_url }}
