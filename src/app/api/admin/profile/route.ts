@@ -72,7 +72,7 @@ const updateProfileSchema = z.object({
   twitterHandle: z.string().max(50).nullable().optional(),
   githubHandle: z.string().max(50).nullable().optional(),
   linkedinHandle: z.string().max(100).nullable().optional(),
-  avatarMediaId: z.string().uuid().nullable().optional(),
+  avatarMediaId: z.guid().nullable().optional(),
 });
 
 const updateEmailSchema = z.object({

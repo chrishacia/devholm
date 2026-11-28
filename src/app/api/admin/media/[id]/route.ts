@@ -32,7 +32,7 @@ interface RouteParams {
 // Validation Schemas
 // =============================================================================
 
-const idSchema = z.string().uuid();
+const idSchema = z.guid();
 
 const updateBodySchema = z.object({
   altText: z.string().max(300, 'Alt text too long').optional(),

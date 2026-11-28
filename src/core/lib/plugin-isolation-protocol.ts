@@ -15,7 +15,7 @@ export const isolatedRequestEnvelopeSchema = z.object({
 
 const executeApiMessageSchema = z.object({
   type: z.literal('execute-api'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   pluginId: z.string().min(1),
   extensionPath: z.string().min(1),
   method: z.string().min(1),
@@ -25,7 +25,7 @@ const executeApiMessageSchema = z.object({
 
 const executePublicRouteMatchMessageSchema = z.object({
   type: z.literal('execute-public-route-match'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   pluginId: z.string().min(1),
   extensionId: z.string().min(1),
   pathname: z.string().min(1),
@@ -34,7 +34,7 @@ const executePublicRouteMatchMessageSchema = z.object({
 
 const executePublicRouteHandleMessageSchema = z.object({
   type: z.literal('execute-public-route-handle'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   pluginId: z.string().min(1),
   extensionId: z.string().min(1),
   request: isolatedRequestEnvelopeSchema,
@@ -197,11 +197,11 @@ const migrationExecutionPlanSchema = z
 
 const executeLifecycleHookMessageSchema = z.object({
   type: z.literal('execute-lifecycle-hook'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   pluginId: z.string().min(1),
   hookName: lifecycleHookNameSchema,
-  operationId: z.string().uuid(),
-  hookExecutionId: z.string().uuid(),
+  operationId: z.guid(),
+  hookExecutionId: z.guid(),
   artifactIdentity: z.string().min(1),
   context: z.object({
     pluginId: z.string().min(1),
@@ -216,13 +216,13 @@ const executeLifecycleHookMessageSchema = z.object({
 
 const testProbeEnvMessageSchema = z.object({
   type: z.literal('test-probe-env'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   keys: z.array(z.string().min(1)).max(32),
 });
 
 const executeMigrationPlanMessageSchema = z.object({
   type: z.literal('execute-migration-plan'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   pluginId: z.string().min(1),
   migrationId: z.string().min(1),
   checksum: z.string().length(64),
@@ -252,7 +252,7 @@ const workerReadyMessageSchema = z.object({
 
 const workerErrorMessageSchema = z.object({
   type: z.literal('worker-error'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   code: z.string().min(1),
   message: z.string(),
   pid: z.number().int().positive(),
@@ -260,7 +260,7 @@ const workerErrorMessageSchema = z.object({
 
 const apiResultMessageSchema = z.object({
   type: z.literal('api-result'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   pid: z.number().int().positive(),
   status: z.number().int(),
   headers: z.array(headerTupleSchema),
@@ -270,7 +270,7 @@ const apiResultMessageSchema = z.object({
 
 const publicRouteMatchResultSchema = z.object({
   type: z.literal('public-route-match-result'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   pid: z.number().int().positive(),
   matched: z.boolean(),
   match: z.unknown().optional(),
@@ -278,7 +278,7 @@ const publicRouteMatchResultSchema = z.object({
 
 const publicRouteHandleResultSchema = z.object({
   type: z.literal('public-route-handle-result'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   pid: z.number().int().positive(),
   status: z.number().int(),
   headers: z.array(headerTupleSchema),
@@ -288,12 +288,12 @@ const publicRouteHandleResultSchema = z.object({
 
 const lifecycleHookResultSchema = z.object({
   type: z.literal('lifecycle-hook-result'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   pid: z.number().int().positive(),
   pluginId: z.string().min(1),
   hookName: lifecycleHookNameSchema,
-  operationId: z.string().uuid(),
-  hookExecutionId: z.string().uuid(),
+  operationId: z.guid(),
+  hookExecutionId: z.guid(),
   artifactIdentity: z.string().min(1),
   status: z.enum(['succeeded', 'failed', 'timed_out', 'blocked', 'cancelled']),
   message: z.string().optional(),
@@ -301,14 +301,14 @@ const lifecycleHookResultSchema = z.object({
 
 const testProbeEnvResultSchema = z.object({
   type: z.literal('test-probe-env-result'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   pid: z.number().int().positive(),
   values: z.record(z.string(), z.string().nullable()),
 });
 
 const migrationPlanResultSchema = z.object({
   type: z.literal('migration-plan-result'),
-  executionId: z.string().uuid(),
+  executionId: z.guid(),
   pid: z.number().int().positive(),
   direction: z.enum(['up', 'down']),
   plan: migrationExecutionPlanSchema,

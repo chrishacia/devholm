@@ -85,6 +85,7 @@ pnpm build
 echo "==> Ensuring Playwright browsers are installed"
 pnpm exec playwright install
 
+trap 'rm -rf .next; rm -f next-env.d.ts; cleanup' EXIT
 echo "==> Running Firefox smoke"
 pnpm test:e2e:smoke:firefox
 

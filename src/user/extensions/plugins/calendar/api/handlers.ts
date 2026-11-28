@@ -73,7 +73,7 @@ const eventTypeSchema = z.object({
 });
 
 const bookingSchema = z.object({
-  eventTypeId: z.string().uuid().nullable().optional(),
+  eventTypeId: z.guid().nullable().optional(),
   name: z.string().min(2).max(180),
   email: z.string().email().max(255),
   title: z.string().min(3).max(220),
@@ -252,7 +252,7 @@ export async function handleCalendarAdminApi(
     if (method === 'PUT') {
       try {
         const body = await parseJson(request);
-        const parsed = blockSchema.extend({ calendarId: z.string().uuid() }).safeParse(body);
+        const parsed = blockSchema.extend({ calendarId: z.guid() }).safeParse(body);
         if (!parsed.success) {
           return json(
             { error: 'Invalid payload', details: parsed.error.flatten() },
@@ -293,7 +293,7 @@ export async function handleCalendarAdminApi(
     if (method === 'PUT') {
       try {
         const body = await parseJson(request);
-        const parsed = eventTypeSchema.extend({ calendarId: z.string().uuid() }).safeParse(body);
+        const parsed = eventTypeSchema.extend({ calendarId: z.guid() }).safeParse(body);
         if (!parsed.success) {
           return json(
             { error: 'Invalid payload', details: parsed.error.flatten() },

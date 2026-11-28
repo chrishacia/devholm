@@ -60,7 +60,7 @@ const listQuerySchema = z.object({
 });
 
 const deleteBodySchema = z.object({
-  ids: z.array(z.string().uuid()).min(1).max(100),
+  ids: z.array(z.guid()).min(1).max(100),
 });
 
 // =============================================================================

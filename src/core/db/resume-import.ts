@@ -86,7 +86,7 @@ export const resumeImportSchema = z.object({
 });
 
 const backupSkillSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   name: z.string(),
   category: z.string(),
   sort_order: z.number().int(),
@@ -95,7 +95,7 @@ const backupSkillSchema = z.object({
 });
 
 const backupExperienceSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   title: z.string(),
   company: z.string(),
   location: z.string(),
@@ -110,8 +110,8 @@ const backupExperienceSchema = z.object({
 });
 
 const backupHighlightSchema = z.object({
-  id: z.string().uuid(),
-  experience_id: z.string().uuid(),
+  id: z.guid(),
+  experience_id: z.guid(),
   highlight: z.string(),
   sort_order: z.number().int(),
   created_at: z.string().datetime(),
@@ -119,8 +119,8 @@ const backupHighlightSchema = z.object({
 });
 
 const backupTechnologySchema = z.object({
-  id: z.string().uuid(),
-  experience_id: z.string().uuid(),
+  id: z.guid(),
+  experience_id: z.guid(),
   technology: z.string(),
   sort_order: z.number().int(),
   created_at: z.string().datetime(),
@@ -128,7 +128,7 @@ const backupTechnologySchema = z.object({
 });
 
 const backupEducationSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   degree: z.string(),
   field_of_study: z.string().nullable(),
   school: z.string(),
@@ -142,7 +142,7 @@ const backupEducationSchema = z.object({
 });
 
 const backupCertificationSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   name: z.string(),
   issuer: z.string().nullable(),
   issue_date: z.string().regex(monthDateRegex).nullable(),

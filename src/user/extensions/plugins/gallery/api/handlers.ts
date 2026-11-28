@@ -36,13 +36,13 @@ const gallerySchema = z.object({
   showInFooterMain: z.boolean().default(false),
   showInFooterResources: z.boolean().default(false),
   includeInSitemap: z.boolean().default(false),
-  coverMediaId: z.string().uuid().nullable().optional(),
+  coverMediaId: z.guid().nullable().optional(),
 });
 
 const createItemSchema = z.object({
   kind: z.enum(['media', 'external']),
   sortOrder: z.coerce.number().int().min(0).default(0),
-  mediaAssetId: z.string().uuid().nullable().optional(),
+  mediaAssetId: z.guid().nullable().optional(),
   externalUrl: z.string().url().nullable().optional(),
   externalProvider: z.string().max(80).nullable().optional(),
   title: z.string().max(220).nullable().optional(),
@@ -53,17 +53,17 @@ const createItemSchema = z.object({
 const reorderSchema = z.object({
   order: z.array(
     z.object({
-      id: z.string().uuid(),
+      id: z.guid(),
       sortOrder: z.coerce.number().int().min(0),
     })
   ),
 });
 
 const itemSchema = z.object({
-  galleryId: z.string().uuid(),
+  galleryId: z.guid(),
   kind: z.enum(['media', 'external']),
   sortOrder: z.coerce.number().int().min(0),
-  mediaAssetId: z.string().uuid().nullable().optional(),
+  mediaAssetId: z.guid().nullable().optional(),
   externalUrl: z.string().url().nullable().optional(),
   externalProvider: z.string().max(80).nullable().optional(),
   title: z.string().max(220).nullable().optional(),

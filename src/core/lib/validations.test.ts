@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   loginSchema,
   postSchema,
+  postUpdateSchema,
   tagSchema,
   seriesSchema,
   contactFormSchema,
@@ -49,7 +50,7 @@ describe('validations', () => {
       });
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('8 characters');
+        expect(result.error.issues[0].message).toContain('8 characters');
       }
     });
   });
@@ -95,7 +96,7 @@ describe('validations', () => {
       });
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('lowercase');
+        expect(result.error.issues[0].message).toContain('lowercase');
       }
     });
 
@@ -193,7 +194,7 @@ describe('validations', () => {
       });
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('10 characters');
+        expect(result.error.issues[0].message).toContain('10 characters');
       }
     });
 
@@ -211,6 +212,13 @@ describe('validations', () => {
         website: '',
       });
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe('postUpdateSchema', () => {
+    it('preserves omitted fields and accepts existing UUID-shaped IDs', () => {
+      const patch = { id: '123e4567-e89b-12d3-0456-426614174000' };
+      expect(postUpdateSchema.parse(patch)).toEqual(patch);
     });
   });
 
@@ -414,7 +422,7 @@ describe('validations', () => {
       });
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('too long');
+        expect(result.error.issues[0].message).toContain('too long');
       }
     });
 
@@ -477,7 +485,7 @@ describe('validations', () => {
       });
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain("don't match");
+        expect(result.error.issues[0].message).toContain("don't match");
       }
     });
 

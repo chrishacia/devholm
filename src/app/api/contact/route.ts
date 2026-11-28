@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
       contactFormSchema.parse({ name, email, subject, message, website, timestamp });
     } catch (zodError) {
       if (zodError instanceof ZodError) {
-        const firstError = zodError.errors[0];
+        const firstError = zodError.issues[0];
         return NextResponse.json({ error: firstError.message }, { status: 400 });
       }
       throw zodError;

@@ -10,7 +10,7 @@ import {
 } from '@/lib/sdk-authorization';
 
 const updateUserSchema = z.object({
-  userId: z.string().uuid(),
+  userId: z.guid(),
   roleSlugs: z.array(z.string().min(1)).optional(),
   isActive: z.boolean().optional(),
 });

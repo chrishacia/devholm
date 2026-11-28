@@ -2,104 +2,56 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   acquireMarketplaceInstallLease,
   marketplaceInstallLockRoot,
 } from '@core/lib/plugin-marketplace-install-lock.server';
 
-type ChildRunResult = {
-  code: number;
-  stdout: string;
-  stderr: string;
-};
-
-type ChildRunHandle = {
-  acquired: Promise<void>;
-  done: Promise<ChildRunResult>;
-};
-
 function startLockChild(args: {
   installRoot: string;
-  pluginId: string;
   operationId: string;
-  holdMs: number;
   leaseMs: number;
-  waitTimeoutMs: number;
   releaseOnExit: boolean;
-  expectAcquire?: boolean;
-}): ChildRunHandle {
+}) {
   const helperPath = path.resolve(
     process.cwd(),
     'src/test/helpers/marketplace-install-lock-child.ts'
   );
   const child = spawn(
-    'pnpm',
+    process.execPath,
     [
-      'exec',
+      '--import',
       'tsx',
       helperPath,
       args.installRoot,
-      args.pluginId,
       args.operationId,
-      String(args.holdMs),
       String(args.leaseMs),
-      String(args.waitTimeoutMs),
       args.releaseOnExit ? '1' : '0',
     ],
-    {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }
+    { stdio: ['pipe', 'pipe', 'pipe'] }
   );
 
   let stdout = '';
   let stderr = '';
-
-  const shouldAcquire = args.expectAcquire ?? true;
-
-  const acquired = new Promise<void>((resolve, reject) => {
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
+  const expiresAt = new Promise<number>((resolve, reject) => {
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
       stdout += chunk;
-      if (stdout.includes('acquired\n')) {
-        resolve();
+      if (stdout.includes('\n')) {
+        resolve(Date.parse(stdout.split('\n')[0]));
       }
     });
-
-    child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk: string) => {
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
       stderr += chunk;
     });
-
-    child.on('error', reject);
-    child.on('exit', () => {
-      if (!shouldAcquire) {
-        resolve();
-        return;
-      }
-      if (!stdout.includes('acquired\n')) {
-        reject(new Error(`child exited before acquisition: ${stderr || stdout || 'no output'}`));
-      }
+    child.once('error', reject);
+    child.once('close', () => {
+      reject(new Error(`child exited before acquisition: ${stderr || 'no output'}`));
     });
   });
+  const done = new Promise<number | null>((resolve) => child.once('close', resolve));
 
-  const done = new Promise<ChildRunResult>((resolve) => {
-    child.on('close', (code) => {
-      resolve({
-        code: code ?? 1,
-        stdout,
-        stderr,
-      });
-    });
-  });
-
-  return { acquired, done };
-}
-
-async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
+  return { expiresAt, done, release: () => child.stdin.end() };
 }
 
 describe('plugin-marketplace-install-lock', () => {
@@ -192,80 +144,70 @@ describe('plugin-marketplace-install-lock', () => {
 
   it('times out a second process while another owner holds the lease', async () => {
     const installRoot = await mkdtemp(path.join(os.tmpdir(), 'devholm-marketplace-lease-collide-'));
-
     const holder = startLockChild({
       installRoot,
-      pluginId: 'calendar',
       operationId: 'holder-op',
-      holdMs: 1_500,
       leaseMs: 4_000,
-      waitTimeoutMs: 2_000,
       releaseOnExit: true,
     });
 
-    await holder.acquired;
-
-    const contender = startLockChild({
-      installRoot,
-      pluginId: 'calendar',
-      operationId: 'contender-op',
-      holdMs: 0,
-      leaseMs: 4_000,
-      waitTimeoutMs: 250,
-      releaseOnExit: true,
-      expectAcquire: false,
-    });
-
-    const contenderResult = await contender.done;
-    expect(contenderResult.code).toBe(1);
-    expect(contenderResult.stderr).toMatch(/install lease timeout/i);
-
-    const holderResult = await holder.done;
-    expect(holderResult.code).toBe(0);
-
-    await rm(installRoot, { recursive: true, force: true });
+    // Freeze only this worker's clock. The child holds the lease until stdin closes.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime((await holder.expiresAt) - 1);
+      await expect(
+        acquireMarketplaceInstallLease({
+          lockRoot: marketplaceInstallLockRoot(installRoot),
+          pluginId: 'calendar',
+          operationId: 'contender-op',
+          waitTimeoutMs: 0,
+        })
+      ).rejects.toThrow(/install lease timeout/i);
+    } finally {
+      vi.useRealTimers();
+      holder.release();
+      await holder.done;
+      await rm(installRoot, { recursive: true, force: true });
+    }
+    expect(await holder.done).toBe(0);
   });
 
   it('allows recovery after owner exits without release when lease expires', async () => {
     const installRoot = await mkdtemp(path.join(os.tmpdir(), 'devholm-marketplace-lease-recover-'));
-
     const crashedOwner = startLockChild({
       installRoot,
-      pluginId: 'calendar',
       operationId: 'crashed-owner-op',
-      holdMs: 0,
       leaseMs: 500,
-      waitTimeoutMs: 1_000,
       releaseOnExit: false,
     });
-
-    await crashedOwner.acquired;
-    const crashedResult = await crashedOwner.done;
-    expect(crashedResult.code).toBe(0);
-
-    await expect(
-      acquireMarketplaceInstallLease({
-        lockRoot: marketplaceInstallLockRoot(installRoot),
-        pluginId: 'calendar',
-        operationId: 'before-expiry',
-        leaseMs: 500,
-        waitTimeoutMs: 100,
-      })
-    ).rejects.toThrow(/install lease timeout/i);
-
-    await sleep(650);
-
-    const recovered = await acquireMarketplaceInstallLease({
+    const options = {
       lockRoot: marketplaceInstallLockRoot(installRoot),
       pluginId: 'calendar',
-      operationId: 'after-expiry',
-      leaseMs: 500,
-      waitTimeoutMs: 1_500,
-    });
+      waitTimeoutMs: 0,
+    };
 
-    expect(recovered.metadata.operationId).toBe('after-expiry');
+    // Step the isolated worker's clock across the persisted expiry boundary.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const expiresAt = await crashedOwner.expiresAt;
+      expect(await crashedOwner.done).toBe(0);
 
-    await recovered.release();
-    await rm(installRoot, { recursive: true, force: true });
+      vi.setSystemTime(expiresAt - 1);
+      await expect(
+        acquireMarketplaceInstallLease({ ...options, operationId: 'before-expiry' })
+      ).rejects.toThrow(/install lease timeout/i);
+
+      vi.setSystemTime(expiresAt);
+      const recovered = await acquireMarketplaceInstallLease({
+        ...options,
+        operationId: 'after-expiry',
+      });
+      expect(recovered.metadata.operationId).toBe('after-expiry');
+      await recovered.release();
+    } finally {
+      vi.useRealTimers();
+      await crashedOwner.done;
+      await rm(installRoot, { recursive: true, force: true });
+    }
   });
 });
