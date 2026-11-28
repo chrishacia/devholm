@@ -8,6 +8,8 @@
 
 import { getDb } from './index';
 
+const RAW_PAGE_VIEW_RETENTION_DAYS = 180;
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -870,7 +872,7 @@ export async function getAnalyticsSummary(
     dataHealth: {
       latestEventAt: latestEventRow?.latest ?? null,
       latestRollupAt: latestRollupRow?.latest ?? null,
-      rawRetentionDays: 90,
+      rawRetentionDays: RAW_PAGE_VIEW_RETENTION_DAYS,
       persistentVisitorIdEnabled: false,
     },
   };
@@ -952,11 +954,15 @@ export async function getReferrerDetails(
 
 /**
  * Clean up old page view data (keep aggregates)
+ * Production retention on devholm.com is enforced by the host timer
+ * devholm-analytics-purge.timer, which runs daily at 03:45 UTC.
  */
-export async function cleanupOldPageViews(daysToKeep: number = 90): Promise<number> {
+export async function cleanupOldPageViews(
+  daysToKeep: number = RAW_PAGE_VIEW_RETENTION_DAYS
+): Promise<number> {
   const db = getDb();
   const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - daysToKeep);
 
   const result = await db('analytics_page_views').where('created_at', '<', cutoffDate).delete();
 

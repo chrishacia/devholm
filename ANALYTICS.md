@@ -262,7 +262,7 @@ The core write function. Called by the tracking API after all server-side enrich
 
 #### `cleanupOldPageViews(daysToKeep?: number): Promise<number>`
 
-Deletes raw `analytics_page_views` rows older than `daysToKeep` days (default: **90 days**). Aggregated tables (`analytics_daily_stats`, `analytics_referrers`) are **never purged** — they represent all-time data.
+Deletes raw `analytics_page_views` rows older than `daysToKeep` days (default: **180 days**). Aggregated tables (`analytics_daily_stats`, `analytics_referrers`) hold all-time data.
 
 ---
 
@@ -626,12 +626,12 @@ The read API (`GET /api/analytics`) requires a valid NextAuth session. Without a
 Raw page view events (`analytics_page_views`) are subject to cleanup via:
 
 ```typescript
-await cleanupOldPageViews(90); // Delete events older than 90 days
+await cleanupOldPageViews(); // Delete events older than 180 days
 ```
 
-- Default retention: **90 days** of raw events.
-- Aggregated tables (`analytics_daily_stats`, `analytics_referrers`) are **never deleted** — they accumulate all-time statistics indefinitely.
-- The cleanup function is not currently scheduled automatically; it must be called manually or wired into a cron job.
+- The cleanup helper defaults to **180 days**, using a UTC cutoff. Template operators schedule their own cleanup.
+- Aggregated tables (`analytics_daily_stats`, `analytics_referrers`) accumulate all-time statistics indefinitely.
+- The devholm.com deployment enforces the 180-day cutoff through a daily host timer. See [the deployment settings for the devholm.com notice](docs/devholm-com-privacy.md).
 
 ---
 
@@ -720,7 +720,7 @@ Admin Browser
 ```
 Every page view event
   │
-  ├── analytics_page_views      ← Full detail, kept for 90 days
+  ├── analytics_page_views      ← Full detail, 180-day default for cleanup
   │   Used for: 404 drill-downs, country/device breakdowns,
   │             per-session analysis, raw data access
   │
