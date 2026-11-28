@@ -17,7 +17,7 @@ const postCreateSchema = z.object({
   coverImage: z.string().url().max(500).optional(),
   metaTitle: z.string().max(70).optional(),
   metaDescription: z.string().max(160).optional(),
-  authorId: z.string().uuid().optional(),
+  authorId: z.guid().optional(),
 });
 
 function badRequest(message: string) {

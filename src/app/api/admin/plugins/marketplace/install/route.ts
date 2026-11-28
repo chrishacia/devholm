@@ -13,8 +13,8 @@ function isMarketplaceExecutionEnabled(): boolean {
 }
 
 const requestSchema = z.object({
-  descriptor: z.record(z.any()),
-  catalogEntry: z.record(z.any()),
+  descriptor: z.record(z.string(), z.any()),
+  catalogEntry: z.record(z.string(), z.any()),
   artifactPath: z.string().min(1).optional(),
   acquisitionMode: z.enum(['local-path', 'remote-first-party']).optional(),
   offlineOnly: z.boolean().optional(),

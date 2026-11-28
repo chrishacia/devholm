@@ -42,7 +42,9 @@ export const postSchema = z.object({
 export type PostInput = z.infer<typeof postSchema>;
 
 export const postUpdateSchema = postSchema.partial().extend({
-  id: z.string().uuid(),
+  status: postSchema.shape.status.removeDefault().optional(),
+  noindex: postSchema.shape.noindex.removeDefault().optional(),
+  id: z.guid(),
 });
 
 export type PostUpdateInput = z.infer<typeof postUpdateSchema>;
@@ -105,7 +107,7 @@ export type ContactFormInput = z.infer<typeof contactFormSchema>;
 // =============================================================================
 
 export const inboxUpdateSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   status: z.enum(['unread', 'read', 'archived', 'deleted', 'spam']),
 });
 
@@ -116,7 +118,7 @@ export type InboxUpdateInput = z.infer<typeof inboxUpdateSchema>;
 // =============================================================================
 
 export const mediaUpdateSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   altText: z.string().max(300, 'Alt text too long').optional(),
   caption: z.string().max(1000, 'Caption too long').optional(),
 });
@@ -177,7 +179,7 @@ export const profileUpdateSchema = z.object({
   twitterHandle: z.string().max(50, 'Twitter handle too long').optional().nullable(),
   githubHandle: z.string().max(50, 'GitHub handle too long').optional().nullable(),
   linkedinHandle: z.string().max(100, 'LinkedIn handle too long').optional().nullable(),
-  avatarMediaId: z.string().uuid('Invalid media ID').optional().nullable(),
+  avatarMediaId: z.guid('Invalid media ID').optional().nullable(),
 });
 
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;

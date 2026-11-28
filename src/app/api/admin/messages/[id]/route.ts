@@ -4,7 +4,7 @@ import { getMessageById, updateMessageStatus, deleteMessages } from '@/db/messag
 import { verifyAdmin } from '@/lib/auth-helpers';
 
 // Validation schemas
-const idSchema = z.string().uuid();
+const idSchema = z.guid();
 const statusSchema = z.object({
   status: z.enum(['unread', 'read', 'archived', 'spam', 'deleted']),
 });

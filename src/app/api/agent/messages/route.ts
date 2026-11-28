@@ -14,7 +14,7 @@ import { recordAutomationAgentEvent } from '@/lib/automation-agent-audit';
 
 const actionSchema = z.object({
   action: z.enum(['read', 'unread', 'archive', 'spam', 'delete']),
-  ids: z.array(z.string().uuid()).min(1).max(100),
+  ids: z.array(z.guid()).min(1).max(100),
 });
 
 const statusFilterSchema = z

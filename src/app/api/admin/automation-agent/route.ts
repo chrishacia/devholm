@@ -18,7 +18,7 @@ const updateSchema = z.object({
   messagesReadEnabled: z.boolean().optional(),
   messagesWriteEnabled: z.boolean().optional(),
   allowCustomAuthor: z.boolean().optional(),
-  defaultAuthorId: z.string().uuid().nullable().optional(),
+  defaultAuthorId: z.guid().nullable().optional(),
   tokenExpiresAt: z.string().datetime().nullable().optional(),
   allowedIps: z.array(z.string().min(3).max(64)).max(50).optional(),
   requireHttps: z.boolean().optional(),
