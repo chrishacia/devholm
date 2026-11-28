@@ -1,4 +1,5 @@
 import type { DevPageDefinition } from '@core/types/dev-pages';
+import { devholmPrivacyPage } from './privacy/definition';
 
 /**
  * Register developer-defined pages here.
@@ -15,4 +16,6 @@ import type { DevPageDefinition } from '@core/types/dev-pages';
  *   includeInSitemapByDefault: true,
  * }
  */
-export const devPageDefinitions: DevPageDefinition[] = [];
+export const devPageDefinitions: DevPageDefinition[] = devholmPrivacyPage
+  ? [devholmPrivacyPage]
+  : [];

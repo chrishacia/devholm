@@ -1,5 +1,43 @@
-import { describe, it, expect } from 'vitest';
-import { scrubSensitiveReferrerParams, formatCompactNumber } from './analytics';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  cleanupOldPageViews,
+  scrubSensitiveReferrerParams,
+  formatCompactNumber,
+} from './analytics';
+import { getDb } from './index';
+
+vi.mock('./index', () => ({ getDb: vi.fn() }));
+
+describe('cleanupOldPageViews', () => {
+  it.each([
+    { daysToKeep: undefined, cutoff: '2026-05-31T03:45:00.000Z' },
+    { daysToKeep: 30, cutoff: '2026-10-28T03:45:00.000Z' },
+  ])(
+    'deletes detailed rows before $cutoff and returns the count',
+    async ({ daysToKeep, cutoff }) => {
+      const deleteRows = vi.fn().mockResolvedValue(12);
+      const where = vi.fn().mockReturnValue({ delete: deleteRows });
+      const table = vi.fn().mockReturnValue({ where });
+      vi.mocked(getDb).mockReturnValueOnce(table as unknown as ReturnType<typeof getDb>);
+
+      // Freeze and restore the clock inside each case so other tests use real time.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-11-27T03:45:00.000Z'));
+      try {
+        const count =
+          daysToKeep === undefined
+            ? await cleanupOldPageViews()
+            : await cleanupOldPageViews(daysToKeep);
+        expect(count).toBe(12);
+        expect(table.mock.calls).toEqual([['analytics_page_views']]);
+        expect(where).toHaveBeenCalledWith('created_at', '<', new Date(cutoff));
+        expect(deleteRows).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
+});
 
 describe('scrubSensitiveReferrerParams', () => {
   it('returns null for null or undefined', () => {
