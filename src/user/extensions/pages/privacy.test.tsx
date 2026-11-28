@@ -17,7 +17,8 @@ describe('devholm.com privacy notice', () => {
   });
 
   it.each([undefined, '2026-02-30'])('leaves the notice off with setting %s', async (setting) => {
-    vi.stubEnv('DEVHOLM_PRIVACY_EFFECTIVE_DATE', setting);
+    vi.stubEnv('DEVHOLM_PRIVACY_EFFECTIVE_DATE', setting ?? '');
+    if (setting === undefined) delete process.env.DEVHOLM_PRIVACY_EFFECTIVE_DATE;
     const { devPageDefinitions } = await import('./index');
     expect(devPageDefinitions.find((page) => page.path === '/privacy')).toBeUndefined();
   });

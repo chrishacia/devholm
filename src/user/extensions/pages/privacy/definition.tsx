@@ -1,4 +1,3 @@
-import 'server-only';
 import type { DevPageDefinition } from '@core/types/dev-pages';
 
 function readEffectiveDate(value: string | undefined): Date | null {
